@@ -212,9 +212,27 @@ async function rule8Crash(crash) {
 
 function animateOpponentDefense(values) {
     const pile = document.getElementById("attack-pile");
+    if (!pile) return;
     const pileRect = pile.getBoundingClientRect();
 
-    values.forEach((card, i) => {
+    // normalize values so we have objects with {rank, suit}
+    const cards = values.map(v => {
+        if (typeof v === 'string') {
+            // examples: '2diamonds icon', '9spades icon' --> remove ' icon' then split
+            const s = v.replace(/\s*icon$/i, '').trim();
+            const m = s.match(/^([0-9]{1,2}|[AJQK])([a-zA-Z]+)$/i);
+            if (m) return { rank: m[1], suit: m[2] };
+            const alt = s.match(/^(.+?)([a-zA-Z]+)$/);
+            if (alt) return { rank: alt[1], suit: alt[2] };
+            return { rank: s, suit: '' };
+        } else if (v && typeof v === 'object') {
+            return { rank: v.rank, suit: v.suit };
+        } else {
+            return { rank: String(v), suit: '' };
+        }
+    });
+
+    cards.forEach((card, i) => {
         const ghost = document.createElement("div");
         ghost.className = "card";
 
@@ -242,9 +260,10 @@ function animateOpponentDefense(values) {
             ghost.style.transform = `rotate(${rotate}deg) scale(0.9)`;
         });
 
-        setTimeout(() => ghost.remove(), 500);
-        setOpponentStatus("Opponent defended, with cards: " + values.map(v => v.rank + v.suit).join(", "));
+        setTimeout(() => ghost.remove(), 2500);
     });
+
+    setOpponentStatus("Opponent defended, with cards: " + cards.map(v => v.rank + v.suit).join(", "));
 }
 
 function setOpponentStatus(text) {
