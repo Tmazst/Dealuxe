@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-16">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Card Game</title>
+    <link rel="stylesheet" type="text/css" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link href="https://fonts.googleapis.com/css?family=Oswald:300,400,700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.3.2/dist/tailwind.min.css" rel="stylesheet">
+
+    
+
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/bs_stylesheet.css') }}" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+<header class="site-header">
+    <div class="brand">Card Game</div>
+    <div class="controls">
+        <button class="btn" onclick="startTurn()">Start Turn</button>
+        <button class="btn">Connect Wallet</button>
+    </div>
+</header>
+
+<div class="app-grid">
+    <main class="panel">
+        <div id="state"></div>
+
+        <div id="attack-zone" class="attack-zone">
+            DROP CARD HERE TO ATTACK
+        </div>
+
+        <div class="game-table">
+            <div id="attack-pile" class="attack-pile"></div>
+            <div id="player-cards" class="card-stack"></div>
+        </div>
+
+        <div id="agent-panel" class="agent-panel">
+            <i class="fa-solid fa-robot agent-icon"></i>
+            <div id="agent-text" class="agent-text">Welcome! I'll guide you through the game.</div>
+        </div>
+
+        <pre id="state"></pre>
+    </main>
+
+    <aside class="panel leaderboard">
+        <div class="title">Leaderboard</div>
+        <div id="leaderboard-list">
+            <!-- leaderboard rows populated by JS -->
+        </div>
+    </aside>
+</div>
+
+<script src="/static/js/game.js"></script>
+</body>
+</html>
+
