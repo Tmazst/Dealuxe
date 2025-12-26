@@ -246,6 +246,8 @@ async function attack(index) {
 
     if (cardEl) {
         animateCardToAttackPile(cardEl);
+        // play attack sound on user attack
+        try { playAttackSound(); } catch (e) {}
     }
 
     const res = await fetch(`/api/game/${gameId}/attack`, {
@@ -259,9 +261,12 @@ async function attack(index) {
     const ui = data.ui_state;
     console.log("Attack response ui:", ui);
     if (ui && ui.defence_cards) animateOpponentDefense(ui.defence_cards);
-    else if (ui && ui.defender_drawn_card) setOpponentStatus("Opponent drew a card");
+    else if (ui && ui.defender_drawn_card) {
+        setOpponentStatus("Opponent drew a card");
+        // show ghost animation for opponent drawing
+        try { await animateOpponentDrawGhost(); } catch (e) { /* ignore */ }
+    }
     if (ui && ui.ui_log) renderComments(ui.ui_log);
-    if (ui && ui.phase) setTrackingBadge(ui.phase.toLowerCase(), ui.phase.toLowerCase());
 
     // Delay state refresh until animation finishes
     setTimeout(fetchState, 450);
@@ -348,6 +353,54 @@ function animateDrawGhost() {
             const dx = targetX - startX;
             const dy = targetY - startY;
             ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.98)`;
+        });
+
+        const cleanup = () => {
+            ghost.removeEventListener('transitionend', cleanup);
+            ghost.classList.add('fade-out');
+            setTimeout(() => { try { ghost.remove(); } catch (e) {} resolve(); }, 240);
+        };
+
+        ghost.addEventListener('transitionend', cleanup);
+        setTimeout(() => { if (document.body.contains(ghost)) { cleanup(); } }, 1000);
+    });
+}
+
+// Animate a ghost card flying from bottom-right (opponent deck) to center-top (attack pile)
+function animateOpponentDrawGhost() {
+    return new Promise((resolve) => {
+        const pile = document.getElementById('attack-pile');
+        if (!pile) return resolve();
+
+        const pileRect = pile.getBoundingClientRect();
+        const startX = window.innerWidth - 120;
+        const startY = window.innerHeight - 200;
+
+        const ghost = document.createElement('div');
+        ghost.className = 'card ghost entering';
+        ghost.innerHTML = `
+            <div class="rank">?</div>
+            <div class="center">♣</div>
+            <div class="suit">?</div>
+        `;
+        document.body.appendChild(ghost);
+
+        ghost.style.left = startX + 'px';
+        ghost.style.top = startY + 'px';
+
+        requestAnimationFrame(() => {
+            ghost.classList.add('visible');
+            ghost.classList.remove('entering');
+        });
+
+        // Target: top center of screen (where opponent would be)
+        const targetX = (window.innerWidth / 2) - 60;
+        const targetY = -200; // offscreen top
+
+        requestAnimationFrame(() => {
+            const dx = targetX - startX;
+            const dy = targetY - startY;
+            ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.92)`;
         });
 
         const cleanup = () => {
@@ -464,22 +517,22 @@ async function renderState(state) {
     // update tracking badge based on phase and whether it's our turn
     if (state) {
         const phase = state.phase || '';
-        if (phase === 'ATTACK') {
-            // if attacker is our local player (match by name)
-            let isLocalAttacker = false;
-            if (state.players && myPlayer && myPlayer.name) {
-                const idx = state.players.findIndex(p => p.name === myPlayer.name);
-                if (idx >= 0 && state.attacker === idx) isLocalAttacker = true;
-            }
-            setTrackingBadge(isLocalAttacker ? 'Your turn: Attack' : 'Opponent attacking', 'attack');
-        } else if (phase === 'DEFENSE') {
-            setTrackingBadge('Defend', 'defend');
+        // determine if local player is attacker or defender (assume player index 0 for now)
+        const localPlayerIndex = 0;
+        const isLocalAttacker = state.attacker === localPlayerIndex;
+        const isLocalDefender = state.defender === localPlayerIndex;
+
+        if (phase === 'ATTACK' && isLocalAttacker) {
+            setTrackingBadge('Attack', 'attack');
+        } else if (phase === 'DEFENSE' && isLocalDefender) {
+            setTrackingBadge('Defend or Draw', 'defend');
         } else if (phase === 'RULE_8') {
             setTrackingBadge('Rule 8', 'info');
         } else if (phase === 'GAME_OVER') {
             setTrackingBadge('Game Over', 'info');
         } else {
-            setTrackingBadge('Waiting', 'info');
+            // opponent's turn or waiting: hide badge or show neutral
+            setTrackingBadge('Waiting...', 'info');
         }
         // If opponent has played an attack card and we're the defender, require user confirmation
         if (state.attack_card && state.attacker !== 0 && state.defender === 0) {
@@ -529,6 +582,8 @@ function appendOpponentAttack(value) {
     el.style.verticalAlign = 'top';
     pile.appendChild(el);
     requestAnimationFrame(() => el.classList.remove('entering'));
+    // play attack sound when the attack card lands in pile
+    try { playAttackSound(); } catch (e) {}
     lastDisplayedAttack = value;
 }
 
@@ -590,7 +645,7 @@ function showAttackConfirmModal() {
     modal.innerHTML = `
         
         <div class="attack-confirm-actions">
-            <button id="attack-confirm-proceed" class="btn"><i class="fa-solid fa-check"></i> Check</button>
+            <button id="attack-confirm-proceed" class="btn"><i class="fa-solid fa-check"></i> Proceed Game</button>
         </div>
     `;
     // position modal over pile
@@ -601,6 +656,8 @@ function showAttackConfirmModal() {
         if (pendingOpponentAttack) {
             // play a ghost animation then append the static pile visual
             await animateOpponentGhost(pendingOpponentAttack);
+            // play attack sound on opponent reveal
+            try { playAttackSound(); } catch (e) {}
             appendOpponentAttack(pendingOpponentAttack);
             pendingOpponentAttack = null;
         }
@@ -617,6 +674,87 @@ function hideAttackConfirmModal() {
     if (m) m.remove();
 }
 
+// Play a pleasant bell sound using Web Audio API
+function playBellSound() {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Create oscillators for a bell-like tone (fundamental + harmonics)
+        const now = audioContext.currentTime;
+        const duration = 0.6;
+        
+        // Fundamental frequency (like a gentle chime)
+        const osc1 = audioContext.createOscillator();
+        osc1.frequency.setValueAtTime(800, now);
+        osc1.type = 'sine';
+        
+        // Second harmonic
+        const osc2 = audioContext.createOscillator();
+        osc2.frequency.setValueAtTime(1200, now);
+        osc2.type = 'sine';
+        
+        // Create gain nodes for volume control and fade out
+        const gain1 = audioContext.createGain();
+        gain1.gain.setValueAtTime(0.15, now);
+        gain1.gain.exponentialRampToValueAtTime(0.01, now + duration);
+        
+        const gain2 = audioContext.createGain();
+        gain2.gain.setValueAtTime(0.08, now);
+        gain2.gain.exponentialRampToValueAtTime(0.01, now + duration);
+        
+        // Connect the audio graph
+        osc1.connect(gain1);
+        osc2.connect(gain2);
+        gain1.connect(audioContext.destination);
+        gain2.connect(audioContext.destination);
+        
+        // Start and stop
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + duration);
+        osc2.stop(now + duration);
+    } catch (e) {
+        console.warn('Could not play bell sound:', e);
+    }
+}
+
+// Short percussive "attack" sound using Web Audio API
+function playAttackSound() {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioContext.currentTime;
+        const duration = 0.28;
+
+        // Low square wave for punch
+        const osc1 = audioContext.createOscillator();
+        osc1.type = 'square';
+        osc1.frequency.setValueAtTime(220, now);
+
+        const gain1 = audioContext.createGain();
+        gain1.gain.setValueAtTime(0.0001, now);
+        gain1.gain.exponentialRampToValueAtTime(0.22, now + 0.02);
+        gain1.gain.exponentialRampToValueAtTime(0.002, now + duration);
+
+        // Click transient (higher freq triangle)
+        const osc2 = audioContext.createOscillator();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(1200, now);
+
+        const gain2 = audioContext.createGain();
+        gain2.gain.setValueAtTime(0.0001, now);
+        gain2.gain.exponentialRampToValueAtTime(0.12, now + 0.015);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+        osc1.connect(gain1); gain1.connect(audioContext.destination);
+        osc2.connect(gain2); gain2.connect(audioContext.destination);
+
+        osc1.start(now); osc2.start(now);
+        osc1.stop(now + duration); osc2.stop(now + 0.2);
+    } catch (e) {
+        console.warn('Could not play attack sound:', e);
+    }
+}
+
 function renderComments(lines) {
     const container = document.querySelector('.game-comments');
     if (!container) return;
@@ -631,6 +769,8 @@ function renderComments(lines) {
     container.textContent = sanitized;
     // briefly highlight the comments box to draw attention
     container.classList.add('flash');
+    // Play bell sound when animating
+    playBellSound();
     setTimeout(() => container.classList.remove('flash'), 900);
 }
 

@@ -19,24 +19,19 @@ class CardGameEngine:
     # ---------------------
     # STATE HELPERS-
     # ---------------------
-
     def get_state(self):
-        """
-        Returns a serializable snapshot of the game.
-        """
         return {
             "phase": self.state.phase,
             "attacker": self.state.attacker,
             "defender": self.state.defender,
             "attack_card": str(self.state.attack_card) if self.state.attack_card else None,
             "attack_card_value": self.state.attack_card.value if self.state.attack_card else None,
-            "hands": {
-                i: [str(c) for c in p.hand]
-                for i, p in enumerate(self.players)
-            }
-            ,
+            "hands": {i: [str(c) for c in p.hand] for i, p in enumerate(self.players)},
+            "game_over": self.state.game_over,
+            "winner": self.state.winner,
             "ui_log": list(self.ui_log),
         }
+
 
     def _log(self, msg):
         # print to console and append to ui log for frontend consumption
