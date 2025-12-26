@@ -299,10 +299,18 @@ async function defend(indices) {
 
 
 async function drawCard() {
+    // remove any visual pile immediately when player chooses to draw
+    const pile = document.getElementById('attack-pile');
+    if (pile) pile.innerHTML = '';
+    hideAttackConfirmModal();
+
     const res = await fetch(`/api/game/${gameId}/draw`, { method: "POST" });
     const data = await res.json();
     if (data && data.ui_log) renderComments(data.ui_log);
-    setTimeout(fetchState, 300);
+    // Give backend AI a short moment to act, then refresh state so opponent attack appears
+    setTimeout(() => {
+        fetchState();
+    }, 900);
 }
 
 async function rule8Drop(value) {
@@ -546,12 +554,21 @@ window.onload = () => {
 // --- Draw button UI ---
 function createDrawButton() {
     if (document.getElementById('draw-button')) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'draw-button-wrapper';
+
+    const label = document.createElement('div');
+    label.className = 'draw-label';
+    label.textContent = 'Draw Card';
+    wrapper.appendChild(label);
+
     const btn = document.createElement('button');
     btn.id = 'draw-button';
     btn.className = 'draw-button flash';
     btn.setAttribute('aria-label', 'Draw a card');
     btn.innerHTML = '<span class="icon"><i class="fa-solid fa-plus"></i></span>';
-    document.body.appendChild(btn);
+    wrapper.appendChild(btn);
+    document.body.appendChild(wrapper);
 
     btn.addEventListener('click', async () => {
         // disable to prevent double clicks
