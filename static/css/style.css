@@ -93,18 +93,30 @@ html,body{
 /* Attack pile centered with subtle glass */
 .attack-pile{
     position:absolute;
-    top:35%;
+    top:25%;
     left:50%;
     transform:translate(-50%,-50%);
     width:220px;
-    height:160px;
+    height:100px;
     border-radius:14px;
     background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
-    border:1px solid rgba(255,255,255,0.04);
+    /* border:1px solid rgba(255,255,255,0.08); */
     display:flex;
+    flex-direction:row;
+    gap:8px;
     align-items:center;
     justify-content:center;
+    padding:8px;
     pointer-events:none;
+}
+.cont-narrative{
+    margin-top: -25px;
+}
+.gen-flex{
+    display:flex;align-items:center;justify-content:center;gap:8px
+}
+.gen-flex-col{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px
 }
 
 /* Cards container (player cards) */
@@ -139,6 +151,25 @@ html,body{
     touch-action:none;
 }
 
+/* Pile cards should flow horizontally inside .attack-pile instead of stacking */
+.attack-pile .card{
+    position:static; /* allow flexbox layout */
+    width: auto; /* size controlled by JS */
+    height: auto;
+    box-shadow: 0 8px 20px rgba(2,2,6,0.45);
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+/* Enter animation for cards appended into the pile */
+.card.entering{
+    transform: translateY(-12px) scale(0.95);
+    opacity: 0;
+}
+.attack-pile .card{
+    transition: transform 260ms cubic-bezier(.2,.9,.2,1), opacity 260ms ease;
+}
+
 .card .rank{font-size:20px;font-weight:700;color:rgb(36, 36, 36);}
 .card .suit{font-size:18px;color:rgb(36, 36, 36);}
 .card .center{font-size:44px;text-align:center}
@@ -157,6 +188,7 @@ html,body{
     width:68%;
     height:120px;
     border-radius:12px;
+    z-index:500;
     display:flex;align-items:center;justify-content:center;
     pointer-events:none;
     background: rgba(251, 193, 67, 0.05);;

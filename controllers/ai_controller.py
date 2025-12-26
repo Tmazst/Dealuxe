@@ -1,9 +1,17 @@
 
 
+import time
+import random
+
+
 class SimpleAIController:
-    def __init__(self, engine, player_id):
+    def __init__(self, engine, player_id, think_delay=0.9, jitter=0.6):
         self.engine = engine
         self.player_id = player_id
+        # base delay in seconds before AI takes an action
+        self.think_delay = think_delay
+        # jitter to randomize thinking time
+        self.jitter = jitter
 
     # -----------------------------
     # MAIN ENTRY
@@ -25,15 +33,18 @@ class SimpleAIController:
 
             if state.phase == "ATTACK" and state.attacker == self.player_id:
                 print("[AI] It's my turn to attack:")
+                self._think()
                 self.handle_attack()
                 acted = True
 
             if state.phase == "DEFENSE" and state.defender == self.player_id:
+                self._think()
                 defence_results = self.handle_defense()
                 print("AI defense results: ", defence_results)
                 acted = True
 
             if state.phase == "RULE_8" and state.attacker == self.player_id:
+                self._think()
                 self.handle_rule_8()
                 acted = True
 
@@ -96,3 +107,8 @@ class SimpleAIController:
                 print(f"[AI] Rule 8 drops {value}")
                 self.engine.rule_8_drop(self.player_id, value)
                 return
+
+    def _think(self):
+        """Sleep a short randomized interval to simulate AI thinking."""
+        delay = self.think_delay + random.random() * self.jitter
+        time.sleep(delay)

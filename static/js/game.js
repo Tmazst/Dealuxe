@@ -279,7 +279,7 @@ function animateOpponentDefense(values) {
     // append each card as a simple static element inside pile
     cards.forEach((card, i) => {
         const el = document.createElement('div');
-        el.className = 'card pile-defense';
+        el.className = 'card pile-defense entering';
         el.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
@@ -293,6 +293,7 @@ function animateOpponentDefense(values) {
         el.style.verticalAlign = 'top';
 
         pile.appendChild(el);
+        requestAnimationFrame(() => el.classList.remove('entering'));
     });
 
     setOpponentStatus("Opponent defended, with cards: " + cards.map(v => v.rank + v.suit).join(", "));
@@ -537,12 +538,16 @@ function animateCardToAttackPile(cardEl) {
     const cardHeight = Math.max(56, Math.floor(pileRect.height - 8));
 
     // remove previous attacker visual(s)
-    const existing = pile.querySelectorAll('.pile-attack');
-    existing.forEach(el => el.remove());
+    // Remove previous attack group (attack + defense) so we always show
+    // the current trio only.
+    const prevAttack = pile.querySelectorAll('.pile-attack');
+    prevAttack.forEach(el => el.remove());
+    const prevDefense = pile.querySelectorAll('.pile-defense');
+    prevDefense.forEach(el => el.remove());
 
     // create a new static duplicate for the pile
     const el = document.createElement('div');
-    el.className = 'card pile-attack';
+    el.className = 'card pile-attack entering';
     el.innerHTML = cardEl.innerHTML;
     el.style.width = cardWidth + 'px';
     el.style.height = cardHeight + 'px';
@@ -551,6 +556,23 @@ function animateCardToAttackPile(cardEl) {
     el.style.verticalAlign = 'top';
 
     pile.appendChild(el);
+
+    // remove the source card from the player's hand immediately so it
+    // disappears from the drop zone and the hand UI while we wait for
+    // the server/AI to respond. fetchState() will re-render authoritative
+    // hand later.
+    try {
+        const handContainer = document.getElementById('player-cards');
+        if (handContainer && handContainer.contains(cardEl)) {
+            cardEl.remove();
+        }
+    } catch (e) {
+        console.warn('Failed to remove cardEl from hand:', e);
+    }
+    // trigger enter animation
+    requestAnimationFrame(() => {
+        el.classList.remove('entering');
+    });
 }
 
 
@@ -566,7 +588,7 @@ function animateDefenseToAttackPile(cardEls) {
 
     cardEls.forEach((cardEl, i) => {
         const el = document.createElement('div');
-        el.className = 'card pile-defense';
+        el.className = 'card pile-defense entering';
         el.innerHTML = cardEl.innerHTML;
         el.style.width = cardWidth + 'px';
         el.style.height = cardHeight + 'px';
@@ -575,6 +597,8 @@ function animateDefenseToAttackPile(cardEls) {
         el.style.verticalAlign = 'top';
 
         pile.appendChild(el);
+        // trigger enter animation
+        requestAnimationFrame(() => el.classList.remove('entering'));
     });
 }
 
