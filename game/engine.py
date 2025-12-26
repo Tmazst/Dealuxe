@@ -7,6 +7,7 @@ class CardGameEngine:
         self.deck = Deck()
         self.players = players
         self.state = GameState()
+        self.ui_log = []
 
         # Deal cards
         for _ in range(6):
@@ -33,7 +34,14 @@ class CardGameEngine:
                 i: [str(c) for c in p.hand]
                 for i, p in enumerate(self.players)
             }
+            ,
+            "ui_log": list(self.ui_log),
         }
+
+    def _log(self, msg):
+        # print to console and append to ui log for frontend consumption
+        print(msg)
+        self.ui_log.append(msg)
 
     def _check_winner(self):
         for i, p in enumerate(self.players):
@@ -48,7 +56,7 @@ class CardGameEngine:
     # ---------------------
 
     def start_turn(self):
-        print(f"[ENGINE] Player {self.state.attacker}'s turn begins")
+        self._log(f"[ENGINE] Player {self.state.attacker}'s turn begins")
 
         attacker = self.players[self.state.attacker]
 
@@ -81,7 +89,7 @@ class CardGameEngine:
         self.state.attack_card = card
         self.state.phase = "DEFENSE"
 
-        print(f"[ENGINE] Player {player_id} attacks with {card}")
+        self._log(f"[ENGINE] Player {player_id} attacks with {card}")
 
         return {"ok": True}
 
@@ -102,7 +110,7 @@ class CardGameEngine:
         defender.hand.remove(c1)
         defender.hand.remove(c2)
 
-        print(f"[ENGINE] Defense successful: {c1} + {c2}")
+        self._log(f"[ENGINE] Defense successful: {c1} + {c2}")
 
         self._check_winner()
 
@@ -123,7 +131,8 @@ class CardGameEngine:
         defender = self.players[player_id]
         card = defender.draw_card(self.deck)
 
-        print(f"[ENGINE] Defender failed to defend and draws {card}")
+        # Do not reveal drawn card identities in UI log
+        self._log(f"[ENGINE] Defender failed to defend and draws a card")
 
         # Defense failed → attacker keeps the turn
         self.state.attack_card = None
@@ -131,7 +140,7 @@ class CardGameEngine:
 
         self.state.defender_drawn_card = str(card) if card else None
 
-        print("[ENGINE] Defense failed. Attacker gets another turn.")
+        self._log("[ENGINE] Defense failed. Attacker gets another turn.")
 
         return {
             "drawn": str(card) if card else None,
@@ -156,7 +165,7 @@ class CardGameEngine:
         dropped = cards[0]
         attacker.hand.remove(dropped)
 
-        print(f"[ENGINE] Rule 8 drop: {dropped}")
+        self._log(f"[ENGINE] Rule 8 drop: {dropped}")
 
         self.state.trail_value = value
         self._check_winner()
@@ -169,14 +178,14 @@ class CardGameEngine:
         defender = self.players[defender_id]
 
         if crash and any(c.value == self.state.trail_value for c in defender.hand):
-            print("[ENGINE] Trail crashed")
+            self._log("[ENGINE] Trail crashed")
             self.players[self.state.attacker].draw_card(self.deck)
 
             self.state.phase = "ATTACK"
             self.state.trail_value = None
             return {"crashed": True}
 
-        print("[ENGINE] Trail continues")
+        self._log("[ENGINE] Trail continues")
         return {"crashed": False}
 
     def consume_ui_state(self):
@@ -195,8 +204,11 @@ class CardGameEngine:
             }
         }
 
+        # include ui log and then clear transient fields
+        data["ui_log"] = list(self.ui_log)
+        self.ui_log.clear()
+
         # clear transient fields
         self.state.defence_cards = None
         self.state.defender_drawn_card = None
-        # print("consume_ui_state: ",data)
         return data

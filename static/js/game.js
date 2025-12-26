@@ -80,6 +80,8 @@ async function fetchState() {
 
     currentState = state;
     await renderState(state);
+    // render any engine UI log messages (state.ui_log may be present)
+    if (state.ui_log && Array.isArray(state.ui_log)) renderComments(state.ui_log);
     // refresh leaderboard after we update state
     fetchLeaderboard();
     updateAgent(state);
@@ -190,10 +192,12 @@ async function attack(index) {
 
     focusedCardIndex = null;
     const data = await res.json();
-    const state = data.ui_state;
-    console.log("Attack response state:", state);
-    if (state && state.defence_cards) animateOpponentDefense(state.defence_cards);
-    else if (state && state.defender_drawn_card) setOpponentStatus("Opponent drew a card");
+    const ui = data.ui_state;
+    console.log("Attack response ui:", ui);
+    if (ui && ui.defence_cards) animateOpponentDefense(ui.defence_cards);
+    else if (ui && ui.defender_drawn_card) setOpponentStatus("Opponent drew a card");
+    if (ui && ui.ui_log) renderComments(ui.ui_log);
+    if (ui && ui.phase) setTrackingBadge(ui.phase.toLowerCase(), ui.phase.toLowerCase());
 
     // Delay state refresh until animation finishes
     setTimeout(fetchState, 450);
@@ -214,19 +218,24 @@ async function defend(indices) {
 
     const data = await res.json();
 
-    if (data.success && cardEls.length === 2) {
-        // animateDefenseToAttackPile(cardEls);
+    // If backend returned used_cards (defense success), animate them
+    if (data.used_cards) {
         animateOpponentDefense(data.used_cards);
-        setTimeout(fetchState, 500);
-    } else {
-        fetchState();
     }
+
+    // Render any ui log included in the response
+    if (data.ui_log) renderComments(data.ui_log);
+
+    // Refresh authoritative state after a short delay to allow animations
+    setTimeout(fetchState, 500);
 }
 
 
 async function drawCard() {
-    await fetch(`/api/game/${gameId}/draw`, { method: "POST" });
-    fetchState();
+    const res = await fetch(`/api/game/${gameId}/draw`, { method: "POST" });
+    const data = await res.json();
+    if (data && data.ui_log) renderComments(data.ui_log);
+    setTimeout(fetchState, 300);
 }
 
 async function rule8Drop(value) {
@@ -329,6 +338,49 @@ async function renderState(state) {
 
     renderCards(myHand);
     updateAttackZone();
+    // update tracking badge based on phase and whether it's our turn
+    if (state) {
+        const phase = state.phase || '';
+        if (phase === 'ATTACK') {
+            // if attacker is our local player (match by name)
+            let isLocalAttacker = false;
+            if (state.players && myPlayer && myPlayer.name) {
+                const idx = state.players.findIndex(p => p.name === myPlayer.name);
+                if (idx >= 0 && state.attacker === idx) isLocalAttacker = true;
+            }
+            setTrackingBadge(isLocalAttacker ? 'Your turn: Attack' : 'Opponent attacking', 'attack');
+        } else if (phase === 'DEFENSE') {
+            setTrackingBadge('Defend', 'defend');
+        } else if (phase === 'RULE_8') {
+            setTrackingBadge('Rule 8', 'info');
+        } else if (phase === 'GAME_OVER') {
+            setTrackingBadge('Game Over', 'info');
+        } else {
+            setTrackingBadge('Waiting', 'info');
+        }
+    }
+}
+
+function renderComments(lines) {
+    const container = document.querySelector('.game-comments');
+    if (!container) return;
+    // Show only the most recent relevant message (not a log dump).
+    if (!lines || !Array.isArray(lines) || lines.length === 0) return;
+    // pick last message
+    const raw = lines[lines.length - 1];
+    if (!raw) return;
+    // sanitize: hide drawn card identities
+    const sanitized = String(raw).replace(/draws\s+[^\s]+/i, 'draws a card');
+    // display single message
+    container.textContent = sanitized;
+}
+
+function setTrackingBadge(text, type="info") {
+    const badge = document.querySelector('.tracking-badge');
+    if (!badge) return;
+    badge.textContent = text;
+    badge.classList.remove('attack','defend','draw','info');
+    badge.classList.add(type);
 }
 
 /* -----------------------------

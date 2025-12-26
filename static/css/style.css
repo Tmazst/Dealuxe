@@ -93,7 +93,7 @@ html,body{
 /* Attack pile centered with subtle glass */
 .attack-pile{
     position:absolute;
-    top:25%;
+    top:20%;
     left:50%;
     transform:translate(-50%,-50%);
     width:220px;
@@ -110,7 +110,7 @@ html,body{
     pointer-events:none;
 }
 .cont-narrative{
-    margin-top: -25px;
+    margin-top: -50px;
 }
 .gen-flex{
     display:flex;align-items:center;justify-content:center;gap:8px
@@ -197,6 +197,16 @@ html,body{
 }
 .attack-zone.active{opacity:1;pointer-events:auto}
 .attack-zone.hover{border-color: rgba(139,92,246,0.9);background:linear-gradient(90deg, rgba(139,92,246,0.06), rgba(255,107,203,0.04))}
+
+/* Narrative / tracking */
+.cont-narrative{width:220px;display:flex;flex-direction:column;gap:8px}
+.game-comments{background:rgba(0,0,0,0.25);padding:8px;border-radius:8px;color:var(--muted);font-size:13px;max-height:70px;overflow:hidden}
+.game-comments div{padding:4px 6px;border-radius:6px;background:rgba(255,255,255,0.02);margin-bottom:4px}
+.tracking-badge{display:inline-block;padding:8px 10px;border-radius:999px;color:#111;font-weight:700;text-align:center;background:linear-gradient(90deg,#fff8cc,#ffd98a);box-shadow:0 6px 18px rgba(255,213,102,0.12);border:1px solid rgba(255,255,255,0.6)}
+.tracking-badge.attack{background:linear-gradient(90deg,#ffd7d7,#ff9b9b);border-color:rgba(255,100,100,0.6)}
+.tracking-badge.defend{background:linear-gradient(90deg,#d7fff5,#9bffd1);border-color:rgba(3,218,197,0.6)}
+.tracking-badge.draw{background:linear-gradient(90deg,#e6e6ff,#bdb8ff);border-color:rgba(139,92,246,0.6)}
+.tracking-badge.info{background:linear-gradient(90deg,#ffffff,#f1f1f1);border-color:rgba(255,255,255,0.4)}
 
 /* Leaderboard (right column) */
 .leaderboard{

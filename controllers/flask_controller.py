@@ -19,7 +19,7 @@ class FlaskGameController:
         defend_results = self._run_ai_if_needed()
         # Return transient UI state (and consume it) so frontend receives
         # defence/defender_drawn info produced by the AI in the same request.
-        return jsonify({'defence_results' :defend_results,'results': result, 'ui_state': self.engine.consume_ui_state(), })
+        return jsonify({'defence_results': defend_results, 'results': result, 'ui_state': self.engine.consume_ui_state()})
 
     def defend(self, idx1, idx2):
         defender = self.engine.state.defender
