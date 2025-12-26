@@ -5,7 +5,7 @@ let focusedCardIndex = null;
 let selectedCardIndex = null;
 let currentState = null;
 let gameMode = null
-
+let myPlayer = null;
 
 let dragCard = null;
 let dragIndex = null;
@@ -29,10 +29,44 @@ async function createGame(mode = "human_vs_ai") {
     const data = await res.json();
     gameId = data.game_id;
     gameMode = data.mode;
+    myPlayer = data.my_player;
 
     console.log("[FRONTEND] Game created:", gameId);
+    console.log("My Player Name: ",myPlayer.name, " Hand: ",myPlayer.hand)
     await fetchState();
+    await fetchPlayerDetails();
 }
+
+/* -----------------------------
+    PLAYER DETAILS FETCH
+----------------------------- */
+async function fetchPlayerDetails() {
+    if (!gameId) return null;
+    try {
+        const res = await fetch(`/api/game/${gameId}/player_details`);
+        const data = await res.json();
+        console.log("[FRONTEND] Player details:", data);
+
+        if (!data || !Array.isArray(data.players) || data.players.length === 0) return null;
+
+        // Try to match by name if we already have myPlayer from createGame
+        let found = null;
+        if (myPlayer && myPlayer.name) {
+            found = data.players.find(p => p.name === myPlayer.name);
+        }
+
+        // Fallback: use first player
+        if (!found) found = data.players[0];
+
+        myPlayer = found;
+        return myPlayer;
+    } catch (e) {
+        console.error('Failed to fetch player details', e);
+        return null;
+    }
+}
+
+// await fetchPlayerDetails();
 
 /* -----------------------------
    STATE FETCH
@@ -45,7 +79,7 @@ async function fetchState() {
     const state = await res.json();
 
     currentState = state;
-    renderState(state);
+    await renderState(state);
     // refresh leaderboard after we update state
     fetchLeaderboard();
     updateAgent(state);
@@ -127,6 +161,10 @@ function updateAgent(state) {
 ----------------------------- */
 
 async function startTurn() {
+    // clear the visual attack pile when a new turn is started
+    const pile = document.getElementById("attack-pile");
+    if (pile) pile.innerHTML = '';
+
     await fetch(`/api/game/${gameId}/start`, { method: "POST" });
     fetchState();
 }
@@ -137,7 +175,7 @@ async function attack(index) {
     if (currentState.phase !== "ATTACK") return;
     if (currentState.attacker !== 0) return;
 
-    const cards = document.querySelectorAll(".card");
+    const cards = getHandCards();
     const cardEl = cards[index];
 
     if (cardEl) {
@@ -165,7 +203,7 @@ async function attack(index) {
 
 //Human input
 async function defend(indices) {
-    const cards = document.querySelectorAll(".card");
+    const cards = getHandCards();
     const cardEls = indices.map(i => cards[i]).filter(Boolean);
 
     const res = await fetch(`/api/game/${gameId}/defend`, {
@@ -211,6 +249,7 @@ async function rule8Crash(crash) {
 
 
 function animateOpponentDefense(values) {
+    // Create non-animated duplicates and push into the pile box.
     const pile = document.getElementById("attack-pile");
     if (!pile) return;
     const pileRect = pile.getBoundingClientRect();
@@ -218,7 +257,6 @@ function animateOpponentDefense(values) {
     // normalize values so we have objects with {rank, suit}
     const cards = values.map(v => {
         if (typeof v === 'string') {
-            // examples: '2diamonds icon', '9spades icon' --> remove ' icon' then split
             const s = v.replace(/\s*icon$/i, '').trim();
             const m = s.match(/^([0-9]{1,2}|[AJQK])([a-zA-Z]+)$/i);
             if (m) return { rank: m[1], suit: m[2] };
@@ -232,35 +270,29 @@ function animateOpponentDefense(values) {
         }
     });
 
-    cards.forEach((card, i) => {
-        const ghost = document.createElement("div");
-        ghost.className = "card";
+    // compute size so up to 3 cards fit inside pile horizontally
+    const maxCardsAcross = 3;
+    const cardMargin = 6; // px
+    const cardWidth = Math.max(40, Math.floor((pileRect.width - (cardMargin * (maxCardsAcross + 1))) / maxCardsAcross));
+    const cardHeight = Math.max(56, Math.floor(pileRect.height - 8));
 
-        ghost.innerHTML = `
+    // append each card as a simple static element inside pile
+    cards.forEach((card, i) => {
+        const el = document.createElement('div');
+        el.className = 'card pile-defense';
+        el.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
             <div class="suit">${card.suit}</div>
         `;
+        // sizing to fit pile
+        el.style.width = cardWidth + 20 + 'px';
+        el.style.height = cardHeight + 'px';
+        el.style.display = 'inline-block';
+        el.style.margin = cardMargin + 'px';
+        el.style.verticalAlign = 'top';
 
-        document.body.appendChild(ghost);
-
-        ghost.style.position = "fixed";
-        ghost.style.left = "50%";
-        ghost.style.top = "-200px"; // off-screen
-        ghost.style.transform = "translateX(-50%)";
-        ghost.style.zIndex = 1000;
-
-        const offsetX = i === 0 ? -12 : 12;
-        const rotate = i === 0 ? -6 : 6;
-
-        requestAnimationFrame(() => {
-            ghost.style.transition = "all 0.45s ease";
-            ghost.style.left = pileRect.left + offsetX + "px";
-            ghost.style.top = pileRect.top + "px";
-            ghost.style.transform = `rotate(${rotate}deg) scale(0.9)`;
-        });
-
-        setTimeout(() => ghost.remove(), 2500);
+        pile.appendChild(el);
     });
 
     setOpponentStatus("Opponent defended, with cards: " + cards.map(v => v.rank + v.suit).join(", "));
@@ -273,10 +305,27 @@ function setOpponentStatus(text) {
    RENDERING (TEMP / DEBUG)
 ----------------------------- */
 
-function renderState(state) {
+async function renderState(state) {
     // document.getElementById("state").innerText =
     //     JSON.stringify(state, null, 2);
-    const myHand = state.hands[state.attacker];
+    let myHand = null;
+
+    // Prefer authoritative player details from server
+    const playerDetails = await fetchPlayerDetails();
+    if (playerDetails && Array.isArray(playerDetails.hand)) {
+        myHand = playerDetails.hand;
+    } else {
+        // Try to find our index in state.players by name
+        if (myPlayer && myPlayer.name && Array.isArray(state.players)) {
+            const idx = state.players.findIndex(p => p.name === myPlayer.name);
+            if (idx >= 0 && state.hands && state.hands[idx]) {
+                myHand = state.hands[idx];
+            }
+        }
+        // Fallback to attacker index or first hand
+        if (!myHand) myHand = (state.hands && state.hands[state.attacker]) || (state.hands && state.hands[0]) || [];
+    }
+
     renderCards(myHand);
     updateAttackZone();
 }
@@ -321,10 +370,17 @@ function renderCards(cards) {
     });
 }
 
+// Return only the cards currently rendered in the player's hand container
+function getHandCards() {
+    const container = document.getElementById('player-cards');
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.card'));
+}
+
 // Interaction logic for card clicks 
 
 function onCardClick(index) {
-    const cards = document.querySelectorAll(".card");
+    const cards = getHandCards();
 
     // No card focused yet
     if (focusedCardIndex === null) {
@@ -369,7 +425,7 @@ function updateAttackZone() {
 }
 
 function highlightFocusedCard(index) {
-    const cards = document.querySelectorAll(".card");
+    const cards = getHandCards();
     cards.forEach(c => c.classList.remove("focused"));
     if (cards[index]) cards[index].classList.add("focused");
     updateAttackZone();
@@ -471,64 +527,54 @@ function cleanupDrag() {
 
 function animateCardToAttackPile(cardEl) {
     const pile = document.getElementById("attack-pile");
-
-    const cardRect = cardEl.getBoundingClientRect();
+    if (!pile) return;
     const pileRect = pile.getBoundingClientRect();
 
-    const clone = cardEl.cloneNode(true);
-    document.body.appendChild(clone);
+    // compute size so up to 3 cards fit inside pile horizontally
+    const maxCardsAcross = 3;
+    const cardMargin = 6; // px
+    const cardWidth = Math.max(40, Math.floor((pileRect.width - (cardMargin * (maxCardsAcross + 1))) / maxCardsAcross));
+    const cardHeight = Math.max(56, Math.floor(pileRect.height - 8));
 
-    clone.style.position = "fixed";
-    clone.style.left = cardRect.left + "px";
-    clone.style.top = cardRect.top + "px";
-    clone.style.width = cardRect.width + "px";
-    clone.style.height = cardRect.height + "px";
-    clone.style.margin = "0";
-    clone.style.zIndex = 1000;
+    // remove previous attacker visual(s)
+    const existing = pile.querySelectorAll('.pile-attack');
+    existing.forEach(el => el.remove());
 
-    requestAnimationFrame(() => {
-        clone.style.transition = "all 0.4s ease";
-        clone.style.left = pileRect.left + "px";
-        clone.style.top = pileRect.top + "px";
-        clone.style.transform = "scale(0.9)";
-    });
+    // create a new static duplicate for the pile
+    const el = document.createElement('div');
+    el.className = 'card pile-attack';
+    el.innerHTML = cardEl.innerHTML;
+    el.style.width = cardWidth + 'px';
+    el.style.height = cardHeight + 'px';
+    el.style.display = 'inline-block';
+    el.style.margin = cardMargin + 'px';
+    el.style.verticalAlign = 'top';
 
-    setTimeout(() => {
-        clone.remove();
-    }, 450);
+    pile.appendChild(el);
 }
 
 
 function animateDefenseToAttackPile(cardEls) {
     const pile = document.getElementById("attack-pile");
+    if (!pile) return;
     const pileRect = pile.getBoundingClientRect();
 
+    const maxCardsAcross = 3;
+    const cardMargin = 6;
+    const cardWidth = Math.max(40, Math.floor((pileRect.width - (cardMargin * (maxCardsAcross + 1))) / maxCardsAcross));
+    const cardHeight = Math.max(56, Math.floor(pileRect.height - 8));
+
     cardEls.forEach((cardEl, i) => {
-        const rect = cardEl.getBoundingClientRect();
-        const clone = cardEl.cloneNode(true);
+        const el = document.createElement('div');
+        el.className = 'card pile-defense';
+        el.innerHTML = cardEl.innerHTML;
+        el.style.width = cardWidth + 'px';
+        el.style.height = cardHeight + 'px';
+        el.style.display = 'inline-block';
+        el.style.margin = cardMargin + 'px';
+        el.style.verticalAlign = 'top';
 
-        document.body.appendChild(clone);
-
-        clone.style.position = "fixed";
-        clone.style.left = rect.left + "px";
-        clone.style.top = rect.top + "px";
-        clone.style.width = rect.width + "px";
-        clone.style.height = rect.height + "px";
-        clone.style.margin = "0";
-        clone.style.zIndex = 1000;
-        clone.classList.add("defense-card");
-
-        const offsetX = i === 0 ? -10 : 10;
-        const rotate = i === 0 ? -6 : 6;
-
-        requestAnimationFrame(() => {
-            clone.style.transition = "all 0.45s ease";
-            clone.style.left = pileRect.left + offsetX + "px";
-            clone.style.top = pileRect.top + "px";
-            clone.style.transform = `rotate(${rotate}deg) scale(0.9)`;
-        });
-
-        setTimeout(() => clone.remove(), 500);
+        pile.appendChild(el);
     });
 }
 

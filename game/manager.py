@@ -24,6 +24,7 @@ class GameManager:
         """
 
         game_id = str(uuid.uuid4())
+        players=None
 
         if mode == "human_vs_ai":
             players = [
@@ -46,12 +47,15 @@ class GameManager:
             "engine": engine,
             "mode": mode,
             "created_at": time.time(),
-            "status": "active"
+            "status": "active",
+            "players": players
         }
 
         print(f"[MANAGER] Created game {game_id} ({mode})")
+        game_details=self.games[game_id]
+        print(f"[MANAGER] Details {game_details}")
 
-        return game_id
+        return game_id, game_details
 
     # -----------------------------
     # GET GAME
