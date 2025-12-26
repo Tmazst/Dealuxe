@@ -226,6 +226,14 @@ html,body{
 .agent-panel .agent-text{color:var(--muted);font-size:14px}
 /* .agent-panel{display: none;} */
 
+/* Defense selection visuals */
+.card.defense-first{transform:translateY(-26px) scale(1.02);box-shadow:0 30px 80px rgba(3,218,197,0.12);border:2px solid rgba(3,218,197,0.12)}
+.card.defense-second{transform:translateY(-26px) scale(1.02);box-shadow:0 30px 80px rgba(139,92,246,0.12);border:2px solid rgba(139,92,246,0.12)}
+
+/* Defend confirm button appended to agent panel */
+#defend-confirm-btn{margin-left:auto;background:linear-gradient(90deg,#4ade80,#34d399);color:#042017;border:none;padding:8px 12px;border-radius:10px;cursor:pointer;box-shadow:0 8px 20px rgba(52,211,153,0.12)}
+#defend-confirm-btn:hover{transform:translateY(-2px)}
+
 
 /* Utility */
 .muted{color:var(--muted)}

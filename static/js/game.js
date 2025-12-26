@@ -14,6 +14,8 @@ let dragStartY = 0;
 let isDragging = false;
 let dragCardStartX = 0;
 let dragCardStartY = 0;
+// Defense selection state (when human defends)
+let defenseSelected = []; // holds up to two indices
 
 /* -----------------------------
    GAME CREATION
@@ -209,15 +211,18 @@ async function attack(index) {
 async function defend(indices) {
     const cards = getHandCards();
     const cardEls = indices.map(i => cards[i]).filter(Boolean);
-
+    console.log("Animating defense cards:", cardEls);
+    console.log("Defend indices:", indices);
+    const i1 = indices[0];
+    const i2 = indices[1];
     const res = await fetch(`/api/game/${gameId}/defend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ indices })
+        body: JSON.stringify({ i1, i2 })
     });
 
     const data = await res.json();
-
+    console.log("Defend response data:", data);
     // If backend returned used_cards (defense success), animate them
     if (data.used_cards) {
         animateOpponentDefense(data.used_cards);
@@ -435,6 +440,42 @@ function getHandCards() {
 function onCardClick(index) {
     const cards = getHandCards();
 
+    // Defense selection flow: when it's DEFENSE phase and human is defender
+    if (currentState && currentState.phase === 'DEFENSE' && currentState.defender === 0) {
+        // if clicked card is already selected, toggle it off
+        const selIndex = defenseSelected.indexOf(index);
+        if (selIndex >= 0) {
+            // remove selection
+            cards[index].classList.remove('defense-first', 'defense-second');
+            defenseSelected.splice(selIndex, 1);
+            hideDefendButtonIfNeeded();
+            return;
+        }
+
+        // add selection (max 2)
+        if (defenseSelected.length === 0) {
+            defenseSelected.push(index);
+            cards[index].classList.add('defense-first');
+            return;
+        }
+
+        if (defenseSelected.length === 1) {
+            // prevent selecting the same card twice
+            if (defenseSelected[0] === index) return;
+            defenseSelected.push(index);
+            cards[index].classList.add('defense-second');
+            // show confirm button
+            showDefendButton();
+            return;
+        }
+
+        // If already had two selected, reset and start new selection
+        clearDefenseSelections();
+        defenseSelected.push(index);
+        cards[index].classList.add('defense-first');
+        return;
+    }
+
     // No card focused yet
     if (focusedCardIndex === null) {
         cards[index].classList.add("focused");
@@ -565,6 +606,47 @@ function onPointerUp(e) {
     }
 
     cleanupDrag();
+}
+
+function showDefendButton() {
+    // create or reuse a confirm button that submits the selected defense indices
+    let btn = document.getElementById('defend-confirm-btn');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'defend-confirm-btn';
+        btn.className = 'btn defend-btn';
+        btn.textContent = 'Push to Defend';
+        // place near agent panel
+        const panel = document.getElementById('agent-panel') || document.body;
+        panel.appendChild(btn);
+        btn.addEventListener('click', async () => {
+            // send selected indices to backend
+            if (defenseSelected.length !== 2) return;
+            // call existing defend() helper
+            await defend(defenseSelected.slice());
+            // cleanup UI selections
+            clearDefenseSelections();
+            hideDefendButton();
+        });
+    }
+    btn.style.display = 'inline-block';
+}
+
+function hideDefendButton() {
+    const btn = document.getElementById('defend-confirm-btn');
+    if (btn) btn.style.display = 'none';
+}
+
+function hideDefendButtonIfNeeded() {
+    if (defenseSelected.length < 2) hideDefendButton();
+}
+
+function clearDefenseSelections() {
+    const cards = getHandCards();
+    defenseSelected.forEach(i => {
+        if (cards[i]) cards[i].classList.remove('defense-first', 'defense-second');
+    });
+    defenseSelected = [];
 }
 
 function resetDraggedCard() {

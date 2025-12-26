@@ -103,7 +103,7 @@ def attack(game_id):
 def defend(game_id):
     engine = manager.get_game(game_id)
     controller = FlaskGameController(engine)
-
+    
     i1 = int(request.json["i1"])
     i2 = int(request.json["i2"])
 
