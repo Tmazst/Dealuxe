@@ -378,6 +378,9 @@ function renderComments(lines) {
     const sanitized = String(raw).replace(/draws\s+[^\s]+/i, 'draws a card');
     // display single message
     container.textContent = sanitized;
+    // briefly highlight the comments box to draw attention
+    container.classList.add('flash');
+    setTimeout(() => container.classList.remove('flash'), 900);
 }
 
 function setTrackingBadge(text, type="info") {
