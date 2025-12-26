@@ -307,10 +307,58 @@ async function drawCard() {
     const res = await fetch(`/api/game/${gameId}/draw`, { method: "POST" });
     const data = await res.json();
     if (data && data.ui_log) renderComments(data.ui_log);
+    // show a small draw animation (ghost flying from draw button to our hand)
+    try { await animateDrawGhost(); } catch (e) { /* ignore */ }
     // Give backend AI a short moment to act, then refresh state so opponent attack appears
     setTimeout(() => {
         fetchState();
     }, 900);
+}
+
+// Animate a ghost card flying from the draw button into the player's hand area
+function animateDrawGhost() {
+    return new Promise((resolve) => {
+        const btn = document.getElementById('draw-button');
+        const hand = document.getElementById('player-cards');
+        if (!btn || !hand) return resolve();
+
+        const startRect = btn.getBoundingClientRect();
+        const targetRect = hand.getBoundingClientRect();
+
+        // create a neutral ghost card (back side or placeholder)
+        const ghost = document.createElement('div');
+        ghost.className = 'card ghost entering';
+        ghost.innerHTML = `\n            <div class="rank">?</div>\n            <div class="center">♦</div>\n            <div class="suit">?</div>\n        `;
+        document.body.appendChild(ghost);
+
+        const startX = startRect.left + (startRect.width / 2) - 60;
+        const startY = startRect.top + (startRect.height / 2) - 85;
+        ghost.style.left = startX + 'px';
+        ghost.style.top = startY + 'px';
+
+        requestAnimationFrame(() => {
+            ghost.classList.add('visible');
+            ghost.classList.remove('entering');
+        });
+
+        const targetX = targetRect.left + (targetRect.width / 2) - 60;
+        const targetY = targetRect.top + (targetRect.height / 2) - 85;
+
+        requestAnimationFrame(() => {
+            const dx = targetX - startX;
+            const dy = targetY - startY;
+            ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.98)`;
+        });
+
+        const cleanup = () => {
+            ghost.removeEventListener('transitionend', cleanup);
+            ghost.classList.add('fade-out');
+            setTimeout(() => { try { ghost.remove(); } catch (e) {} resolve(); }, 240);
+        };
+
+        ghost.addEventListener('transitionend', cleanup);
+        setTimeout(() => { if (document.body.contains(ghost)) { cleanup(); } }, 1000);
+    });
 }
 
 async function rule8Drop(value) {
@@ -484,6 +532,54 @@ function appendOpponentAttack(value) {
     lastDisplayedAttack = value;
 }
 
+// Animate a transient ghost card flying from top (opponent) into the attack pile.
+function animateOpponentGhost(value) {
+    return new Promise((resolve) => {
+        const pile = document.getElementById('attack-pile');
+        if (!pile) return resolve();
+        const pileRect = pile.getBoundingClientRect();
+
+        const startX = window.innerWidth / 2; // from top center (opponent)
+        const startY = Math.max(24, pileRect.top - 160);
+
+        const card = parseCardString(value);
+        const ghost = document.createElement('div');
+        ghost.className = 'card ghost entering';
+        ghost.innerHTML = `\n            <div class="rank">${card.rank}</div>\n            <div class="center">${card.suit}</div>\n            <div class="suit">${card.suit}</div>\n        `;
+        document.body.appendChild(ghost);
+
+        // place at start
+        ghost.style.left = startX - 60 + 'px';
+        ghost.style.top = startY + 'px';
+
+        requestAnimationFrame(() => {
+            ghost.classList.add('visible');
+            ghost.classList.remove('entering');
+        });
+
+        // compute target center inside pile
+        const targetX = pileRect.left + (pileRect.width / 2) - 60;
+        const targetY = pileRect.top + (pileRect.height / 2) - 85;
+
+        // animate via transform
+        requestAnimationFrame(() => {
+            const dx = targetX - (startX - 60);
+            const dy = targetY - startY;
+            ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.92)`;
+        });
+
+        // after transition, do a quick fade and remove
+        const cleanup = () => {
+            ghost.removeEventListener('transitionend', cleanup);
+            ghost.classList.add('fade-out');
+            setTimeout(() => { try { ghost.remove(); } catch (e) {} resolve(); }, 240);
+        };
+        ghost.addEventListener('transitionend', cleanup);
+        // safety resolve in case transitionend doesn't fire
+        setTimeout(() => { if (document.body.contains(ghost)) { cleanup(); } }, 900);
+    });
+}
+
 function showAttackConfirmModal() {
     // don't recreate if already present
     if (document.getElementById('attack-confirm-modal')) return;
@@ -500,10 +596,14 @@ function showAttackConfirmModal() {
     // position modal over pile
     if (pile && pile.parentElement) pile.parentElement.appendChild(modal);
 
-    document.getElementById('attack-confirm-proceed').addEventListener('click', () => {
+    document.getElementById('attack-confirm-proceed').addEventListener('click', async () => {
         hideAttackConfirmModal();
-        if (pendingOpponentAttack) appendOpponentAttack(pendingOpponentAttack);
-        pendingOpponentAttack = null;
+        if (pendingOpponentAttack) {
+            // play a ghost animation then append the static pile visual
+            await animateOpponentGhost(pendingOpponentAttack);
+            appendOpponentAttack(pendingOpponentAttack);
+            pendingOpponentAttack = null;
+        }
     });
     // document.getElementById('attack-confirm-cancel').addEventListener('click', () => {
     //     hideAttackConfirmModal();
