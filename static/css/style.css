@@ -309,3 +309,32 @@ html,body{
     .leaderboard{order:2}
 }
 
+/* Floating Draw Button */
+.draw-button{
+    position:fixed;
+    right:20px;
+    bottom:20px;
+    width:64px;
+    height:64px;
+    border-radius:999px;
+    z-index:3000;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:linear-gradient(180deg,#ffd54d,#ffb84d);
+    color:#111;
+    box-shadow:0 18px 50px rgba(255,184,77,0.18), 0 6px 18px rgba(0,0,0,0.35);
+    border:1px solid rgba(255,255,255,0.12);
+    cursor:pointer;
+    font-weight:800;
+}
+.draw-button .icon{font-size:20px}
+.draw-button.flash{animation:draw-flash 1200ms ease-in-out infinite}
+.draw-button.disabled{opacity:0.5;pointer-events:none;transform:scale(0.98)}
+
+@keyframes draw-flash{
+    0%{transform:translateY(0) scale(1); box-shadow:0 10px 30px rgba(255,184,77,0.14)}
+    50%{transform:translateY(-6px) scale(1.04); box-shadow:0 26px 60px rgba(255,184,77,0.22)}
+ 100%{transform:translateY(0) scale(1); box-shadow:0 10px 30px rgba(255,184,77,0.14)}
+}
+

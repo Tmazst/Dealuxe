@@ -432,6 +432,8 @@ async function renderState(state) {
                 showAttackConfirmModal();
             }
         }
+        // Update draw button visibility/state
+        updateDrawButton(state);
     }
 }
 
@@ -537,8 +539,47 @@ function setTrackingBadge(text, type="info") {
 ----------------------------- */
 
 window.onload = () => {
+    createDrawButton();
     createGame(); // auto-start one game
 };
+
+// --- Draw button UI ---
+function createDrawButton() {
+    if (document.getElementById('draw-button')) return;
+    const btn = document.createElement('button');
+    btn.id = 'draw-button';
+    btn.className = 'draw-button flash';
+    btn.setAttribute('aria-label', 'Draw a card');
+    btn.innerHTML = '<span class="icon"><i class="fa-solid fa-plus"></i></span>';
+    document.body.appendChild(btn);
+
+    btn.addEventListener('click', async () => {
+        // disable to prevent double clicks
+        btn.classList.add('disabled');
+        try {
+            await drawCard();
+        } catch (e) {
+            console.error('Draw failed', e);
+        } finally {
+            // re-enable after short delay
+            setTimeout(() => btn.classList.remove('disabled'), 600);
+        }
+    });
+}
+
+function updateDrawButton(state) {
+    const btn = document.getElementById('draw-button');
+    if (!btn) return;
+    // Show only when it's DEFENSE phase and local player is defender (defender === 0)
+    const visible = state && state.phase === 'DEFENSE' && state.defender === 0;
+    btn.style.display = visible ? 'flex' : 'none';
+    if (visible) {
+        // flash when available
+        btn.classList.add('flash');
+    } else {
+        btn.classList.remove('flash');
+    }
+}
 
 /* CARDS RENDERING AND AUTOMATION */
 function renderCards(cards) {
