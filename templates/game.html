@@ -28,8 +28,20 @@
 </header>
 
 <div class="app-grid">
+
     <main class="panel">
-        <div id="state"></div>
+        <div id="leader-progess-bars-cont">
+            <div class="user-progress-bar-cont">
+                <div class="user-icon"></div>
+                <div id="user-progress-fill" class="user-progress-fill" style="width: 0%;"></div>
+                <div id="user-progress-text" class="user-progress-text">0%</div>
+            </div>
+            <div class="opponent-progress-bar-cont gen-flex">
+                <div class="user-icon"><i class="fa-solid fa-crosshairs"></i></div>
+                <div id="user-progress-fill" class="user-progress-fill" style="width: 0%;"></div>
+                <div id="user-progress-text" class="user-progress-text">0%</div>
+            </div>
+        </div>
 
         <div id="attack-zone" class="attack-zone">
             DROP CARD HERE TO ATTACK

@@ -16,6 +16,10 @@ let dragCardStartX = 0;
 let dragCardStartY = 0;
 // Defense selection state (when human defends)
 let defenseSelected = []; // holds up to two indices
+let pendingOpponentAttack = null;
+let lastDisplayedAttack = null;
+// track each player's max observed hand size to compute progress
+let playerMaxSeen = {};
 
 /* -----------------------------
    GAME CREATION
@@ -123,6 +127,60 @@ function renderLeaderboard(data) {
         row.appendChild(right);
         container.appendChild(row);
     });
+    // update visual progress bars based on player counts
+    updateProgressBars(data);
+}
+
+function updateProgressBars(data) {
+    if (!data || !Array.isArray(data.players)) return;
+    const container = document.getElementById('leader-progess-bars-cont');
+    if (!container) return;
+
+    // map players by index for stable ordering
+    const players = data.players;
+    // update max-seen counts
+    players.forEach(p => {
+        const key = String(p.id);
+        const val = p.hand_count || 0;
+        if (!playerMaxSeen[key] || playerMaxSeen[key] < val) playerMaxSeen[key] = val;
+    });
+
+    // pick two display containers inside leader-progess-bars-cont
+    const userCont = container.querySelector('.user-progress-bar-cont');
+    const oppCont = container.querySelector('.opponent-progress-bar-cont');
+
+    // Use first two players if present
+    const leftPlayer = players[0] || null;
+    const rightPlayer = players[1] || players[0] || null;
+
+    function updateCont(cont, player) {
+        if (!cont || !player) return;
+        const key = String(player.id);
+        const maxSeen = playerMaxSeen[key] || Math.max(1, player.hand_count || 1);
+        const current = player.hand_count || 0;
+        const percent = Math.round(((maxSeen - current) / Math.max(1, maxSeen)) * 100);
+
+        const fill = cont.querySelector('.user-progress-fill') || cont.querySelector('.user-progress-fill');
+        const text = cont.querySelector('.user-progress-text');
+        if (fill) {
+            fill.style.width = percent + '%';
+        }
+        if (text) text.textContent = percent + '%';
+        // winner = player with fewer cards
+        const other = (player === leftPlayer) ? rightPlayer : leftPlayer;
+        if (other) {
+            if (player.hand_count < other.hand_count) {
+                fill && fill.classList.add('winner');
+                fill && fill.classList.remove('loser');
+            } else {
+                fill && fill.classList.remove('winner');
+                fill && fill.classList.add('loser');
+            }
+        }
+    }
+
+    updateCont(userCont, leftPlayer);
+    updateCont(oppCont, rightPlayer);
 }
 
 function updateAgent(state) {
@@ -363,7 +421,86 @@ async function renderState(state) {
         } else {
             setTrackingBadge('Waiting', 'info');
         }
+        // If opponent has played an attack card and we're the defender, require user confirmation
+        if (state.attack_card && state.attacker !== 0 && state.defender === 0) {
+            if (state.attack_card !== lastDisplayedAttack) {
+                pendingOpponentAttack = state.attack_card;
+                showAttackConfirmModal();
+            }
+        }
     }
+}
+
+function parseCardString(s) {
+    if (!s) return { rank: s, suit: '' };
+    const str = String(s).replace(/\s*icon$/i, '').trim();
+    const m = str.match(/^([0-9]{1,2}|[AJQK])([a-zA-Z]+)$/i);
+    if (m) return { rank: m[1], suit: m[2] };
+    const alt = str.match(/^(.+?)([a-zA-Z]+)$/);
+    if (alt) return { rank: alt[1], suit: alt[2] };
+    return { rank: str, suit: '' };
+}
+
+function appendOpponentAttack(value) {
+    const pile = document.getElementById('attack-pile');
+    if (!pile) return;
+    const pileRect = pile.getBoundingClientRect();
+    const card = parseCardString(value);
+    const maxCardsAcross = 3;
+    const cardMargin = 6;
+    const cardWidth = Math.max(40, Math.floor((pileRect.width - (cardMargin * (maxCardsAcross + 1))) / maxCardsAcross));
+    const cardHeight = Math.max(56, Math.floor(pileRect.height - 8));
+
+    // remove previous visuals
+    const prevAttack = pile.querySelectorAll('.pile-attack');
+    prevAttack.forEach(el => el.remove());
+    const prevDefense = pile.querySelectorAll('.pile-defense');
+    prevDefense.forEach(el => el.remove());
+
+    const el = document.createElement('div');
+    el.className = 'card pile-attack entering';
+    el.innerHTML = `\n            <div class="rank">${card.rank}</div>\n            <div class="center">${card.suit}</div>\n            <div class="suit">${card.suit}</div>\n        `;
+    el.style.width = cardWidth + 'px';
+    el.style.height = cardHeight + 'px';
+    el.style.display = 'inline-block';
+    el.style.margin = cardMargin + 'px';
+    el.style.verticalAlign = 'top';
+    pile.appendChild(el);
+    requestAnimationFrame(() => el.classList.remove('entering'));
+    lastDisplayedAttack = value;
+}
+
+function showAttackConfirmModal() {
+    // don't recreate if already present
+    if (document.getElementById('attack-confirm-modal')) return;
+    const pile = document.getElementById('attack-pile');
+    const modal = document.createElement('div');
+    modal.id = 'attack-confirm-modal';
+    modal.className = 'attack-confirm-modal';
+    modal.innerHTML = `
+        
+        <div class="attack-confirm-actions">
+            <button id="attack-confirm-proceed" class="btn"><i class="fa-solid fa-check"></i> Check</button>
+        </div>
+    `;
+    // position modal over pile
+    if (pile && pile.parentElement) pile.parentElement.appendChild(modal);
+
+    document.getElementById('attack-confirm-proceed').addEventListener('click', () => {
+        hideAttackConfirmModal();
+        if (pendingOpponentAttack) appendOpponentAttack(pendingOpponentAttack);
+        pendingOpponentAttack = null;
+    });
+    // document.getElementById('attack-confirm-cancel').addEventListener('click', () => {
+    //     hideAttackConfirmModal();
+    //     // Keep pending until user confirms; optionally clear
+    //     pendingOpponentAttack = null;
+    // });
+}
+
+function hideAttackConfirmModal() {
+    const m = document.getElementById('attack-confirm-modal');
+    if (m) m.remove();
 }
 
 function renderComments(lines) {

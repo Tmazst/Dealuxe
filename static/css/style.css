@@ -44,15 +44,17 @@ html,body{
 
 .controls{display:flex;gap:10px}
 .btn{
-    background: linear-gradient(90deg,var(--accent-1),var(--accent-2));
-    color:#fff;
+    background:#0ec387 ;
+    color:#202020;
     padding:10px 14px;
-    border-radius:10px;
+    border-radius:15px;
+    font-family: Oswald, sans-serif;
+    font-weight: 600;
     border:none;
     cursor:pointer;
     box-shadow:0 6px 18px rgba(139,92,246,0.15);
 }
-
+.btn:hover{transform:translateY(-2px)}
 /* Main layout: left game area, right leaderboard */
 .app-grid{
     display:grid;
@@ -182,7 +184,7 @@ html,body{
 /* Attack zone (top center) */
 .attack-zone{
     position:absolute;
-    top:22%;
+    top:24%;
     left:50%;
     transform:translateX(-50%);
     width:220px;
@@ -209,6 +211,43 @@ html,body{
     20% { transform: translateY(-6px) scale(1.02); background-color: rgba(255,255,255,0.05); box-shadow: 0 12px 30px rgba(139,92,246,0.3); }
     80% { transform: translateY(-2px) scale(1.01); background-color: rgba(255,255,255,0.03); box-shadow: 0 6px 18px rgba(139,92,246,0.1); }
  100% { transform: translateY(0) scale(1); background-color: rgba(0,0,0,0.25); box-shadow: 0 0 0 rgba(0,0,0,0); }
+}
+
+/* Attack confirm modal */
+.attack-confirm-modal{
+    position:absolute;
+    left:50%;
+    top:60%;
+    transform:translateX(-50%);
+    width:280px;
+    height: 100px;
+    /* max-width:90%; */
+    padding:14px;
+    border-radius:12px;
+    background:rgba(255,255,255,0.7);
+    border:1px solid rgba(255,255,255,0.8);
+    box-shadow:0 18px 60px rgba(4,4,8,0.6);
+    z-index:1200;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    align-items:center;
+    border-radius: 15px;
+}
+.attack-confirm-card{color:var(--muted);font-size:14px}
+.attack-confirm-actions{display:flex;gap:8px}
+.attack-confirm-actions .btn{padding:8px 12px;transform: scale(0.2);}
+
+/* Flash/pulse for the proceed button in attack confirm modal */
+.attack-confirm-modal #attack-confirm-proceed{
+    animation: attack-proceed-flash 1200ms ease-in-out infinite;
+    box-shadow: 0 10px 30px rgba(139,92,246,0.14);
+}
+
+@keyframes attack-proceed-flash{
+    0% { transform: translateY(0); box-shadow: 0 6px 18px rgba(139,92,246,0.06); }
+    50% { transform: translateY(-6px); box-shadow: 0 18px 44px rgba(139,92,246,0.18); }
+ 100% { transform: translateY(0); box-shadow: 0 6px 18px rgba(139,92,246,0.06); }
 }
 .tracking-badge{display:inline-block;padding:8px 10px;border-radius:999px;color:#111;font-weight:700;text-align:center;background:linear-gradient(90deg,#fff8cc,#ffd98a);box-shadow:0 6px 18px rgba(255,213,102,0.12);border:1px solid rgba(255,255,255,0.6)}
 .tracking-badge.attack{background:linear-gradient(90deg,#ffd7d7,#ff9b9b);border-color:rgba(255,100,100,0.6)}
@@ -245,6 +284,20 @@ html,body{
 
 /* Utility */
 .muted{color:var(--muted)}
+
+/* Progress / winning trackers */
+#leader-progess-bars-cont{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.user-progress-bar-cont,.opponent-progress-bar-cont{display:flex;align-items:center;gap:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:8px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);width:320px;overflow:hidden}
+.user-progress-bar-cont .user-icon,.opponent-progress-bar-cont .user-icon{width:44px;height:44px;border-radius:10px;background:linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.user-progress-fill{flex:1;height:18px;border-radius:999px;background:linear-gradient(90deg,#ffd7d7,#ff9b9b);transition:width 600ms cubic-bezier(.2,.9,.2,1), box-shadow 350ms ease;display:block;position:relative;overflow:hidden}
+.user-progress-text{width:48px;text-align:right;font-weight:700;color:var(--muted);margin-left:6px}
+
+/* Winner style (green + shiny) */
+.user-progress-fill.winner{background:linear-gradient(90deg,#7bed9f,#34d399);box-shadow:0 10px 30px rgba(52,211,153,0.12)}
+.user-progress-fill.loser{background:linear-gradient(90deg,#d6c6ff,#b794f4);}
+
+/* small shimmer overlay */
+.user-progress-fill::after{content:'';position:absolute;right:-40%;top:0;bottom:0;width:40%;background:linear-gradient(90deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02));transform:skewX(-18deg);opacity:0.6;pointer-events:none}
 
 @media(max-width:900px){
     .app-grid{grid-template-columns:1fr;}
