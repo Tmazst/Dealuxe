@@ -172,9 +172,13 @@ function updateProgressBars(data) {
             if (player.hand_count < other.hand_count) {
                 fill && fill.classList.add('winner');
                 fill && fill.classList.remove('loser');
+                cont.classList.add('winner');
+                cont.classList.remove('loser');
             } else {
                 fill && fill.classList.remove('winner');
                 fill && fill.classList.add('loser');
+                cont.classList.remove('winner');
+                cont.classList.add('loser');
             }
         }
     }

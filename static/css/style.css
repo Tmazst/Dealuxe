@@ -294,7 +294,12 @@ html,body{
 
 /* Winner style (green + shiny) */
 .user-progress-fill.winner{background:linear-gradient(90deg,#7bed9f,#34d399);box-shadow:0 10px 30px rgba(52,211,153,0.12)}
-.user-progress-fill.loser{background:linear-gradient(90deg,#d6c6ff,#b794f4);}
+.user-progress-fill.loser{background:linear-gradient(90deg,#ffb3b3,#ff6b6b);box-shadow:0 10px 30px rgba(255,99,71,0.12);}
+
+/* container-level loser/winner accent */
+.user-progress-bar-cont.winner .user-icon, .opponent-progress-bar-cont.winner .user-icon{box-shadow:0 8px 24px rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.12)}
+.user-progress-bar-cont.loser .user-icon, .opponent-progress-bar-cont.loser .user-icon{box-shadow:0 8px 24px rgba(255,99,71,0.08);border:1px solid rgba(255,99,71,0.12)}
+.user-progress-bar-cont.loser{outline:2px solid rgba(255,99,71,0.06)}
 
 /* small shimmer overlay */
 .user-progress-fill::after{content:'';position:absolute;right:-40%;top:0;bottom:0;width:40%;background:linear-gradient(90deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02));transform:skewX(-18deg);opacity:0.6;pointer-events:none}
