@@ -524,15 +524,21 @@ async function renderState(state) {
 
         if (phase === 'ATTACK' && isLocalAttacker) {
             setTrackingBadge('Attack', 'attack');
+            updateHandHighlight('attack');
         } else if (phase === 'DEFENSE' && isLocalDefender) {
             setTrackingBadge('Defend or Draw', 'defend');
+            // If the user can defend or draw, show draw steady glow to suggest drawing is available
+            updateHandHighlight('draw');
         } else if (phase === 'RULE_8') {
             setTrackingBadge('Rule 8', 'info');
+             updateHandHighlight('none');
         } else if (phase === 'GAME_OVER') {
             setTrackingBadge('Game Over', 'info');
+             updateHandHighlight('none');
         } else {
             // opponent's turn or waiting: hide badge or show neutral
             setTrackingBadge('Waiting...', 'info');
+            updateHandHighlight('none');
         }
         // If opponent has played an attack card and we're the defender, require user confirmation
         if (state.attack_card && state.attacker !== 0 && state.defender === 0) {
@@ -544,6 +550,15 @@ async function renderState(state) {
         // Update draw button visibility/state
         updateDrawButton(state);
     }
+}
+
+// Toggle hand glow based on current user action
+function updateHandHighlight(mode){
+    const hand = document.getElementById('player-cards');
+    if (!hand) return;
+    hand.classList.remove('hand-attack','hand-draw');
+    if (mode === 'attack') hand.classList.add('hand-attack');
+    else if (mode === 'draw') hand.classList.add('hand-draw');
 }
 
 function parseCardString(s) {
