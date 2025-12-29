@@ -214,6 +214,8 @@ async function updateAgent(state) {
     const attacker = state.attacker;
     const defender = state.defender;
     const attackCard = state.attack_card;
+    
+    console.log("[FRONTEND] updateAgent called with phase:", phase);
 
     if (phase === 'ATTACK') {
         if (attacker === 0) {
@@ -597,10 +599,21 @@ async function renderState(state) {
 }
 
 function showGameModal(){
-    if (!currentState) return;
+    console.log("[FRONTEND] showGameModal() called");
+    if (!currentState) {
+        console.log("[FRONTEND] No currentState, aborting modal");
+        return;
+    }
     
     var gameOverCont = document.querySelector('.game-over-modal-cont');
     var gameOverModal = document.querySelector(".game-over-modal");
+    
+    if (!gameOverCont || !gameOverModal) {
+        console.error("[FRONTEND] Modal elements not found!");
+        return;
+    }
+    
+    console.log("[FRONTEND] Modal elements found, populating data...");
     
     // Populate winner information
     const winnerId = currentState.winner;
@@ -653,8 +666,10 @@ function showGameModal(){
         opponentCards.textContent = currentState.hands[1].length;
     }
     
+    console.log("[FRONTEND] Showing modal by adding 'show-game-over' class...");
     gameOverCont.classList.add("show-game-over");
     gameOverModal.classList.add("show-game-over");
+    console.log("[FRONTEND] Modal should now be visible");
 }
 
 // Toggle hand glow based on current user action
