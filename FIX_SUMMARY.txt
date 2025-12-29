@@ -9,7 +9,7 @@ FILES THAT NEED TO BE UPLOADED TO VPS:
 2. controllers/flask_controller.py - Request validation
 3. controllers/ai_controller.py - Fixed card printing
 4. static/js/game.js - Request locking
-5. app.py - Already fixed player_details print
+5. app.py - Removed update_game calls (not needed with 1 worker)
 
 PROBLEM IDENTIFIED:
 -------------------

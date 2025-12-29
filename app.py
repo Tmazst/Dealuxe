@@ -86,9 +86,6 @@ def start_turn(game_id):
 
     controller.start_turn()
     
-    # Save updated state back to storage
-    manager.update_game(game_id, engine)
-    
     return jsonify(engine.get_state())
 
 
@@ -104,9 +101,6 @@ def attack(game_id):
     index = int(request.json["index"])
     result = controller.attack(index)
     
-    # Save updated state back to storage
-    manager.update_game(game_id, engine)
-
     return result
 
 
@@ -120,9 +114,6 @@ def defend(game_id):
 
     result = controller.defend(i1, i2)
     
-    # Save updated state back to storage
-    manager.update_game(game_id, engine)
-    
     return result
 
 
@@ -132,9 +123,6 @@ def draw(game_id):
     controller = FlaskGameController(engine)
 
     result = controller.draw()
-    
-    # Save updated state back to storage
-    manager.update_game(game_id, engine)
     
     return result
 
@@ -147,9 +135,6 @@ def rule8_drop(game_id):
     value = int(request.json["value"])
     result = controller.rule_8_drop(value)
     
-    # Save updated state back to storage
-    manager.update_game(game_id, engine)
-    
     return result
 
 
@@ -160,9 +145,6 @@ def rule8_crash(game_id):
 
     crash = bool(request.json["crash"])
     result = controller.rule_8_crash(crash)
-    
-    # Save updated state back to storage
-    manager.update_game(game_id, engine)
     
     return result
 
