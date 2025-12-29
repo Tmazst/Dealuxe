@@ -50,9 +50,17 @@ class FlaskGameController:
         
         result = self.engine.defender_draw(defender)
         
+        # Handle None result (shouldn't happen anymore, but safety check)
+        if result is None:
+            print("[FLASK_CTRL] ERROR: defender_draw returned None!")
+            result = {"error": "Draw failed - no result returned"}
+        
         # Only run AI if draw was successful
         if not result.get('error'):
+            print("[FLASK_CTRL] Running AI after defender draw")
             self._run_ai_if_needed()
+        else:
+            print(f"[FLASK_CTRL] Draw had error: {result.get('error')}")
         
         return jsonify({**result, **self.engine.consume_ui_state()})
 

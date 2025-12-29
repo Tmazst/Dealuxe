@@ -591,8 +591,53 @@ async function renderState(state) {
 }
 
 function showGameModal(){
+    if (!currentState) return;
+    
     var gameOverCont = document.querySelector('.game-over-modal-cont');
     var gameOverModal = document.querySelector(".game-over-modal");
+    
+    // Populate winner information
+    const winnerId = currentState.winner;
+    const isPlayerWinner = winnerId === 0;
+    const winnerBadge = document.getElementById('winner-badge');
+    const winType = document.getElementById('win-type');
+    
+    if (winnerBadge) {
+        winnerBadge.textContent = isPlayerWinner ? 'You Win!' : 'Opponent Wins!';
+        winnerBadge.className = isPlayerWinner ? 'winner-badge player-win' : 'winner-badge opponent-win';
+    }
+    
+    // Extract win type from UI log (last message usually contains win type)
+    if (winType && currentState.ui_log && currentState.ui_log.length > 0) {
+        const lastLog = currentState.ui_log[currentState.ui_log.length - 1];
+        if (lastLog.includes('DEALUXE WIN')) {
+            winType.textContent = 'DEALUXE WIN';
+            winType.className = 'win-type dealuxe-win';
+        } else if (lastLog.includes('ESCAPE WIN')) {
+            winType.textContent = 'ESCAPE WIN';
+            winType.className = 'win-type escape-win';
+        } else if (lastLog.includes('CRAZY ESCAPE WIN') || lastLog.includes('ZERO COUNT')) {
+            winType.textContent = 'CRAZY ESCAPE WIN';
+            winType.className = 'win-type crazy-win';
+        } else if (lastLog.includes('TRAIL WIN')) {
+            winType.textContent = 'TRAIL WIN';
+            winType.className = 'win-type trail-win';
+        } else {
+            winType.textContent = 'Victory';
+            winType.className = 'win-type';
+        }
+    }
+    
+    // Show final card counts
+    const playerCards = document.getElementById('player-final-cards');
+    const opponentCards = document.getElementById('opponent-final-cards');
+    if (playerCards && currentState.hands && currentState.hands[0]) {
+        playerCards.textContent = currentState.hands[0].length;
+    }
+    if (opponentCards && currentState.hands && currentState.hands[1]) {
+        opponentCards.textContent = currentState.hands[1].length;
+    }
+    
     gameOverCont.classList.add("show-game-over");
     gameOverModal.classList.add("show-game-over");
 }

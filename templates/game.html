@@ -95,8 +95,28 @@
 </div>
 
 <div class="game-over-modal-cont gen-flex-col">
-    <div class="game-over-modal ambience gen-flex-col ">
-        <h1 class="btn">GAME OVER!!</h1>
+    <div class="game-over-modal ambience gen-flex-col">
+        <div class="game-over-header">
+            <i class="fa-solid fa-trophy game-over-icon"></i>
+            <h1 class="game-over-title">GAME OVER!</h1>
+        </div>
+        <div class="game-over-content">
+            <div class="winner-info">
+                <div class="winner-badge" id="winner-badge">Winner: Player 1</div>
+                <div class="win-type" id="win-type">DEALUXE WIN</div>
+            </div>
+            <div class="game-stats">
+                <div class="stat-row">
+                    <span class="stat-label">Your Final Cards:</span>
+                    <span class="stat-value" id="player-final-cards">3</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Opponent Final Cards:</span>
+                    <span class="stat-value" id="opponent-final-cards">5</span>
+                </div>
+            </div>
+            <button class="btn-glass new-game-btn" onclick="location.reload()">New Game</button>
+        </div>
     </div>
 </div>
 

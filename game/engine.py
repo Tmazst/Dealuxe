@@ -114,6 +114,8 @@ class CardGameEngine:
     # ---------------------
 
     def attack(self, player_id, card_index):
+        safe_print(f"[ENGINE] attack called - player_id: {player_id}, card_index: {card_index}, phase: {self.state.phase}")
+        
         if self.state.game_over:
             safe_print("[ENGINE] GAME WAS OVER - attack")
             return {"error": "Game is already over"}
@@ -125,19 +127,24 @@ class CardGameEngine:
             return {"error": error_msg, "current_phase": self.state.phase}
 
         attacker = self.players[player_id]
+        safe_print(f"[ENGINE] Attacker has {len(attacker.hand)} cards: {[c.value for c in attacker.hand]}")
+        
         # Validate index to avoid IndexError when callers pass stale indices
         if card_index < 0 or card_index >= len(attacker.hand):
+            safe_print(f"[ENGINE] Invalid card index: {card_index}")
             return {"error": "Invalid index"}
 
         card = attacker.hand[card_index]
 
         if not (4 <= card.value <= 13):
+            safe_print(f"[ENGINE] Invalid attack card value: {card.value}")
             return {"error": "Invalid attack card"}
 
         attacker.hand.remove(card)
         self.state.attack_card = card
         self.state.phase = "DEFENSE"
         safe_print(f"[ENGINE] Phase transition: ATTACK -> DEFENSE")
+        safe_print(f"[ENGINE] Attacker now has {len(attacker.hand)} cards left")
 
         self._log(f"[ENGINE] Player {player_id} attacks with card value {card.value}")
 
@@ -173,15 +180,15 @@ class CardGameEngine:
 
         self._log(f"[ENGINE] Defense successful: {c1.value} + {c2.value} = {self.state.attack_card.value}")
 
-        if DEFENCE_SUCCESSFUL:
-            for i, p in enumerate(self.players):
-                if player_id == i:
-                    if is_winner(p):
-                        '''ESCAPE WIN'''
-                        self.state.game_over = True
-                        self.state.winner = i
-                        self.state.phase = "GAME_OVER"
-                        safe_print(f"[ENGINE] Player {i} wins")
+        # Check for ESCAPE WIN - Defender wins immediately after successful defense
+        defender = self.players[player_id]
+        if is_winner(defender):
+            '''ESCAPE WIN'''
+            self.state.game_over = True
+            self.state.winner = player_id
+            self.state.phase = "GAME_OVER"
+            safe_print(f"[ENGINE] Player {player_id} wins by ESCAPE WIN")
+            self._log(f"[ENGINE] Player {player_id} wins by ESCAPE WIN")
 
         # swap turns
         self.state.attacker, self.state.defender = (
@@ -198,27 +205,60 @@ class CardGameEngine:
 
 
     def defender_draw(self, player_id):
+        safe_print(f"[ENGINE] defender_draw called - player_id: {player_id}, phase: {self.state.phase}, game_over: {self.state.game_over}")
+        
         if self.state.game_over:
             safe_print("[ENGINE] GAME WAS OVER - draw")
-            return
+            return {"error": "Game is already over"}
          
         defender = self.players[player_id]
+        safe_print(f"[ENGINE] Defender {player_id} has {len(defender.hand)} cards before draw")
+        
         card = defender.draw_card(self.deck)
+        safe_print(f"[ENGINE] Defender drew card, now has {len(defender.hand)} cards")
 
-        # Checking for dealuxe and trails wins 
-        self._check_winner()
+        # Check win conditions after defender draws (failed defense)
+        attacker = self.players[self.state.attacker]
+        safe_print(f"[ENGINE] Attacker {self.state.attacker} has {len(attacker.hand)} cards: {[c.value for c in attacker.hand]}")
 
         # Check if attacker Win after this card draw? 
-        attacker = self.players[self.state.attacker]
-        if attacker.hand == 0 and self.state.attack_card >= 4 and self.state.attack_card <= 13: 
+        if len(attacker.hand) == 0 and self.state.attack_card and 4 <= self.state.attack_card.value <= 13: 
             '''
             CRAZY ESCAPE WIN 
             '''
+            safe_print(f"[ENGINE] CRAZY ESCAPE WIN triggered - attacker has 0 cards")
             self.state.game_over = True
             self.state.winner = self.state.attacker
             self.state.phase = "GAME_OVER"
             safe_print(f"[ENGINE] Player {self.state.attacker} wins by ZERO COUNT - CRAZY ESCAPE WIN")
-            self._log(f"[ENGINE] Player {self.state.attacker} wins by ZERO COUNT")
+            self._log(f"[ENGINE] Player {self.state.attacker} wins by CRAZY ESCAPE WIN")
+            return {
+                "drawn": str(card) if card else None,
+                "next_phase": self.state.phase,
+                "attacker": self.state.attacker,
+                "game_over": True,
+                "winner": self.state.attacker
+            }
+        
+        # Check for DEALUXE WIN - Attacker wins when defender fails to defend
+        safe_print(f"[ENGINE] Checking DEALUXE WIN - is_winner(attacker): {is_winner(attacker)}")
+        if is_winner(attacker):
+            '''
+            DEALUXE WIN
+            '''
+            safe_print(f"[ENGINE] DEALUXE WIN triggered")
+            self.state.game_over = True
+            self.state.winner = self.state.attacker
+            self.state.phase = "GAME_OVER"
+            safe_print(f"[ENGINE] Player {self.state.attacker} wins by DEALUXE WIN")
+            self._log(f"[ENGINE] Player {self.state.attacker} wins by DEALUXE WIN")
+            return {
+                "drawn": str(card) if card else None,
+                "next_phase": self.state.phase,
+                "attacker": self.state.attacker,
+                "game_over": True,
+                "winner": self.state.attacker
+            }
 
         # Do not reveal drawn card identities in UI log
         self._log(f"[ENGINE] Defender failed to defend and draws a card")
@@ -231,6 +271,8 @@ class CardGameEngine:
         self.state.defender_drawn_card = str(card) if card else None
 
         self._log("[ENGINE] Defense failed. Attacker gets another turn.")
+        
+        safe_print(f"[ENGINE] defender_draw completed successfully - returning to phase: {self.state.phase}")
 
         return {
             "drawn": str(card) if card else None,
@@ -258,7 +300,6 @@ class CardGameEngine:
         self._log(f"[ENGINE] Rule 8 drop: value {dropped.value}")
 
         self.state.trail_value = value
-        # self._check_winner()
 
         return {"dropped": str(dropped)}
 
@@ -266,14 +307,27 @@ class CardGameEngine:
         assert self.state.phase == "RULE_8"
 
         defender = self.players[defender_id]
+        attacker = self.players[self.state.attacker]
 
         if crash and any(c.value == self.state.trail_value for c in defender.hand):
             self._log("[ENGINE] Trail crashed")
-            self.players[self.state.attacker].draw_card(self.deck)
+            attacker.draw_card(self.deck)
 
             self.state.phase = "ATTACK"
             self.state.trail_value = None
             return {"crashed": True}
+
+        # Defender didn't crash - check for TRAIL WIN
+        if is_winner(attacker):
+            '''
+            TRAIL WIN - Attacker reached ≤3 low cards and defender failed to crash
+            '''
+            self.state.game_over = True
+            self.state.winner = self.state.attacker
+            self.state.phase = "GAME_OVER"
+            safe_print(f"[ENGINE] Player {self.state.attacker} wins by TRAIL WIN")
+            self._log(f"[ENGINE] Player {self.state.attacker} wins by TRAIL WIN")
+            return {"crashed": False, "game_over": True, "winner": self.state.attacker}
 
         self._log("[ENGINE] Trail continues")
         return {"crashed": False}
