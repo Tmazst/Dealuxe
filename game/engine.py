@@ -1,6 +1,16 @@
 from game.models import Deck, GameState
 from game.rules import is_winner, has_attack_card, is_low_only
 
+# Helper to safely print messages with potential unicode characters
+def safe_print(msg):
+    """Print message safely, handling unicode encoding errors"""
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        # Fallback: replace unicode chars with ? for ASCII-only environments
+        safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
+        print(safe_msg)
+
 '''
 [**UPDATE 27 December 2025**]
 [**THE 4 CONDITIONS OF WINNING THE DEALUXE GAME**]
@@ -45,7 +55,7 @@ class CardGameEngine:
             for p in self.players:
                 p.draw_card(self.deck)
 
-        print("[ENGINE] Game initialized")
+        safe_print("[ENGINE] Game initialized")
 
     # ---------------------
     # STATE HELPERS-
@@ -66,7 +76,13 @@ class CardGameEngine:
 
     def _log(self, msg):
         # print to console and append to ui log for frontend consumption
-        print(msg)
+        # Use safe printing to avoid unicode encoding errors on VPS
+        try:
+            print(msg)
+        except UnicodeEncodeError:
+            # Fallback: print ASCII-safe version
+            safe_msg = msg.encode('ascii', errors='replace').decode('ascii')
+            print(safe_msg)
         self.ui_log.append(msg)
 
     def _check_winner(self):
@@ -75,7 +91,7 @@ class CardGameEngine:
                 self.state.game_over = True
                 self.state.winner = i
                 self.state.phase = "GAME_OVER"
-                print(f"[ENGINE] Player {i} wins")
+                safe_print(f"[ENGINE] Player {i} wins")
 
     # ---------------------
     # TURN CONTROL
@@ -89,7 +105,7 @@ class CardGameEngine:
         # Rule 8 auto-entry
         if not has_attack_card(attacker) and is_low_only(attacker) and len(attacker.hand) > 3:
             self.state.phase = "RULE_8"
-            print("[ENGINE] Rule 8 triggered automatically")
+            safe_print("[ENGINE] Rule 8 triggered automatically")
 
         # self._check_winner()
 
@@ -99,13 +115,13 @@ class CardGameEngine:
 
     def attack(self, player_id, card_index):
         if self.state.game_over:
-            print("[ENGINE] GAME WAS OVER - attack")
+            safe_print("[ENGINE] GAME WAS OVER - attack")
             return {"error": "Game is already over"}
         
         # Better error handling instead of assert
         if self.state.phase != "ATTACK":
             error_msg = f"Cannot attack during {self.state.phase} phase. Expected ATTACK phase."
-            print(f"[ENGINE] {error_msg}")
+            safe_print(f"[ENGINE] {error_msg}")
             return {"error": error_msg, "current_phase": self.state.phase}
 
         attacker = self.players[player_id]
@@ -121,7 +137,7 @@ class CardGameEngine:
         attacker.hand.remove(card)
         self.state.attack_card = card
         self.state.phase = "DEFENSE"
-        print(f"[ENGINE] Phase transition: ATTACK -> DEFENSE")
+        safe_print(f"[ENGINE] Phase transition: ATTACK -> DEFENSE")
 
         self._log(f"[ENGINE] Player {player_id} attacks with {card}")
 
@@ -133,13 +149,13 @@ class CardGameEngine:
 
     def defend(self, player_id, i1, i2):
         if self.state.game_over:
-            print("[ENGINE] GAME WAS OVER - defend")
+            safe_print("[ENGINE] GAME WAS OVER - defend")
             return {"error": "Game is already over"}
         
         # Better error handling instead of assert
         if self.state.phase != "DEFENSE":
             error_msg = f"Cannot defend during {self.state.phase} phase. Expected DEFENSE phase."
-            print(f"[ENGINE] {error_msg}")
+            safe_print(f"[ENGINE] {error_msg}")
             return {"error": error_msg, "current_phase": self.state.phase}
         
         DEFENCE_SUCCESSFUL = True
@@ -165,7 +181,7 @@ class CardGameEngine:
                         self.state.game_over = True
                         self.state.winner = i
                         self.state.phase = "GAME_OVER"
-                        print(f"[ENGINE] Player {i} wins")
+                        safe_print(f"[ENGINE] Player {i} wins")
 
         # swap turns
         self.state.attacker, self.state.defender = (
@@ -174,7 +190,7 @@ class CardGameEngine:
         )
         self.state.attack_card = None
         self.state.phase = "ATTACK"
-        print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (roles swapped, new attacker: {self.state.attacker})")
+        safe_print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (roles swapped, new attacker: {self.state.attacker})")
         self.state.defence_cards = [str(c1),str(c2)]
 
         return {"ok": True, "success": True,"used_cards": [str(c1), str(c2)],
@@ -183,7 +199,7 @@ class CardGameEngine:
 
     def defender_draw(self, player_id):
         if self.state.game_over:
-            print("[ENGINE] GAME WAS OVER - draw")
+            safe_print("[ENGINE] GAME WAS OVER - draw")
             return
          
         defender = self.players[player_id]
@@ -201,7 +217,7 @@ class CardGameEngine:
             self.state.game_over = True
             self.state.winner = self.state.attacker
             self.state.phase = "GAME_OVER"
-            print(f"[ENGINE] Player {self.state.attacker} wins by ZERO COUNT - CRAZY ESCAPE WIN")
+            safe_print(f"[ENGINE] Player {self.state.attacker} wins by ZERO COUNT - CRAZY ESCAPE WIN")
             self._log(f"[ENGINE] Player {self.state.attacker} wins by ZERO COUNT")
 
         # Do not reveal drawn card identities in UI log
@@ -210,7 +226,7 @@ class CardGameEngine:
         # Defense failed -> attacker keeps the turn
         self.state.attack_card = None
         self.state.phase = "ATTACK"
-        print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (defense failed, attacker {self.state.attacker} keeps turn)")
+        safe_print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (defense failed, attacker {self.state.attacker} keeps turn)")
 
         self.state.defender_drawn_card = str(card) if card else None
 

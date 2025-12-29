@@ -56,7 +56,7 @@ class Player:
         card = deck.draw()
         if card:
             self.hand.append(card)
-            print(f"[PLAYER] {self.name} draws a card")
+            print(f"[PLAYER] {self.name} draws a card (value: {card.value})")
         return card
 
     def show_hand_verbose(self):

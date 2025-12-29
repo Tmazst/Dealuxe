@@ -38,7 +38,7 @@ def create_game():
         if players:
             my_player = players[0]
     if my_player:
-        print(f"[APP - CREATE_GAME] My Player: {my_player.name}")
+        print(f"[APP - CREATE_GAME] My Player: {my_player.name} with {len(my_player.hand)} cards")
         player_name = my_player.name
     else:
         player_name = None
@@ -69,7 +69,7 @@ def player_details(game_id):
             "hand": [str(c) for c in p.hand]
         })
 
-    print(f"[APP] Player details for game {game_id}: {players}")
+    print(f"[APP] Player details for game {game_id}: {len(players)} players")
     return jsonify({"players": players,"my_player": players[0] if players else None})
 
 
