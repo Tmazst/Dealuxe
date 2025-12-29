@@ -121,7 +121,7 @@ class CardGameEngine:
         attacker.hand.remove(card)
         self.state.attack_card = card
         self.state.phase = "DEFENSE"
-        print(f"[ENGINE] Phase transition: ATTACK → DEFENSE")
+        print(f"[ENGINE] Phase transition: ATTACK -> DEFENSE")
 
         self._log(f"[ENGINE] Player {player_id} attacks with {card}")
 
@@ -155,7 +155,7 @@ class CardGameEngine:
         defender.hand.remove(c1)
         defender.hand.remove(c2)
 
-        self._log(f"[ENGINE] ✔Defense successful: {c1} + {c2}")
+        self._log(f"[ENGINE] Defense successful: {c1} + {c2}")
 
         if DEFENCE_SUCCESSFUL:
             for i, p in enumerate(self.players):
@@ -174,7 +174,7 @@ class CardGameEngine:
         )
         self.state.attack_card = None
         self.state.phase = "ATTACK"
-        print(f"[ENGINE] Phase transition: DEFENSE → ATTACK (roles swapped, new attacker: {self.state.attacker})")
+        print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (roles swapped, new attacker: {self.state.attacker})")
         self.state.defence_cards = [str(c1),str(c2)]
 
         return {"ok": True, "success": True,"used_cards": [str(c1), str(c2)],
@@ -207,14 +207,14 @@ class CardGameEngine:
         # Do not reveal drawn card identities in UI log
         self._log(f"[ENGINE] Defender failed to defend and draws a card")
 
-        # Defense failed → attacker keeps the turn
+        # Defense failed -> attacker keeps the turn
         self.state.attack_card = None
         self.state.phase = "ATTACK"
-        print(f"[ENGINE] Phase transition: DEFENSE → ATTACK (defense failed, attacker {self.state.attacker} keeps turn)")
+        print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (defense failed, attacker {self.state.attacker} keeps turn)")
 
         self.state.defender_drawn_card = str(card) if card else None
 
-        self._log("[ENGINE] ❌Defense failed. Attacker gets another turn.")
+        self._log("[ENGINE] Defense failed. Attacker gets another turn.")
 
         return {
             "drawn": str(card) if card else None,

@@ -1,6 +1,7 @@
 ========================================
 ASSERTION ERROR FIX - Phase Mismatch
 ========================================
+UPDATED: Fixed UnicodeEncodeError
 
 PROBLEM IDENTIFIED:
 -------------------
@@ -10,6 +11,7 @@ was occurring due to:
 1. RACE CONDITION: User could click attack multiple times rapidly
 2. STALE STATE: Frontend's currentState was outdated during animations (450ms delay)
 3. MISSING VALIDATION: Backend continued processing even when actions failed
+4. UNICODE ENCODING: VPS uses latin-1 encoding, couldn't handle → ✔ ❌ characters
 
 SCENARIO THAT CAUSED THE ERROR:
 --------------------------------
@@ -26,6 +28,7 @@ ROOT CAUSES:
 ✗ Delayed state refresh (450ms) left currentState stale
 ✗ Backend ran AI even when actions failed
 ✗ No proper error handling - assertions crashed the server
+✗ Unicode characters in logs (→ ✔ ❌) caused encoding errors on VPS
 
 FIXES APPLIED:
 --------------
@@ -45,6 +48,7 @@ FIXES APPLIED:
    ✓ Better error messages with current phase info
    ✓ Log all phase transitions for debugging
    ✓ Return error dicts instead of using assertions (already done)
+   ✓ Replaced unicode characters (→ ✔ ❌) with ASCII (-> OK, Failed)
 
 WHAT TO MONITOR:
 ----------------
