@@ -189,6 +189,11 @@ class CardGameEngine:
             self.state.phase = "GAME_OVER"
             safe_print(f"[ENGINE] Player {player_id} wins by ESCAPE WIN")
             self._log(f"[ENGINE] Player {player_id} wins by ESCAPE WIN")
+            # Return immediately - don't swap turns or change phase
+            self.state.defence_cards = [str(c1), str(c2)]
+            return {"ok": True, "success": True, "used_cards": [str(c1), str(c2)],
+                    "phase": self.state.phase, "attacker": self.state.attacker, "used_indices": [i1, i2],
+                    "game_over": True, "winner": player_id}
 
         # swap turns
         self.state.attacker, self.state.defender = (

@@ -95,7 +95,7 @@ async function fetchState() {
     if (state.ui_log && Array.isArray(state.ui_log)) renderComments(state.ui_log);
     // refresh leaderboard after we update state
     fetchLeaderboard();
-    updateAgent(state);
+    await updateAgent(state);
 }
 
 async function fetchLeaderboard() {
@@ -201,7 +201,7 @@ function updateProgressBars(data) {
     updateCont(oppCont, rightPlayer);
 }
 
-function updateAgent(state) {
+async function updateAgent(state) {
     const text = document.getElementById('agent-text');
     if (!text) return;
 
@@ -231,6 +231,9 @@ function updateAgent(state) {
         text.innerText = `Rule 8: drop a trail value (1-3) if prompted.`;
     } else if (phase === 'GAME_OVER') {
         text.innerText = `Game over. Check results in the leaderboard.`;
+        console.log("[FRONTEND] Game over detected, fetching final state before modal");
+        await fetchState();
+        showGameModal();
     } else {
         text.innerText = `Phase: ${phase}`;
     }
@@ -570,9 +573,12 @@ async function renderState(state) {
              updateHandHighlight('none');
         } else if (phase === 'GAME_OVER') {
             setTrackingBadge('Game Over', 'info');
-             updateHandHighlight('none');
-             showGameModal();
-             console.log("Game Over");
+            updateHandHighlight('none');
+            // Fetch fresh state before showing modal to ensure win type is correct
+            console.log("[FRONTEND] Game over detected, fetching final state before modal");
+            await fetchState();
+            showGameModal();
+            console.log("Game Over");
         } else {
             // opponent's turn or waiting: hide badge or show neutral
             setTrackingBadge('Waiting...', 'info');
