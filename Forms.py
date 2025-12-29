@@ -33,18 +33,19 @@ class RegistrationForm(FlaskForm):
 
 class GameStartForm(FlaskForm):
 
-    choose_opponent = SelectField(choices=[
-        ('AI_Robot', 'AI Robot'), ('Live_Game', 'Live Game')
+    choose_opponent = SelectField('Choose Opponent', choices=[
+        ('ai', 'AI Robot'), ('Live_Game', 'Live Game')
     ])
-    cards_number = SelectField(choices=[
-        (6, '6'), (6, '8'),(10, '10')
+    cards_number = SelectField('Number of Cards', choices=[
+        ('6', '6'), ('8', '8'),('10', '10')
     ])
-    bet_or_free=RadioField(
+    bet_or_free=RadioField('Bet Type',
         choices=[
-        ('bet', 'bet'), ('free', 'free')
-        ]
+        ('bet', 'Real Money Bet (Coming Soon)'), ('fake', 'Awarded Money Bet')
+        ],
+        default='fake'
     )
-    bet_amount=FloatField("Bet Amount")
-    freegame_fake_bet=FloatField("Free Bet Amount")
+    bet_amount=FloatField("Real Bet Amount (SZL)")
+    freegame_fake_bet=FloatField("Fake Bet Amount (SZL)")
 
     submit = SubmitField('Start Game')

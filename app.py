@@ -2,11 +2,18 @@ from flask import Flask, render_template, request, jsonify
 
 from game.manager import GameManager
 from controllers.flask_controller import FlaskGameController
+from controllers.session_controller import session_bp
 from Forms import  *
 
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = 'fght6hg234g5f6g7h8j9k0l1q2w3e4r5t6y7u8i9o0p'
+
+# -----------------------------
+# REGISTER BLUEPRINTS
+# -----------------------------
+
+app.register_blueprint(session_bp)
 
 # -----------------------------
 # GAME MANAGER (GLOBAL)

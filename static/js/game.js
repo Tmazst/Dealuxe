@@ -931,7 +931,8 @@ function setTrackingBadge(text, type="info") {
 window.onload = () => {
     createDrawButton();
     createHandScrollButtons();
-    createGame(); // auto-start one game
+    // Game will be created after user completes game-start modal
+    // createGame(); // auto-start disabled
 };
 
 // --- Hand scroll buttons ---

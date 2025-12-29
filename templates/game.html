@@ -137,13 +137,63 @@
 
             <div class="group">
                 <div class="acc-labels">{{ form.choose_opponent.label(class="labels")}}</div>
-                {{ form.choose_opponent(class="form-control",placeholder="Advert Title",id="ImageInput")}}
+                {{ form.choose_opponent(class="form-control",placeholder="Choose Opponent",id="choose_opponent")}}
                 {% if form.choose_opponent.errors %}
                     {% for error in form.choose_opponent.errors %}
                         <span class="span-error" >* {{error}}</span>
                     {% endfor %}
                 {% endif %}
-            <!--<input type="text" class="form-control" id="name" name="nm" placeholder="Name">-->
+            </div>
+
+            <div class="group">
+                <div class="acc-labels">{{ form.cards_number.label(class="labels")}}</div>
+                {{ form.cards_number(class="form-control",placeholder="Number of Cards",id="cards_number")}}
+                {% if form.cards_number.errors %}
+                    {% for error in form.cards_number.errors %}
+                        <span class="span-error" >* {{error}}</span>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="group">
+                <div class="acc-labels">Bet Type</div>
+                {{ form.bet_or_free(class="radio-group")}}
+                {% if form.bet_or_free.errors %}
+                    {% for error in form.bet_or_free.errors %}
+                        <span class="span-error" >* {{error}}</span>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="group real-bet-field" style="display: none;">
+                <div class="acc-labels">{{ form.bet_amount.label(class="labels")}}</div>
+                {{ form.bet_amount(class="form-control",placeholder="Enter Bet Amount (SZL)",id="bet_amount")}}
+                {% if form.bet_amount.errors %}
+                    {% for error in form.bet_amount.errors %}
+                        <span class="span-error" >* {{error}}</span>
+                    {% endfor %}
+                {% endif %}
+            </div>
+
+            <div class="group fake-bet-field">
+                <div class="bet-caption">Please enter your bet for this game</div>
+                <div class="acc-labels">{{ form.freegame_fake_bet.label(class="labels")}}</div>
+                {{ form.freegame_fake_bet(class="form-control",placeholder="Enter Fake Bet Amount (SZL)",id="freegame_fake_bet")}}
+                <div class="bet-balance-display">
+                    <div class="balance-info-row">
+                        <span>Current Balance:</span>
+                        <span id="current-balance-value">0.00 SZL</span>
+                    </div>
+                    <div class="balance-info-row">
+                        <span>After Bet:</span>
+                        <span id="after-bet-value" class="remaining-balance">0.00 SZL</span>
+                    </div>
+                </div>
+                {% if form.freegame_fake_bet.errors %}
+                    {% for error in form.freegame_fake_bet.errors %}
+                        <span class="span-error" >* {{error}}</span>
+                    {% endfor %}
+                {% endif %}
             </div>
         </form>
         <button class="game_start_btn"><h1 class="btn">Start Game</h1></button> 
@@ -151,6 +201,7 @@
 </div>
 
 <script src="/static/js/game.js"></script>
+<script src="/static/js/game-start.js"></script>
 </body>
 </html>
 

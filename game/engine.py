@@ -275,7 +275,7 @@ class CardGameEngine:
 
         self.state.defender_drawn_card = str(card) if card else None
 
-        self._log("[ENGINE] Defense failed. Attacker gets another turn.")
+        self._log("[ENGINE] ❌Defense failed. Attacker gets another turn.")
         
         safe_print(f"[ENGINE] defender_draw completed successfully - returning to phase: {self.state.phase}")
 
