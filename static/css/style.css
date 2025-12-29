@@ -122,6 +122,7 @@ html,body{
     align-items:center;
     justify-content:center;
     width: 100%;
+    flex-direction: column;
     /* overflow:auto; */
 }
 
@@ -134,13 +135,17 @@ html,body{
 .score{
     gap:0px !important;
 }
-.attack-pile-cont{
+/* .attack-pile-cont{
     position:absolute;
     top:18%;
     left:50%;
     transform:translate(-50%,-50%);
     width: 100%;
-}
+} */
+ .attack-pile-cont{
+
+    width: 100%;
+ }
 /* Attack pile centered with subtle glass */
 .attack-pile{
     position: relative;
@@ -157,8 +162,11 @@ html,body{
     padding:8px;
     pointer-events:none;
 }
+.game-table{
+    gap:20px
+}
 .cont-narrative{
-    margin-top: -55px;
+    /* margin-top: -55px; */
     width: 100% !important;
     /* background-color: #3ee6b5; */
     min-width: 300px;
@@ -372,15 +380,23 @@ html,body{
     border-radius: 14px;
 }
 
-/* Raised card for attack (click-to-raise mechanism) */
+/* Raised card for attack (click-to-raise mechanism) - just highlight, no pull-up */
 .card.raised {
-    transform: translateY(-30px) scale(1.08) !important;
-    box-shadow: 0 12px 40px rgba(139,92,246,0.6), 0 0 30px rgba(255,107,203,0.4) !important;
-    border-color: rgba(139,92,246,0.9) !important;
-    z-index: 1000 !important;
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), 
-                box-shadow 0.3s ease,
-                border-color 0.3s ease !important;
+    box-shadow: 0 0 0 4px rgba(139,92,246,0.9), 0 0 30px rgba(139,92,246,0.7), 0 0 60px rgba(255,107,203,0.5) !important;
+    border-color: rgba(255,255,255,0.9) !important;
+    /* z-index: 1000 !important; */
+    animation: raised-pulse 1.5s ease-in-out infinite;
+    transition: all 0.3s ease;
+    transform: scale(0.9);
+}
+
+@keyframes raised-pulse {
+    0%, 100% { 
+        box-shadow: 0 0 0 4px rgba(139,92,246,0.9), 0 0 30px rgba(139,92,246,0.7), 0 0 60px rgba(255,107,203,0.5);
+    }
+    50% { 
+        box-shadow: 0 0 0 6px rgba(139,92,246,1), 0 0 40px rgba(139,92,246,0.9), 0 0 80px rgba(255,107,203,0.7);
+    }
 }
 
 /* Push button for attack */
@@ -398,6 +414,7 @@ html,body{
     font-size: 14px;
     cursor: pointer;
     z-index: 999;
+    z-index:1005;
     display: none;
     box-shadow: 0 8px 24px rgba(139,92,246,0.5), 0 0 20px rgba(255,107,203,0.3);
     transition: all 0.3s ease;
@@ -480,36 +497,78 @@ html,body{
 
 .player-cards-box{
     width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: visible; /* Allow raised cards to overflow */
     height: max-content;
     position: relative;
-    padding-bottom: 60px; /* Space for push button */
-    /* Enable smooth scrolling */
+    /* Space for raised cards */
+    /* Space for push button */
+}
+
+/* Inner wrapper handles the scrolling */
+.player-cards-scroll-wrapper {
+    width: 100%;
+    overflow-x: auto; /* Enable horizontal scrolling */
+    overflow-y: hidden;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
 }
 
-/* Hide scrollbar but keep functionality */
-.player-cards-box::-webkit-scrollbar {
-    height: 6px;
+/* Hide scrollbar but keep scroll functionality */
+.player-cards-scroll-wrapper::-webkit-scrollbar {
+    display: none; /* Hide scrollbar for Webkit browsers */
 }
 
-.player-cards-box::-webkit-scrollbar-track {
-    background: rgba(255,255,255,0.02);
-    border-radius: 3px;
+.player-cards-scroll-wrapper {
+    -ms-overflow-style: none;  /* Hide scrollbar for IE and Edge */
+    scrollbar-width: none; /* Hide scrollbar for Firefox */
 }
 
-.player-cards-box::-webkit-scrollbar-thumb {
-    background: rgba(139,92,246,0.3);
-    border-radius: 3px;
+/* Scroll buttons for hand - positioned relative to game-table */
+.hand-scroll-btn {
+    position: absolute;
+    top: auto;
+    bottom: 100px; /* Position above the hand */
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, rgba(139,92,246,0.9), rgba(255,107,203,0.8));
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    color: white;
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 1009;
+    display: none; /* Hidden by default */
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 16px rgba(139,92,246,0.5);
+    transition: all 0.3s ease;
+    opacity: 0;
+    pointer-events: none;
 }
 
-.player-cards-box::-webkit-scrollbar-thumb:hover {
-    background: rgba(139,92,246,0.5);
+.hand-scroll-btn.visible {
+    display: flex;
+    opacity: 1;
+    pointer-events: auto;
 }
 
+.hand-scroll-btn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 6px 24px rgba(139,92,246,0.7);
+    background: linear-gradient(135deg, rgba(139,92,246,1), rgba(255,107,203,0.9));
+}
 
+.hand-scroll-btn:active {
+    transform: scale(0.95);
+}
+
+.hand-scroll-left {
+    left: 10px;
+}
+
+.hand-scroll-right {
+    right: 10px;
+}
 
 /* Attack zone (top center) */
 .attack-zone{
@@ -547,7 +606,7 @@ html,body{
 .attack-confirm-modal{
     position:absolute;
     left:50%;
-    top:60%;
+    top:42%;
     transform:translateX(-50%);
     width:280px;
     height: 100px;
@@ -602,7 +661,9 @@ html,body{
 .agent-panel .agent-icon{font-size:22px;color:var(--accent-1);background:rgba(255,255,255,0.02);padding:8px;border-radius:10px}
 .agent-panel .agent-text{color:var(--muted);font-size:14px}
 /* .agent-panel{display: none;} */
-
+.agent-panel{
+    margin-bottom: -20px;
+}
 /* Defense selection visuals */
 .card.defense-first{transform:translateY(-26px) scale(1.02);box-shadow:0 30px 80px rgba(3,218,197,0.12);border:2px solid rgba(3,218,197,0.12)}
 .card.defense-second{transform:translateY(-26px) scale(1.02);box-shadow:0 30px 80px rgba(139,92,246,0.12);border:2px solid rgba(139,92,246,0.12)}
@@ -616,7 +677,7 @@ html,body{
 .muted{color:var(--muted)}
 
 /* Progress / winning trackers */
-#leader-progess-bars-cont{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+#leader-progess-bars-cont{display:flex;gap:12px;align-items:center;justify-content:center;margin-bottom:12px}
 .user-progress-bar-cont,.opponent-progress-bar-cont{display:flex;align-items:center;gap:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:8px;border-radius:12px;border:1px solid rgba(255,255,255,0.04);width:320px;overflow:hidden}
 .user-progress-bar-cont .user-icon,.opponent-progress-bar-cont .user-icon{width:44px;height:44px;border-radius:10px;background:linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));display:flex;align-items:center;justify-content:center;color:var(--muted)}
 .user-progress-fill{flex:1;height:18px;border-radius:999px;background:linear-gradient(90deg,#ffd7d7,#ff9b9b);transition:width 600ms cubic-bezier(.2,.9,.2,1), box-shadow 350ms ease;display:block;position:relative;overflow:hidden}

@@ -930,8 +930,82 @@ function setTrackingBadge(text, type="info") {
 
 window.onload = () => {
     createDrawButton();
+    createHandScrollButtons();
     createGame(); // auto-start one game
 };
+
+// --- Hand scroll buttons ---
+function createHandScrollButtons() {
+    const scrollWrapper = document.querySelector('.player-cards-scroll-wrapper');
+    const gameTable = document.querySelector('.game-table');
+    if (!scrollWrapper || !gameTable) return;
+
+    // Create left scroll button (append to game-table, not scrollWrapper)
+    const leftBtn = document.createElement('button');
+    leftBtn.className = 'hand-scroll-btn hand-scroll-left';
+    leftBtn.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
+    leftBtn.setAttribute('aria-label', 'Scroll left');
+    gameTable.appendChild(leftBtn);
+
+    // Create right scroll button
+    const rightBtn = document.createElement('button');
+    rightBtn.className = 'hand-scroll-btn hand-scroll-right';
+    rightBtn.innerHTML = '<i class="fa-solid fa-chevron-right"></i>';
+    rightBtn.setAttribute('aria-label', 'Scroll right');
+    gameTable.appendChild(rightBtn);
+
+    // Scroll amount per click (in pixels)
+    const scrollAmount = 200;
+
+    leftBtn.addEventListener('click', () => {
+        scrollWrapper.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+    });
+
+    rightBtn.addEventListener('click', () => {
+        scrollWrapper.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    });
+
+    // Update button visibility based on scroll position and overflow
+    function updateScrollButtons() {
+        const hasOverflow = scrollWrapper.scrollWidth > scrollWrapper.clientWidth;
+        
+        if (!hasOverflow) {
+            // No overflow - hide both buttons
+            leftBtn.classList.remove('visible');
+            rightBtn.classList.remove('visible');
+            return;
+        }
+
+        const atStart = scrollWrapper.scrollLeft <= 5;
+        const atEnd = scrollWrapper.scrollLeft >= scrollWrapper.scrollWidth - scrollWrapper.clientWidth - 5;
+        
+        // Show left button if not at start and has overflow
+        if (atStart) {
+            leftBtn.classList.remove('visible');
+        } else {
+            leftBtn.classList.add('visible');
+        }
+        
+        // Show right button if not at end and has overflow
+        if (atEnd) {
+            rightBtn.classList.remove('visible');
+        } else {
+            rightBtn.classList.add('visible');
+        }
+    }
+
+    scrollWrapper.addEventListener('scroll', updateScrollButtons);
+    
+    // Check on window resize
+    window.addEventListener('resize', updateScrollButtons);
+    
+    // Check when cards are rendered (use MutationObserver)
+    const observer = new MutationObserver(updateScrollButtons);
+    observer.observe(scrollWrapper, { childList: true, subtree: true });
+    
+    // Initial update
+    setTimeout(updateScrollButtons, 100);
+}
 
 // --- Draw button UI ---
 function createDrawButton() {
@@ -1145,7 +1219,15 @@ function showPushButton() {
         btn.addEventListener('click', async () => {
             if (raisedCardIndex === null) return;
             const index = raisedCardIndex;
-            lowerRaisedCard(); // Lower before attacking
+            const cards = getHandCards();
+            const cardEl = cards[index];
+            
+            // Animate ghost card to pile
+            if (cardEl) {
+                await animateCardGhostToPile(cardEl);
+            }
+            
+            lowerRaisedCard(); // Lower after animation
             await attack(index);
         });
     }
@@ -1155,6 +1237,56 @@ function showPushButton() {
 function hidePushButton() {
     const btn = document.getElementById('push-attack-btn');
     if (btn) btn.style.display = 'none';
+}
+
+// Animate ghost card from player's hand to attack pile
+function animateCardGhostToPile(cardEl) {
+    return new Promise((resolve) => {
+        const pile = document.getElementById('attack-pile');
+        if (!pile || !cardEl) return resolve();
+
+        const cardRect = cardEl.getBoundingClientRect();
+        const pileRect = pile.getBoundingClientRect();
+
+        // Create ghost card
+        const ghost = document.createElement('div');
+        ghost.className = 'card ghost entering';
+        ghost.innerHTML = cardEl.innerHTML;
+        document.body.appendChild(ghost);
+
+        // Position at card's location
+        ghost.style.left = cardRect.left + 'px';
+        ghost.style.top = cardRect.top + 'px';
+        ghost.style.width = cardRect.width + 'px';
+        ghost.style.height = cardRect.height + 'px';
+
+        requestAnimationFrame(() => {
+            ghost.classList.add('visible');
+            ghost.classList.remove('entering');
+        });
+
+        // Target: center of pile
+        const targetX = pileRect.left + (pileRect.width / 2) - (cardRect.width / 2);
+        const targetY = pileRect.top + (pileRect.height / 2) - (cardRect.height / 2);
+
+        requestAnimationFrame(() => {
+            const dx = targetX - cardRect.left;
+            const dy = targetY - cardRect.top;
+            ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.85)`;
+        });
+
+        const cleanup = () => {
+            ghost.removeEventListener('transitionend', cleanup);
+            ghost.classList.add('fade-out');
+            setTimeout(() => { 
+                try { ghost.remove(); } catch (e) {} 
+                resolve(); 
+            }, 240);
+        };
+
+        ghost.addEventListener('transitionend', cleanup);
+        setTimeout(() => { if (document.body.contains(ghost)) { cleanup(); } }, 1000);
+    });
 }
 
 function updateAttackZone() {
