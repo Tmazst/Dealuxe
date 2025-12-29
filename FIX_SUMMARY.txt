@@ -5,11 +5,13 @@ UPDATED: Fixed ALL UnicodeEncodeError issues
 
 FILES THAT NEED TO BE UPLOADED TO VPS:
 ---------------------------------------
-1. game/engine.py - Fixed unicode in logs, added safe_print
-2. controllers/flask_controller.py - Request validation
-3. controllers/ai_controller.py - Fixed card printing
+1. game/engine.py - Fixed unicode in logs, uses card.value
+2. controllers/flask_controller.py - Request validation  
+3. controllers/ai_controller.py - Removed problematic print of defence_results
 4. static/js/game.js - Request locking
-5. app.py - Removed update_game calls (not needed with 1 worker)
+5. app.py - Removed update_game calls
+6. game/manager.py - Removed game_details print that contained card data
+7. utils.py - (NEW) Safe print utility for future use
 
 PROBLEM IDENTIFIED:
 -------------------

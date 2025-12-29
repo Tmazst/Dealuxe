@@ -53,7 +53,7 @@ class GameManager:
 
         print(f"[MANAGER] Created game {game_id} ({mode})")
         game_details=self.games[game_id]
-        print(f"[MANAGER] Details {game_details}")
+        # Don't print game_details as it contains player objects with card data
 
         return game_id, game_details
 

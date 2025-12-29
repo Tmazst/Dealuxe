@@ -40,7 +40,7 @@ class SimpleAIController:
             if state.phase == "DEFENSE" and state.defender == self.player_id:
                 self._think()
                 defence_results = self.handle_defense()
-                print("AI defense results: ", defence_results)
+                # Don't print defence_results as it may contain card objects with unicode
                 acted = True
 
             if state.phase == "RULE_8" and state.attacker == self.player_id:
