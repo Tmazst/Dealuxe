@@ -262,6 +262,12 @@ async function createGameWithSession(gameId) {
         // Call existing createGame function if it exists
         if (typeof createGame === 'function') {
             await createGame();
+            
+            // Show draw button now that game has started
+            const drawButtonWrapper = document.querySelector('.draw-button-wrapper');
+            if (drawButtonWrapper) {
+                drawButtonWrapper.style.display = 'flex';
+            }
         } else {
             console.warn('[GAME-START] createGame function not found, game may need manual initialization');
         }

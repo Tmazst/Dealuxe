@@ -1140,7 +1140,7 @@ html,body{
     cursor:pointer;
     font-weight:800;
 }
-.draw-button-wrapper{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:3000}
+.draw-button-wrapper{position:fixed;right:20px;bottom:20px;display:none;flex-direction:column;align-items:center;gap:6px;z-index:3000}
 .draw-label{display:none;font-size:12px;color:var(--muted);background:rgba(0,0,0,0.22);padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
 .draw-button .icon{font-size:20px}
 .draw-button.flash{animation:draw-flash 1800ms ease-in-out infinite}
