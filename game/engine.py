@@ -44,14 +44,14 @@ Note: DEALUXE WIN, CRAZY ESCAPE WIN, TRAIL WIN are triggered by defender_draw me
 
 
 class CardGameEngine:
-    def __init__(self, players):
+    def __init__(self, players, cards_per_player=6):
         self.deck = Deck()
         self.players = players
         self.state = GameState()
         self.ui_log = []
 
         # Deal cards
-        for _ in range(6):
+        for _ in range(cards_per_player):
             for p in self.players:
                 p.draw_card(self.deck)
 

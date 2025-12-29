@@ -18,7 +18,7 @@ class GameManager:
     # CREATE GAME
     # -----------------------------
 
-    def create_game(self, mode="human_vs_ai"):
+    def create_game(self, mode="human_vs_ai", card_count=6):
         """
         Creates a new game session and returns game_id.
         """
@@ -41,7 +41,7 @@ class GameManager:
         else:
             raise ValueError(f"Unsupported game mode: {mode}")
 
-        engine = CardGameEngine(players)
+        engine = CardGameEngine(players, cards_per_player=card_count)
 
         self.games[game_id] = {
             "engine": engine,

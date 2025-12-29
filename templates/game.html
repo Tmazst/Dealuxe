@@ -108,6 +108,13 @@
                 <small class="win-label" >With a</small>
                 <div class="win-type" id="win-type">DEALUXE WIN</div>
             </div>
+            <div class="prize-display" id="prize-display" style="display: none;">
+                <div class="prize-amount">
+                    <i class="fa-solid fa-coins"></i>
+                    <span id="winnings-amount">0.00 SZL</span>
+                </div>
+                <small class="prize-label">Prize Won</small>
+            </div>
             <div class="game-stats">
                 <div class="stat-row">
                     <i class="fa-solid fa-user"></i>
@@ -118,6 +125,12 @@
                     <i class="fa-solid fa-crosshairs"></i>
                     <span class="stat-label">Opponent </span>
                     <span class="stat-value" id="opponent-final-cards">5</span>
+                </div>
+            </div>
+            <div class="balance-summary" id="balance-summary">
+                <div class="balance-summary-row">
+                    <span>Your Balance:</span>
+                    <span id="final-balance">0.00 SZL</span>
                 </div>
             </div>
             <button class="btn-glass new-game-btn" onclick="location.reload()">New Game</button>

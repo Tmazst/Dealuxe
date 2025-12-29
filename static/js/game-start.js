@@ -92,6 +92,9 @@ function initGameStartModal() {
     // Fetch and display player balance
     fetchPlayerBalance();
 
+    // Play modal open sound
+    playModalOpenSound();
+
     console.log('[GAME-START] Modal initialized');
 }
 
@@ -234,6 +237,7 @@ async function handleGameStart(e) {
         sessionStorage.setItem('session_id', data.session_id);
         sessionStorage.setItem('game_id', data.game_id);
         sessionStorage.setItem('prize_pool', data.prize_pool);
+        sessionStorage.setItem('card_count', gameStartForm.cardCount);
 
         // Update header brand with prize pool
         updateHeaderBrand(data.prize_pool);

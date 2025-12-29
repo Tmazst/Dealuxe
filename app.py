@@ -38,7 +38,8 @@ def index():
 @app.route("/api/game/create", methods=["POST"])
 def create_game():
     mode = request.json.get("mode", "human_vs_ai")
-    game_id, game_details = manager.create_game(mode)
+    card_count = request.json.get("card_count", 6)
+    game_id, game_details = manager.create_game(mode, card_count=card_count)
     my_player = None
     if game_details:
         players = game_details.get("players")

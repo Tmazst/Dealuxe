@@ -29,7 +29,10 @@ async function createGame(mode = "human_vs_ai") {
     const res = await fetch("/api/game/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode })
+        body: JSON.stringify({ 
+            mode: mode,
+            card_count: parseInt(sessionStorage.getItem('card_count')) || 6
+        })
     });
 
     const data = await res.json();
@@ -671,6 +674,12 @@ function showGameModal(){
         opponentCards.textContent = currentState.hands[1].length;
     }
     
+    // Display winnings and balance if player won
+    displayGameOverFinancials(isPlayerWinner);
+    
+    // Play game over sound
+    playGameOverSound(isPlayerWinner);
+    
     console.log("[FRONTEND] Showing modal by adding 'show-game-over' class...");
     gameOverCont.classList.add("show-game-over");
     gameOverModal.classList.add("show-game-over");
@@ -684,6 +693,52 @@ function updateHandHighlight(mode){
     hand.classList.remove('hand-attack','hand-draw');
     if (mode === 'attack') hand.classList.add('hand-attack');
     else if (mode === 'draw') hand.classList.add('hand-draw');
+}
+
+// Display winnings and balance in game over modal
+async function displayGameOverFinancials(isPlayerWinner) {
+    const prizeDisplay = document.getElementById('prize-display');
+    const winningsAmount = document.getElementById('winnings-amount');
+    const finalBalance = document.getElementById('final-balance');
+    
+    // Get session data from sessionStorage
+    const sessionId = sessionStorage.getItem('session_id');
+    const gameId = sessionStorage.getItem('game_id');
+    const prizePool = parseFloat(sessionStorage.getItem('prize_pool')) || 0;
+    
+    // Show prize if player won
+    if (isPlayerWinner && prizeDisplay) {
+        prizeDisplay.style.display = 'block';
+        if (winningsAmount) {
+            winningsAmount.textContent = `${prizePool.toFixed(2)} SZL`;
+        }
+    }
+    
+    // Complete session and get updated balance
+    if (gameId) {
+        try {
+            const winnerId = isPlayerWinner ? 0 : 1;
+            const response = await fetch('/api/session/complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    game_id: gameId,
+                    winner_id: winnerId === 0 ? 'player' : 'ai'
+                })
+            });
+            
+            const data = await response.json();
+            if (data.success && data.new_balance && finalBalance) {
+                finalBalance.textContent = `${data.new_balance.fake.toFixed(2)} SZL`;
+            }
+        } catch (error) {
+            console.error('[GAME-OVER] Error completing session:', error);
+            // Fallback to showing prize pool without API call
+            if (finalBalance) {
+                finalBalance.textContent = 'Check wallet for updated balance';
+            }
+        }
+    }
 }
 
 function parseCardString(s) {
