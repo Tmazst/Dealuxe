@@ -1,7 +1,15 @@
 ========================================
 ASSERTION ERROR FIX - Phase Mismatch
 ========================================
-UPDATED: Fixed UnicodeEncodeError
+UPDATED: Fixed ALL UnicodeEncodeError issues
+
+FILES THAT NEED TO BE UPLOADED TO VPS:
+---------------------------------------
+1. game/engine.py - Fixed unicode in logs, added safe_print
+2. controllers/flask_controller.py - Request validation
+3. controllers/ai_controller.py - Fixed card printing
+4. static/js/game.js - Request locking
+5. app.py - Already fixed player_details print
 
 PROBLEM IDENTIFIED:
 -------------------
@@ -28,7 +36,22 @@ ROOT CAUSES:
 ✗ Delayed state refresh (450ms) left currentState stale
 ✗ Backend ran AI even when actions failed
 ✗ No proper error handling - assertions crashed the server
-✗ Unicode characters in logs (→ ✔ ❌) caused encoding errors on VPS
+✗ Unicode characters throughout codebase (→ ✔ ❌ ♠ ♥ ♦ ♣) caused encoding errors on VPS
+
+UNICODE ISSUES FIXED:
+---------------------
+1. game/engine.py:
+   - Replaced → with -> in phase transitions
+   - Replaced ✔ ❌ with plain text
+   - Changed _log() to print card.value instead of card object
+   - Added safe_print() helper for all console output
+   
+2. controllers/ai_controller.py:
+   - print(f"Attacks with {card}") → print(f"Attacks with card value {card.value}")
+   - print(f"Defends with {c1} + {c2}") → print(f"Defends with {c1.value} + {c2.value}")
+   
+3. app.py:
+   - Removed card data from player_details print statement
 
 FIXES APPLIED:
 --------------

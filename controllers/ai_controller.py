@@ -70,7 +70,7 @@ class SimpleAIController:
             return
 
         index, card = max(candidates, key=lambda x: x[1].value)
-        print(f"[AI] Attacks with {card}")
+        print(f"[AI] Attacks with card value {card.value}")
 
         self.engine.attack(self.player_id, index)
 
@@ -86,7 +86,7 @@ class SimpleAIController:
         for i, c1 in enumerate(defender.hand):
             for j, c2 in enumerate(defender.hand):
                 if i != j and c1.value + c2.value == attack_value:
-                    print(f"[AI] Defends with {c1} + {c2}")
+                    print(f"[AI] Defends with {c1.value} + {c2.value} = {attack_value}")
                     defend_results = self.engine.defend(self.player_id, i, j)
                     return defend_results
 

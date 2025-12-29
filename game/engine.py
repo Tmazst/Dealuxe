@@ -139,7 +139,7 @@ class CardGameEngine:
         self.state.phase = "DEFENSE"
         safe_print(f"[ENGINE] Phase transition: ATTACK -> DEFENSE")
 
-        self._log(f"[ENGINE] Player {player_id} attacks with {card}")
+        self._log(f"[ENGINE] Player {player_id} attacks with card value {card.value}")
 
         return {"ok": True}
 
@@ -171,7 +171,7 @@ class CardGameEngine:
         defender.hand.remove(c1)
         defender.hand.remove(c2)
 
-        self._log(f"[ENGINE] Defense successful: {c1} + {c2}")
+        self._log(f"[ENGINE] Defense successful: {c1.value} + {c2.value} = {attack_value}")
 
         if DEFENCE_SUCCESSFUL:
             for i, p in enumerate(self.players):
@@ -255,7 +255,7 @@ class CardGameEngine:
         dropped = cards[0]
         attacker.hand.remove(dropped)
 
-        self._log(f"[ENGINE] Rule 8 drop: {dropped}")
+        self._log(f"[ENGINE] Rule 8 drop: value {dropped.value}")
 
         self.state.trail_value = value
         # self._check_winner()
