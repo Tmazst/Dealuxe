@@ -11,13 +11,9 @@ let contZone = null;
 // Request locking to prevent duplicate/concurrent actions
 let isRequestInProgress = false;
 
-let dragCard = null;
-let dragIndex = null;
-let dragStartX = 0;
-let dragStartY = 0;
-let isDragging = false;
-let dragCardStartX = 0;
-let dragCardStartY = 0;
+// Raised card for attack (new click-to-raise mechanism)
+let raisedCardIndex = null;
+
 // Defense selection state (when human defends)
 let defenseSelected = []; // holds up to two indices
 let pendingOpponentAttack = null;
@@ -1009,8 +1005,7 @@ function renderCards(cards) {
             <div class="suit">${card.suit}</div>
         `;
 
-        div.addEventListener("click", () => onCardClick(index)); //when focused card is clicked again, it gets selected
-        div.addEventListener("pointerdown", (e) => onPointerDown(e, index, div)); //drag and drop
+        div.addEventListener("click", () => onCardClick(index));
 
         container.appendChild(div);
     });
@@ -1064,163 +1059,110 @@ function onCardClick(index) {
         return;
     }
 
-    // No card focused yet
-    if (focusedCardIndex === null) {
-        cards[index].classList.add("focused");
-        focusedCardIndex = index;
-        updateAttackZone();
+    // Attack phase: raise/lower card mechanism
+    if (currentState && currentState.phase === 'ATTACK' && currentState.attacker === 0) {
+        // If this card is already raised, lower it
+        if (raisedCardIndex === index) {
+            lowerRaisedCard();
+            return;
+        }
+
+        // Lower any other raised card first
+        if (raisedCardIndex !== null) {
+            lowerRaisedCard();
+        }
+
+        // Raise this card
+        raiseCard(index);
         return;
     }
+}
 
-    // Same card clicked again → select
-    if (focusedCardIndex === index) {
-        cards[index].classList.remove("focused");
-        cards[index].classList.add("selected");
+// New raise/lower card mechanism for attacks
+function raiseCard(index) {
+    const cards = getHandCards();
+    if (!cards[index]) return;
+    
+    raisedCardIndex = index;
+    cards[index].classList.add('raised');
+    showPushButton();
+    
+    // Add click listener to document to lower card when clicking elsewhere
+    setTimeout(() => {
+        document.addEventListener('click', onDocumentClickWhileRaised, true);
+    }, 0);
+}
 
-        selectedCardIndex = index;
-        focusedCardIndex = null;
-        updateAttackZone();
-
-        console.log("[UI] Card selected:", index);
-
-        // This is where we will trigger ATTACK later
-        return;
+function lowerRaisedCard() {
+    if (raisedCardIndex === null) return;
+    
+    const cards = getHandCards();
+    if (cards[raisedCardIndex]) {
+        cards[raisedCardIndex].classList.remove('raised');
     }
+    
+    raisedCardIndex = null;
+    hidePushButton();
+    
+    // Remove document click listener
+    document.removeEventListener('click', onDocumentClickWhileRaised, true);
+}
 
-    // Different card clicked → switch focus
-    cards[focusedCardIndex].classList.remove("focused");
-    cards[index].classList.add("focused");
-    focusedCardIndex = index;
-    updateAttackZone();
+function onDocumentClickWhileRaised(e) {
+    // Don't lower if clicking the raised card itself or the push button
+    const cards = getHandCards();
+    const pushBtn = document.getElementById('push-attack-btn');
+    
+    if (raisedCardIndex !== null && cards[raisedCardIndex]) {
+        if (cards[raisedCardIndex].contains(e.target)) {
+            return; // Clicked the raised card itself
+        }
+    }
+    
+    if (pushBtn && pushBtn.contains(e.target)) {
+        return; // Clicked the push button
+    }
+    
+    // Clicked elsewhere - lower the card
+    lowerRaisedCard();
+}
+
+function showPushButton() {
+    let btn = document.getElementById('push-attack-btn');
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'push-attack-btn';
+        btn.className = 'btn push-attack-btn';
+        btn.innerHTML = '<i class=\"fa-solid fa-arrow-up\"></i> Push to Attack';
+        
+        const handBox = document.querySelector('.player-cards-box');
+        if (handBox) {
+            handBox.appendChild(btn);
+        } else {
+            document.body.appendChild(btn);
+        }
+        
+        btn.addEventListener('click', async () => {
+            if (raisedCardIndex === null) return;
+            const index = raisedCardIndex;
+            lowerRaisedCard(); // Lower before attacking
+            await attack(index);
+        });
+    }
+    btn.style.display = 'block';
+}
+
+function hidePushButton() {
+    const btn = document.getElementById('push-attack-btn');
+    if (btn) btn.style.display = 'none';
 }
 
 function updateAttackZone() {
-
-    const zoneCont = document.getElementById("attack-pile");
-
-    const zone = document.getElementById("attack-zone");
-
-    const shouldShow =
-        currentState &&
-        currentState.phase === "ATTACK" &&
-        currentState.attacker === 0 &&
-        focusedCardIndex !== null;
-
-    if(zone){
-       zone.classList.toggle("active", shouldShow); 
-    }else{
-        console.log("ATTENTION DROP ZONE NOT FOUND");
-        zoneCont.innerHTML =
-        `<div id="attack-zone" class="attack-zone">
-            PUSH CARDS TO DEFEND
-        </div>
-        `;
-        contZone = zoneCont;
-        const zone = document.getElementById("attack-zone");
-        zone.classList.toggle("active", shouldShow);
-    }
-    
+    // Deprecated: keeping for compatibility
 }
 
 function highlightFocusedCard(index) {
-    const cards = getHandCards();
-    cards.forEach(c => c.classList.remove("focused"));
-    if (cards[index]) cards[index].classList.add("focused");
-    updateAttackZone();
-}
-
-function onPointerDown(e, index, cardEl) {
-    if (!currentState) return;
-    if (currentState.phase !== "ATTACK") return;
-    if (currentState.attacker !== 0) return;
-
-    e.preventDefault();
-
-    // Auto-focus if not focused
-    if (focusedCardIndex !== index) {
-        focusedCardIndex = index;
-        // renderCards(currentState.hands[0]);
-        highlightFocusedCard(index);
-    }
-
-    dragCard = cardEl;
-    dragIndex = index;
-    isDragging = true;
-
-    const rect = cardEl.getBoundingClientRect();
-    dragStartX = e.clientX - rect.left;
-    dragStartY = e.clientY - rect.top;
-    // Keep the card's starting viewport position for correct transform math
-    dragCardStartX = rect.left;
-    dragCardStartY = rect.top;
-
-    cardEl.classList.add("dragging");
-
-    document.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerup", onPointerUp);
-}
-
-function onPointerMove(e) {
-    if (!isDragging || !dragCard) return;
-
-    // Compute translation relative to the card's original position
-    const x = e.clientX - dragStartX - dragCardStartX;
-    const y = e.clientY - dragStartY - dragCardStartY;
-
-    dragCard.style.transform = `translate(${x}px, ${y}px) scale(1.05)`;
-
-    updateAttackZoneHover(e.clientX, e.clientY);
-}
-
-function updateAttackZoneHover(x, y) {
-    const zone = document.getElementById("attack-zone");
-    const rect = zone.getBoundingClientRect();
-
-    const inside =
-        x >= rect.left &&
-        x <= rect.right &&
-        y >= rect.top &&
-        y <= rect.bottom;
-
-    if(zone){
-       zone.classList.toggle("active", inside); 
-    }else{
-        console.log("ATTENTION DROP ZONE NOT FOUND");
-        contZone.innerHTML =
-        `<div id="attack-zone" class="attack-zone">
-            PUSH CARDS TO DEFEND
-        </div>
-        `;
-        
-        zone.classList.toggle("active", inside);
-    }
-}
-
-function onPointerUp(e) {
-    document.removeEventListener("pointermove", onPointerMove);
-    document.removeEventListener("pointerup", onPointerUp);
-
-    if (!isDragging || !dragCard) return;
-
-    const zone = document.getElementById("attack-zone");
-    const rect = zone.getBoundingClientRect();
-
-    const inside =
-        e.clientX >= rect.left &&
-        e.clientX <= rect.right &&
-        e.clientY >= rect.top &&
-        e.clientY <= rect.bottom;
-
-    dragCard.classList.remove("dragging");
-    zone.classList.remove("hover");
-
-    if (inside) {
-        attack(dragIndex);
-    } else {
-        resetDraggedCard();
-    }
-
-    cleanupDrag();
+    // Deprecated: keeping for compatibility
 }
 
 function showDefendButton() {
@@ -1262,17 +1204,6 @@ function clearDefenseSelections() {
         if (cards[i]) cards[i].classList.remove('defense-first', 'defense-second');
     });
     defenseSelected = [];
-}
-
-function resetDraggedCard() {
-    if (!dragCard) return;
-    dragCard.style.transform = "";
-}
-
-function cleanupDrag() {
-    dragCard = null;
-    dragIndex = null;
-    isDragging = false;
 }
 
 function animateCardToAttackPile(cardEl) {
