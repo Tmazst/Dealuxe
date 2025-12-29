@@ -610,19 +610,28 @@ function showGameModal(){
     // Extract win type from UI log (last message usually contains win type)
     if (winType && currentState.ui_log && currentState.ui_log.length > 0) {
         const lastLog = currentState.ui_log[currentState.ui_log.length - 1];
-        if (lastLog.includes('DEALUXE WIN')) {
-            winType.textContent = 'DEALUXE WIN';
-            winType.className = 'win-type dealuxe-win';
-        } else if (lastLog.includes('ESCAPE WIN')) {
-            winType.textContent = 'ESCAPE WIN';
-            winType.className = 'win-type escape-win';
-        } else if (lastLog.includes('CRAZY ESCAPE WIN') || lastLog.includes('ZERO COUNT')) {
+        console.log("[FRONTEND] Last UI log message:", lastLog);
+        console.log("[FRONTEND] Full UI log:", currentState.ui_log);
+        
+        // Check in specific order - most specific first
+        if (lastLog.includes('CRAZY ESCAPE WIN')) {
+            console.log("[FRONTEND] Detected CRAZY ESCAPE WIN");
             winType.textContent = 'CRAZY ESCAPE WIN';
             winType.className = 'win-type crazy-win';
         } else if (lastLog.includes('TRAIL WIN')) {
+            console.log("[FRONTEND] Detected TRAIL WIN");
             winType.textContent = 'TRAIL WIN';
             winType.className = 'win-type trail-win';
+        } else if (lastLog.includes('ESCAPE WIN')) {
+            console.log("[FRONTEND] Detected ESCAPE WIN");
+            winType.textContent = 'ESCAPE WIN';
+            winType.className = 'win-type escape-win';
+        } else if (lastLog.includes('DEALUXE WIN')) {
+            console.log("[FRONTEND] Detected DEALUXE WIN");
+            winType.textContent = 'DEALUXE WIN';
+            winType.className = 'win-type dealuxe-win';
         } else {
+            console.log("[FRONTEND] No win type detected, using default");
             winType.textContent = 'Victory';
             winType.className = 'win-type';
         }
