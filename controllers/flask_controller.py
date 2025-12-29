@@ -42,7 +42,7 @@ class FlaskGameController:
         else:
             print(f"[FLASK_CTRL] Defend failed: {result.get('error')}")
         
-        return jsonify(result | self.engine.consume_ui_state())
+        return jsonify({**result, **self.engine.consume_ui_state()})
 
     def draw(self):
         defender = self.engine.state.defender
@@ -54,18 +54,18 @@ class FlaskGameController:
         if not result.get('error'):
             self._run_ai_if_needed()
         
-        return jsonify(result | self.engine.consume_ui_state())
+        return jsonify({**result, **self.engine.consume_ui_state()})
 
     def rule_8_drop(self, value):
         attacker = self.engine.state.attacker
         result = self.engine.rule_8_drop(attacker, value)
-        return jsonify(result | self.engine.consume_ui_state())
+        return jsonify({**result, **self.engine.consume_ui_state()})
 
     def rule_8_crash(self, crash):
         defender = self.engine.state.defender
         result = self.engine.rule_8_crash(defender, crash)
         self._run_ai_if_needed()
-        return jsonify(result | self.engine.consume_ui_state())
+        return jsonify({**result, **self.engine.consume_ui_state()})
     
     def _run_ai_if_needed(self):
         self.ai.play_if_needed()
