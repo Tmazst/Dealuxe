@@ -111,10 +111,10 @@
             <p class="paras-subtopics"></p>
 
             <div class="group">
-                <div class="acc-labels">{{ form.advert_title.label(class="labels")}}</div>
-                {{ form.advert_title(class="form-control",placeholder="Advert Title",id="ImageInput")}}
-                {% if form.advert_title.errors %}
-                    {% for error in form.advert_title.errors %}
+                <div class="acc-labels">{{ form.choose_opponent.label(class="labels")}}</div>
+                {{ form.choose_opponent(class="form-control",placeholder="Advert Title",id="ImageInput")}}
+                {% if form.choose_opponent.errors %}
+                    {% for error in form.choose_opponent.errors %}
                         <span class="span-error" >* {{error}}</span>
                     {% endfor %}
                 {% endif %}
