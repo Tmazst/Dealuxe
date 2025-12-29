@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 
 from game.manager import GameManager
 from controllers.flask_controller import FlaskGameController
+from Forms import  *
 
 app = Flask(__name__)
 
@@ -17,7 +18,8 @@ manager = GameManager()
 
 @app.route("/")
 def index():
-    return render_template("game.html")
+    form = GameStartForm()
+    return render_template("game.html",form=form)
 
 
 # -----------------------------

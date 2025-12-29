@@ -6,6 +6,7 @@ let selectedCardIndex = null;
 let currentState = null;
 let gameMode = null
 let myPlayer = null;
+let contZone = null;
 
 let dragCard = null;
 let dragIndex = null;
@@ -48,6 +49,7 @@ async function createGame(mode = "human_vs_ai") {
 ----------------------------- */
 async function fetchPlayerDetails() {
     if (!gameId) return null;
+    // fetchState();
     try {
         const res = await fetch(`/api/game/${gameId}/player_details`);
         const data = await res.json();
@@ -80,7 +82,7 @@ async function fetchPlayerDetails() {
 
 async function fetchState() {
     if (!gameId) return;
-
+    console.log("Checking Game State");
     const res = await fetch(`/api/game/${gameId}/state`);
     const state = await res.json();
 
@@ -108,8 +110,11 @@ function renderLeaderboard(data) {
     const container = document.getElementById('leaderboard-list');
     if (!container) return;
     container.innerHTML = '';
+    const myPlayerScoreB = document.getElementById('card-count-me');
+    const myOpponentScoreB = document.getElementById('card-count-opponent');
 
-    data.players.forEach(p => {
+
+    data.players.forEach((p,i) => {
         const row = document.createElement('div');
         row.className = 'row';
 
@@ -122,6 +127,12 @@ function renderLeaderboard(data) {
 
         const right = document.createElement('div');
         right.innerHTML = `<div class="role-badge">${p.hand_count} cards</div>`;
+
+        if(i === 0){
+            myPlayerScoreB.textContent = p.hand_count;
+        }else if(i === 1){
+            myOpponentScoreB.textContent = p.hand_count;
+        };
 
         row.appendChild(left);
         row.appendChild(right);
@@ -535,6 +546,8 @@ async function renderState(state) {
         } else if (phase === 'GAME_OVER') {
             setTrackingBadge('Game Over', 'info');
              updateHandHighlight('none');
+             showGameModal();
+             console.log("Game Over");
         } else {
             // opponent's turn or waiting: hide badge or show neutral
             setTrackingBadge('Waiting...', 'info');
@@ -550,6 +563,13 @@ async function renderState(state) {
         // Update draw button visibility/state
         updateDrawButton(state);
     }
+}
+
+function showGameModal(){
+    var gameOverCont = document.querySelector('.game-over-modal-cont');
+    var gameOverModal = document.querySelector(".game-over-modal");
+    gameOverCont.classList.add("show-game-over");
+    gameOverModal.classList.add("show-game-over");
 }
 
 // Toggle hand glow based on current user action
@@ -654,17 +674,19 @@ function showAttackConfirmModal() {
     // don't recreate if already present
     if (document.getElementById('attack-confirm-modal')) return;
     const pile = document.getElementById('attack-pile');
+    const handDiv = document.getElementById('player-cards');
     const modal = document.createElement('div');
     modal.id = 'attack-confirm-modal';
     modal.className = 'attack-confirm-modal';
     modal.innerHTML = `
         
-        <div class="attack-confirm-actions">
+        <div class="attack-confirm-actions gen-flex-col">
+            <div class="caption">Allow opponent to play a card</div>
             <button id="attack-confirm-proceed" class="btn"><i class="fa-solid fa-check"></i> Proceed Game</button>
         </div>
     `;
     // position modal over pile
-    if (pile && pile.parentElement) pile.parentElement.appendChild(modal);
+    if (handDiv && handDiv.parentElement) handDiv.appendChild(modal);
 
     document.getElementById('attack-confirm-proceed').addEventListener('click', async () => {
         hideAttackConfirmModal();
@@ -964,6 +986,9 @@ function onCardClick(index) {
 }
 
 function updateAttackZone() {
+
+    const zoneCont = document.getElementById("attack-pile");
+
     const zone = document.getElementById("attack-zone");
 
     const shouldShow =
@@ -972,7 +997,20 @@ function updateAttackZone() {
         currentState.attacker === 0 &&
         focusedCardIndex !== null;
 
-    zone.classList.toggle("active", shouldShow);
+    if(zone){
+       zone.classList.toggle("active", shouldShow); 
+    }else{
+        console.log("ATTENTION DROP ZONE NOT FOUND");
+        zoneCont.innerHTML =
+        `<div id="attack-zone" class="attack-zone">
+            PUSH CARDS TO DEFEND
+        </div>
+        `;
+        contZone = zoneCont;
+        const zone = document.getElementById("attack-zone");
+        zone.classList.toggle("active", shouldShow);
+    }
+    
 }
 
 function highlightFocusedCard(index) {
@@ -1035,7 +1073,18 @@ function updateAttackZoneHover(x, y) {
         y >= rect.top &&
         y <= rect.bottom;
 
-    zone.classList.toggle("hover", inside);
+    if(zone){
+       zone.classList.toggle("active", inside); 
+    }else{
+        console.log("ATTENTION DROP ZONE NOT FOUND");
+        contZone.innerHTML =
+        `<div id="attack-zone" class="attack-zone">
+            PUSH CARDS TO DEFEND
+        </div>
+        `;
+        
+        zone.classList.toggle("active", inside);
+    }
 }
 
 function onPointerUp(e) {

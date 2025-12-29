@@ -1,6 +1,37 @@
 from game.models import Deck, GameState
 from game.rules import is_winner, has_attack_card, is_low_only
 
+'''
+[**UPDATE 27 December 2025**]
+[**THE 4 CONDITIONS OF WINNING THE DEALUXE GAME**]
+Note: The DEALUXE WIN, ECSAPE WIN, TRAIL WIN conditions are are under the normal and main; HAND <= 3 rule
+
+1. DEALUXE WIN:
+An attacker should always win after a failed defense from the opponent.
+e.g. If an attacker's hand has [2,3,8]. When they attack with the [8] they dont automatically
+win, the defender has to fail and draw a card first then the attacker wins. The drawing of the
+card tells us that the defender did not have defending cards before they draw or they mistakely
+draw when they were not supposed to. Drawing of the cards triggers a win for attacker. its a DEALUXE WIN.
+
+2. ESCAPE WIN:
+A win for defender should take place immediately when the successfully defended their position.
+e.g. attacker played [J], defender's hand[3,8,A]. If defender defends succefully with [3,8] that 
+automatically triggers a win (without any drawing of card). its an ESCAPE WIN.
+
+3. CRAZY ESCAPE WIN:
+If defender draws a card (failed to defend) while attacker has count=0 (Left with no card after an attack).
+It means the attacker was left with an attacking card(4-13) e.g. a [Q],before the latest attack.
+But if the defender defended well e.g. with [7,5] the game would proceed normally.
+
+4. TRAIL WIN (RULE #8 WIN):
+When the attacker is left with winning cards i.e. any of [A,2,3] but they are more 3 lets with 5 cards [A,2,2,3,A].
+The attacker must drop each card until they reach 3. But during trail they attacker should pray that 
+defender must not have any of the cards they at a time, if the defender have the card dropped in their HAND, 
+they are allowed to crash the trail. The will proceed normally after a successful crash.
+
+Note: DEALUXE WIN, CRAZY ESCAPE WIN, TRAIL WIN are triggered by defender_draw method and ESCAPE WIN is triggered by defence method.
+'''
+
 
 class CardGameEngine:
     def __init__(self, players):
@@ -60,13 +91,16 @@ class CardGameEngine:
             self.state.phase = "RULE_8"
             print("[ENGINE] Rule 8 triggered automatically")
 
-        self._check_winner()
+        # self._check_winner()
 
     # ---------------------
     # ATTACK PHASE
     # ---------------------
 
     def attack(self, player_id, card_index):
+        if self.state.game_over:
+            print("[ENGINE] GAME WAS OVER - attack")
+            return 
         # print(f'[ENGINE] ATTACK Phase: {self.state.phase}, ID {player_id}')
         assert self.state.phase == "ATTACK"
 
@@ -93,21 +127,35 @@ class CardGameEngine:
     # ---------------------
 
     def defend(self, player_id, i1, i2):
+        if self.state.game_over:
+            print("[ENGINE] GAME WAS OVER - defend")
+            return 
+        
         assert self.state.phase == "DEFENSE"
+        DEFENCE_SUCCESSFUL = True
 
         defender = self.players[player_id]
         c1 = defender.hand[i1]
         c2 = defender.hand[i2]
 
         if c1.value + c2.value != self.state.attack_card.value:
+            DEFENCE_SUCCESSFUL = False
             return {"error": "Invalid sum"}
 
         defender.hand.remove(c1)
         defender.hand.remove(c2)
 
-        self._log(f"[ENGINE] Defense successful: {c1} + {c2}")
+        self._log(f"[ENGINE] ✔Defense successful: {c1} + {c2}")
 
-        self._check_winner()
+        if DEFENCE_SUCCESSFUL:
+            for i, p in enumerate(self.players):
+                if player_id == i:
+                    if is_winner(p):
+                        '''ESCAPE WIN'''
+                        self.state.game_over = True
+                        self.state.winner = i
+                        self.state.phase = "GAME_OVER"
+                        print(f"[ENGINE] Player {i} wins")
 
         # swap turns
         self.state.attacker, self.state.defender = (
@@ -123,8 +171,27 @@ class CardGameEngine:
 
 
     def defender_draw(self, player_id):
+        if self.state.game_over:
+            print("[ENGINE] GAME WAS OVER - draw")
+            return
+         
         defender = self.players[player_id]
         card = defender.draw_card(self.deck)
+
+        # Checking for dealuxe and trails wins 
+        self._check_winner()
+
+        # Check if attacker Win after this card draw? 
+        attacker = self.players[self.state.attacker]
+        if attacker.hand == 0 and self.state.attack_card >= 4 and self.state.attack_card <= 13: 
+            '''
+            CRAZY ESCAPE WIN 
+            '''
+            self.state.game_over = True
+            self.state.winner = self.state.attacker
+            self.state.phase = "GAME_OVER"
+            print(f"[ENGINE] Player {self.state.attacker} wins by ZERO COUNT - CRAZY ESCAPE WIN")
+            self._log(f"[ENGINE] Player {self.state.attacker} wins by ZERO COUNT")
 
         # Do not reveal drawn card identities in UI log
         self._log(f"[ENGINE] Defender failed to defend and draws a card")
@@ -135,7 +202,7 @@ class CardGameEngine:
 
         self.state.defender_drawn_card = str(card) if card else None
 
-        self._log("[ENGINE] Defense failed. Attacker gets another turn.")
+        self._log("[ENGINE] ❌Defense failed. Attacker gets another turn.")
 
         return {
             "drawn": str(card) if card else None,
@@ -163,7 +230,7 @@ class CardGameEngine:
         self._log(f"[ENGINE] Rule 8 drop: {dropped}")
 
         self.state.trail_value = value
-        self._check_winner()
+        # self._check_winner()
 
         return {"dropped": str(dropped)}
 

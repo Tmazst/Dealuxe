@@ -87,4 +87,18 @@ class GameState:
         self.defence_cards=None
         self.defender_drawn_card=None
 
+# -----------------------------
+# GAME MANAGER RECCORDS
+# -----------------------------
 
+# -----------------------------
+# USERS/PLAYERS
+# -----------------------------
+
+# -----------------------------
+# USERS BET TABLE
+# -----------------------------
+
+# -----------------------------
+# USERS SUBSCRIPTION TABLE
+# -----------------------------

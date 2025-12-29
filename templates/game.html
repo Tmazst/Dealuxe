@@ -20,19 +20,20 @@
 </head>
 <body>
 <header class="site-header">
-    <div class="brand">Card Game</div>
+    <div class="brand">🎁1500SZL</div>
     <div class="controls">
-        <button class="btn" onclick="startTurn()">Start Turn</button>
-        <button class="btn">Connect Wallet</button>
+        <!-- <button class="btn" onclick="startTurn()">Start Turn</button> -->
+         <button class="btn-glass ambience">Rules</button>
+        <button class="btn-glass ambience">Wallet</button>
     </div>
 </header>
 
-<div class="app-grid">
+<div class="app-grid gen-flex">
 
     <main class="panel">
         <div id="leader-progess-bars-cont">
             <div class="user-progress-bar-cont">
-                <div class="user-icon"></div>
+                <div class="user-icon"><i class="fa-solid fa-user"></i></div>
                 <div id="user-progress-fill" class="user-progress-fill" style="width: 0%;"></div>
                 <div id="user-progress-text" class="user-progress-text">0%</div>
             </div>
@@ -42,18 +43,39 @@
                 <div id="user-progress-text" class="user-progress-text">0%</div>
             </div>
         </div>
-
-        <div id="attack-zone" class="attack-zone">
-            DROP CARD HERE TO ATTACK
+        <div class="mode-caption-cont gen-flex">
+            <span class="mode-key draw-label">Mode</span>
+            <span class="mode-value">Human vs AI Robot</span> 
         </div>
 
         <div class="game-table">
-            <div id="attack-pile" class="attack-pile"></div>
+
+            <div class="attack-pile-cont gen-flex">
+                <div id="card-count-1"  class="score player-left gen-flex-col">
+                    <i class="fa-solid fa-user"></i>
+                    <h3 id='card-count-me'></h3>
+                    <small>cards</small>
+                </div>
+                <div id="attack-pile" class="attack-pile">
+                    <div id="attack-zone" class="attack-zone">
+                        DROP CARD HERE 
+                    </div>
+                </div>
+                <div id="card-count-2"  class="score player-left gen-flex-col">
+                    <i class="fa-solid fa-crosshairs"></i>
+                    <h3 id='card-count-opponent'></h3>
+                    <small>cards</small>
+                </div>
+            </div>
             <div class="cont-narrative gen-flex-col">
                 <div class="game-comments">Game Comments<span id="cards-ids"></span></div>
                 <div class="tracking-badge">ACTIONS<span id="cards-ids"></span></div>
             </div>
-            <div id="player-cards" class="card-stack"></div>
+            <div class="player-cards-box">
+                <div id="player-cards" class="card-stack">
+
+                </div>
+            </div>
         </div>
 
         <div id="agent-panel" class="agent-panel">
@@ -70,6 +92,37 @@
             <!-- leaderboard rows populated by JS-->
         </div>
     </aside>
+</div>
+
+<div class="game-over-modal-cont gen-flex-col">
+    <div class="game-over-modal ambience gen-flex-col ">
+        <h1 class="btn">GAME OVER!!</h1>
+    </div>
+</div>
+
+<div class="game-start-modal-cont gen-flex-col">
+    <div class="game-start-modal ambience gen-flex-col ">
+        <h2>Dealuxe 2</h2>
+        <small>Attack-Defend Card Game</small>
+        <h5>4 Winning Ways</h5>
+        <form _lpchecked="1" action="" method="post"  enctype="multipart/form-data" >
+            <input type="hidden" name="csrf_token" value="{{ _csrf_token }}">
+            <hr>
+            <p class="paras-subtopics"></p>
+
+            <div class="group">
+                <div class="acc-labels">{{ form.advert_title.label(class="labels")}}</div>
+                {{ form.advert_title(class="form-control",placeholder="Advert Title",id="ImageInput")}}
+                {% if form.advert_title.errors %}
+                    {% for error in form.advert_title.errors %}
+                        <span class="span-error" >* {{error}}</span>
+                    {% endfor %}
+                {% endif %}
+            <!--<input type="text" class="form-control" id="name" name="nm" placeholder="Name">-->
+            </div>
+        </form>
+        <button class="game_start_btn"><h1 class="btn">Start Game</h1></button> 
+    </div>
 </div>
 
 <script src="/static/js/game.js"></script>

@@ -1,7 +1,7 @@
 :root{
     /* Theme variables - tweak these to change the whole UI */
     --bg-1: #1a0836;
-    --bg-2: #2e0b4f;
+    --bg-2:   #2e0b4f;
     --accent-1: #8b5cf6; /* purple */
     --accent-2: #ffe46b; /* pink */
     --glass: rgba(255,255,255,0.06);
@@ -19,13 +19,18 @@ html,body{
     margin:0;
     padding:0;
     font-family: "Segoe UI", Roboto, Arial, sans-serif;
-    background: radial-gradient(1000px 600px at 10% 10%, var(--bg-2) 0%, transparent 30%),
-                radial-gradient(900px 500px at 90% 90%, rgba(10,6,24,0.6) 0%, transparent 30%),
+    background: radial-gradient(1000px 6000px at 10% 10%, var(--bg-2)  0%, transparent 30%),
+                radial-gradient(200px 5000px at 90% 90%,#2e0b4f  0%, transparent 30%),
                 linear-gradient(180deg, var(--bg-1), #07020a);
+    /* background: red; */
     color:var(--card-face);
     width:100%
 }
 
+.brand{
+    font-family: Oswald, sans-serif;
+}
+/* rgba(10,6,24,0.6) */
 /* Top header */
 .site-header{
     display:flex;
@@ -49,20 +54,54 @@ html,body{
     padding:10px 14px;
     border-radius:15px;
     font-family: Oswald, sans-serif;
-    font-weight: 600;
     border:none;
     cursor:pointer;
     box-shadow:0 6px 18px rgba(139,92,246,0.15);
 }
 .btn:hover{transform:translateY(-2px)}
+
+.btn-glass{
+    color:rgba(139,92,246,0.9);
+    padding:7px 14px;
+    border-radius:15px;
+    font-family: Oswald, sans-serif;
+    font-weight: 600;
+    cursor:pointer;
+    /* box-shadow:0 6px 18px rgba(139,92,246,0.15);    */
+}
 /* Main layout: left game area, right leaderboard */
-.app-grid{
+/* .app-grid{
     display:grid;
     grid-template-columns: 1fr 320px;
     gap:24px;
     max-width:1200px;
     margin:24px auto;
     padding:0 20px 40px;
+} */
+.app-grid{
+    gap:24px;
+    max-width:1200px;
+    margin:24px auto;
+    padding:0 20px 40px; 
+    width:100%;
+    /* justify-content: flex-end;  */
+    align-items: flex-start !important; 
+    height: 100vh;
+    overflow: hidden;
+}
+
+@media (max-width: 1000px) {
+        .app-grid{
+ 
+            flex-wrap: wrap;
+        }
+        .leaderboard{
+            max-width: 1000px !important;
+        }
+}
+
+.leaderboard{
+    max-width: 400px;
 }
 
 .panel{
@@ -71,7 +110,7 @@ html,body{
     padding:18px;
     box-shadow: 0 10px 30px rgba(4,4,8,0.6);
     border: 1px solid rgba(255,255,255,0.04);
-    overflow: auto;
+    /* overflow: auto; */
     width:100%;
 }
 
@@ -82,7 +121,8 @@ html,body{
     display:flex;
     align-items:center;
     justify-content:center;
-    overflow:auto;
+    width: 100%;
+    /* overflow:auto; */
 }
 
 .table-stage{
@@ -91,13 +131,19 @@ html,body{
     height:100%;
     position:relative;
 }
-
-/* Attack pile centered with subtle glass */
-.attack-pile{
+.score{
+    gap:0px !important;
+}
+.attack-pile-cont{
     position:absolute;
-    top:20%;
+    top:18%;
     left:50%;
     transform:translate(-50%,-50%);
+    width: 100%;
+}
+/* Attack pile centered with subtle glass */
+.attack-pile{
+    position: relative;
     width:220px;
     height:100px;
     border-radius:14px;
@@ -112,7 +158,12 @@ html,body{
     pointer-events:none;
 }
 .cont-narrative{
-    margin-top: -50px;
+    margin-top: -55px;
+    width: 100% !important;
+    /* background-color: #3ee6b5; */
+    min-width: 300px;
+    margin-left: auto !important;
+    margin-right: auto !important;
 }
 .gen-flex{
     display:flex;align-items:center;justify-content:center;gap:8px
@@ -127,18 +178,55 @@ html,body{
     bottom:18px;
     left:50%;
     transform:translateX(-50%);
-    height:200px;
+    height:170px;
     width:100%;
     max-width:820px;
     display:block;
     pointer-events:auto;
+    background: none !important;
+}
+
+.attack-confirm-actions .caption{
+    color:#202020;
+}
+
+.ambience{
+    background: rgba(29, 12, 68, 0.6);
+    border:2px solid rgba(255, 209, 209, 0.09);  
+    border-color: rgba(139,92,246,0.9);
+    box-shadow: 0 0 28px rgba(139,92,246,0.1), 0 0 60px rgba(139,92,246,0.30);
+}
+
+.game-over-modal-cont{
+    position: fixed;
+    top:0;left:0;right:0;bottom: 0;
+    background-color: rgba(26, 8, 54,0.5);
+    z-index: 1999;
+    backdrop-filter: blur(5px);
+    display: none;
+}
+.game-over-modal{
+    position:absolute;
+    top:50%;left:50%;
+    transform: translate(-50%,-50%);
+    width:95%;
+    max-width: 700px;
+    height: 80vh;
+    z-index: 2000;
+    border-radius: 15px;
+    display: none;
+}
+
+.show-game-over{
+    display:flex ;
 }
 
 /* Hand glow states */
 #player-cards.hand-attack{ 
     box-shadow: 0 0 0 rgba(255,0,0,0.0);
     animation: hand-attack-flash 1600ms ease-in-out infinite;
-    border-radius: 14px;
+    background-color: rgba(244, 3, 3, 0) !important;
+    /* border-radius: 14px; */
 }
 #player-cards.hand-draw{
     box-shadow: 0 0 36px rgba(34,197,94,0.35), 0 0 12px rgba(34,197,94,0.25);
@@ -199,15 +287,23 @@ html,body{
 
 .card.dragging{transition:none;z-index:999;cursor:grabbing}
 
+.player-cards-box{
+    width: 100%;
+    overflow-x: auto;
+    height: max-content;
+}
+
+
+
 /* Attack zone (top center) */
 .attack-zone{
     position:absolute;
-    top:40%;
-    left:50%;
-    transform:translateX(-50%);
-    width:220px;
-    height:100px;
+    top:0;
+    left:0;
+    bottom: 0;
+    right:0;
     border-radius:12px;
+    text-align: center;
     z-index:500;
     display:flex;align-items:center;justify-content:center;
     pointer-events:none;
@@ -219,7 +315,7 @@ html,body{
 .attack-zone.hover{border-color: rgba(139,92,246,0.9);background:linear-gradient(90deg, rgba(139,92,246,0.06), rgba(255,107,203,0.04))}
 
 /* Narrative / tracking */
-.cont-narrative{width:220px;display:flex;flex-direction:column;gap:8px}
+.cont-narrative{display:flex;flex-direction:column;gap:8px}
 .game-comments{background:rgba(0,0,0,0.25);padding:8px;border-radius:8px;color:var(--muted);font-size:13px;max-height:70px;overflow:hidden}
 .game-comments div{padding:4px 6px;border-radius:6px;background:rgba(255,255,255,0.02);margin-bottom:4px}
 .game-comments.flash{animation:comment-flash 900ms ease both}
@@ -311,8 +407,8 @@ html,body{
 .user-progress-text{width:48px;text-align:right;font-weight:700;color:var(--muted);margin-left:6px}
 
 /* Winner style (green + shiny) */
-.user-progress-fill.winner{background:linear-gradient(90deg,#7bed9f,#34d399);box-shadow:0 10px 30px rgba(52,211,153,0.12)}
-.user-progress-fill.loser{background:linear-gradient(90deg,#ffb3b3,#ff6b6b);box-shadow:0 10px 30px rgba(255,99,71,0.12);}
+.user-progress-fill.winner{background:linear-gradient(90deg,#7bed9f,#34d399);box-shadow:0 10px 30px rgba(52,211,153,0.3)}
+.user-progress-fill.loser{background:linear-gradient(90deg,#ffb3b3,#ff6b6b);box-shadow:0 10px 30px rgba(255,99,71,0.3);}
 
 /* container-level loser/winner accent */
 .user-progress-bar-cont.winner .user-icon, .opponent-progress-bar-cont.winner .user-icon{box-shadow:0 8px 24px rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.12)}
@@ -347,11 +443,23 @@ html,body{
     font-weight:800;
 }
 .draw-button-wrapper{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:3000}
-.draw-label{font-size:12px;color:var(--muted);background:rgba(0,0,0,0.22);padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+.draw-label{display:none;font-size:12px;color:var(--muted);background:rgba(0,0,0,0.22);padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
 .draw-button .icon{font-size:20px}
 .draw-button.flash{animation:draw-flash 1800ms ease-in-out infinite}
 .draw-button.disabled{opacity:0.5;pointer-events:none;transform:scale(0.98)}
+.mode-key{
+    display: block !important;
+}
 
+.mode-caption-cont{
+    position: absolute;
+    top:65px;
+    left:20px;
+}
+.mode-value{
+    font-size: 12px;
+    color:rgb(169, 169, 169);
+}
 @keyframes draw-flash{
     0%{transform:translateY(0) scale(1); box-shadow:0 10px 30px rgba(255,184,77,0.14)}
     50%{transform:translateY(-6px) scale(1.04); box-shadow:0 26px 60px rgba(255,184,77,0.22)}
