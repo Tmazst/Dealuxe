@@ -171,7 +171,7 @@ class CardGameEngine:
         defender.hand.remove(c1)
         defender.hand.remove(c2)
 
-        self._log(f"[ENGINE] Defense successful: {c1.value} + {c2.value} = {attack_value}")
+        self._log(f"[ENGINE] Defense successful: {c1.value} + {c2.value} = {self.state.attack_card.value}")
 
         if DEFENCE_SUCCESSFUL:
             for i, p in enumerate(self.players):
