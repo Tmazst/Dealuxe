@@ -233,8 +233,7 @@ async function updateAgent(state) {
         text.innerText = `Rule 8: drop a trail value (1-3) if prompted.`;
     } else if (phase === 'GAME_OVER') {
         text.innerText = `Game over. Check results in the leaderboard.`;
-        console.log("[FRONTEND] Game over detected, fetching final state before modal");
-        await fetchState();
+        console.log("[FRONTEND] Game over detected, showing modal");
         showGameModal();
     } else {
         text.innerText = `Phase: ${phase}`;
@@ -578,7 +577,7 @@ async function renderState(state) {
             updateHandHighlight('none');
             // Fetch fresh state before showing modal to ensure win type is correct
             console.log("[FRONTEND] Game over detected, fetching final state before modal");
-            await fetchState();
+            // await fetchState();
             showGameModal();
             console.log("Game Over");
         } else {
@@ -614,6 +613,10 @@ function showGameModal(){
     }
     
     console.log("[FRONTEND] Modal elements found, populating data...");
+    console.log("[FRONTEND] Current state:", currentState);
+    console.log("[FRONTEND] UI log:", currentState?.ui_log);
+    console.log("[FRONTEND] Game over flag:", currentState?.game_over);
+    console.log("[FRONTEND] Winner:", currentState?.winner);
     
     // Populate winner information
     const winnerId = currentState.winner;
@@ -627,7 +630,8 @@ function showGameModal(){
     }
     
     // Extract win type from UI log (last message usually contains win type)
-    if (winType && currentState.ui_log && currentState.ui_log.length > 0) {
+    if (winType) {
+        if (currentState.ui_log && Array.isArray(currentState.ui_log) && currentState.ui_log.length > 0) {
         const lastLog = currentState.ui_log[currentState.ui_log.length - 1];
         console.log("[FRONTEND] Last UI log message:", lastLog);
         console.log("[FRONTEND] Full UI log:", currentState.ui_log);
@@ -635,22 +639,27 @@ function showGameModal(){
         // Check in specific order - most specific first
         if (lastLog.includes('CRAZY ESCAPE WIN')) {
             console.log("[FRONTEND] Detected CRAZY ESCAPE WIN");
-            winType.textContent = 'CRAZY ESCAPE WIN';
+            winType.textContent = '🤣CRAZY ESCAPE WIN';
             winType.className = 'win-type crazy-win';
         } else if (lastLog.includes('TRAIL WIN')) {
             console.log("[FRONTEND] Detected TRAIL WIN");
-            winType.textContent = 'TRAIL WIN';
+            winType.textContent = '👌TRAIL WIN';
             winType.className = 'win-type trail-win';
         } else if (lastLog.includes('ESCAPE WIN')) {
             console.log("[FRONTEND] Detected ESCAPE WIN");
-            winType.textContent = 'ESCAPE WIN';
+            winType.textContent = '😉ESCAPE WIN';
             winType.className = 'win-type escape-win';
         } else if (lastLog.includes('DEALUXE WIN')) {
             console.log("[FRONTEND] Detected DEALUXE WIN");
-            winType.textContent = 'DEALUXE WIN';
+            winType.textContent = '😍DEALUXE WIN';
             winType.className = 'win-type dealuxe-win';
         } else {
             console.log("[FRONTEND] No win type detected, using default");
+            winType.textContent = 'Victory';
+            winType.className = 'win-type';
+        }
+        } else {
+            console.log("[FRONTEND] No UI log available to determine win type");
             winType.textContent = 'Victory';
             winType.className = 'win-type';
         }

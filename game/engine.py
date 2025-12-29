@@ -355,7 +355,10 @@ class CardGameEngine:
 
         # include ui log and then clear transient fields
         data["ui_log"] = list(self.ui_log)
-        self.ui_log.clear()
+        
+        # Don't clear ui_log if game is over - preserve win message for modal
+        if not self.state.game_over:
+            self.ui_log.clear()
 
         # clear transient fields
         self.state.defence_cards = None
