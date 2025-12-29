@@ -1304,13 +1304,29 @@ function showDefendButton() {
         btn = document.createElement('button');
         btn.id = 'defend-confirm-btn';
         btn.className = 'btn defend-btn';
-        btn.textContent = 'Push to Defend';
-        // place near agent panel
-        const panel = document.getElementById('agent-panel') || document.body;
-        panel.appendChild(btn);
+        btn.innerHTML = '<i class="fa-solid fa-shield"></i> Push to Defend';
+        
+        // Place in player-cards-box, same as attack button
+        const handBox = document.querySelector('.player-cards-box');
+        if (handBox) {
+            handBox.appendChild(btn);
+        } else {
+            document.body.appendChild(btn);
+        }
+        
         btn.addEventListener('click', async () => {
             // send selected indices to backend
             if (defenseSelected.length !== 2) return;
+            
+            // Animate ghost cards to pile
+            const cards = getHandCards();
+            const cardEls = defenseSelected.map(i => cards[i]).filter(Boolean);
+            if (cardEls.length === 2) {
+                // Animate both cards sequentially
+                await animateCardGhostToPile(cardEls[0]);
+                await animateCardGhostToPile(cardEls[1]);
+            }
+            
             // call existing defend() helper
             await defend(defenseSelected.slice());
             // cleanup UI selections
@@ -1318,7 +1334,7 @@ function showDefendButton() {
             hideDefendButton();
         });
     }
-    btn.style.display = 'inline-block';
+    btn.style.display = 'block';
 }
 
 function hideDefendButton() {
