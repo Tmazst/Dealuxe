@@ -100,9 +100,13 @@ class CardGameEngine:
     def attack(self, player_id, card_index):
         if self.state.game_over:
             print("[ENGINE] GAME WAS OVER - attack")
-            return 
-        # print(f'[ENGINE] ATTACK Phase: {self.state.phase}, ID {player_id}')
-        assert self.state.phase == "ATTACK"
+            return {"error": "Game is already over"}
+        
+        # Better error handling instead of assert
+        if self.state.phase != "ATTACK":
+            error_msg = f"Cannot attack during {self.state.phase} phase. Expected ATTACK phase."
+            print(f"[ENGINE] {error_msg}")
+            return {"error": error_msg, "current_phase": self.state.phase}
 
         attacker = self.players[player_id]
         # Validate index to avoid IndexError when callers pass stale indices
@@ -117,6 +121,7 @@ class CardGameEngine:
         attacker.hand.remove(card)
         self.state.attack_card = card
         self.state.phase = "DEFENSE"
+        print(f"[ENGINE] Phase transition: ATTACK → DEFENSE")
 
         self._log(f"[ENGINE] Player {player_id} attacks with {card}")
 
@@ -129,9 +134,14 @@ class CardGameEngine:
     def defend(self, player_id, i1, i2):
         if self.state.game_over:
             print("[ENGINE] GAME WAS OVER - defend")
-            return 
+            return {"error": "Game is already over"}
         
-        assert self.state.phase == "DEFENSE"
+        # Better error handling instead of assert
+        if self.state.phase != "DEFENSE":
+            error_msg = f"Cannot defend during {self.state.phase} phase. Expected DEFENSE phase."
+            print(f"[ENGINE] {error_msg}")
+            return {"error": error_msg, "current_phase": self.state.phase}
+        
         DEFENCE_SUCCESSFUL = True
 
         defender = self.players[player_id]
@@ -164,6 +174,7 @@ class CardGameEngine:
         )
         self.state.attack_card = None
         self.state.phase = "ATTACK"
+        print(f"[ENGINE] Phase transition: DEFENSE → ATTACK (roles swapped, new attacker: {self.state.attacker})")
         self.state.defence_cards = [str(c1),str(c2)]
 
         return {"ok": True, "success": True,"used_cards": [str(c1), str(c2)],
@@ -199,6 +210,7 @@ class CardGameEngine:
         # Defense failed → attacker keeps the turn
         self.state.attack_card = None
         self.state.phase = "ATTACK"
+        print(f"[ENGINE] Phase transition: DEFENSE → ATTACK (defense failed, attacker {self.state.attacker} keeps turn)")
 
         self.state.defender_drawn_card = str(card) if card else None
 

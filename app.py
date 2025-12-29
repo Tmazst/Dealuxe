@@ -85,6 +85,10 @@ def start_turn(game_id):
     controller = FlaskGameController(engine)
 
     controller.start_turn()
+    
+    # Save updated state back to storage
+    manager.update_game(game_id, engine)
+    
     return jsonify(engine.get_state())
 
 
@@ -99,6 +103,9 @@ def attack(game_id):
 
     index = int(request.json["index"])
     result = controller.attack(index)
+    
+    # Save updated state back to storage
+    manager.update_game(game_id, engine)
 
     return result
 
@@ -111,7 +118,12 @@ def defend(game_id):
     i1 = int(request.json["i1"])
     i2 = int(request.json["i2"])
 
-    return controller.defend(i1, i2)
+    result = controller.defend(i1, i2)
+    
+    # Save updated state back to storage
+    manager.update_game(game_id, engine)
+    
+    return result
 
 
 @app.route("/api/game/<game_id>/draw", methods=["POST"])
@@ -119,7 +131,12 @@ def draw(game_id):
     engine = manager.get_game(game_id)
     controller = FlaskGameController(engine)
 
-    return controller.draw()
+    result = controller.draw()
+    
+    # Save updated state back to storage
+    manager.update_game(game_id, engine)
+    
+    return result
 
 
 @app.route("/api/game/<game_id>/rule8/drop", methods=["POST"])
@@ -128,7 +145,12 @@ def rule8_drop(game_id):
     controller = FlaskGameController(engine)
 
     value = int(request.json["value"])
-    return controller.rule_8_drop(value)
+    result = controller.rule_8_drop(value)
+    
+    # Save updated state back to storage
+    manager.update_game(game_id, engine)
+    
+    return result
 
 
 @app.route("/api/game/<game_id>/rule8/crash", methods=["POST"])
@@ -137,7 +159,12 @@ def rule8_crash(game_id):
     controller = FlaskGameController(engine)
 
     crash = bool(request.json["crash"])
-    return controller.rule_8_crash(crash)
+    result = controller.rule_8_crash(crash)
+    
+    # Save updated state back to storage
+    manager.update_game(game_id, engine)
+    
+    return result
 
 
 @app.route("/api/game/<game_id>/leaderboard")

@@ -15,22 +15,45 @@ class FlaskGameController:
 
     def attack(self, card_index):
         attacker = self.engine.state.attacker
+        print(f"[FLASK_CTRL] Attack request - Phase: {self.engine.state.phase}, Attacker: {attacker}, Card: {card_index}")
+        
         result = self.engine.attack(attacker, card_index)
-        defend_results = self._run_ai_if_needed()
+        
+        # Only run AI if attack was successful
+        defend_results = None
+        if result.get('ok'):
+            defend_results = self._run_ai_if_needed()
+        else:
+            print(f"[FLASK_CTRL] Attack failed: {result.get('error')}")
+        
         # Return transient UI state (and consume it) so frontend receives
         # defence/defender_drawn info produced by the AI in the same request.
         return jsonify({'defence_results': defend_results, 'results': result, 'ui_state': self.engine.consume_ui_state()})
 
     def defend(self, idx1, idx2):
         defender = self.engine.state.defender
+        print(f"[FLASK_CTRL] Defend request - Phase: {self.engine.state.phase}, Defender: {defender}")
+        
         result = self.engine.defend(defender, idx1, idx2)
-        self._run_ai_if_needed()
+        
+        # Only run AI if defend was successful
+        if not result.get('error'):
+            self._run_ai_if_needed()
+        else:
+            print(f"[FLASK_CTRL] Defend failed: {result.get('error')}")
+        
         return jsonify(result | self.engine.consume_ui_state())
 
     def draw(self):
         defender = self.engine.state.defender
+        print(f"[FLASK_CTRL] Draw request - Phase: {self.engine.state.phase}, Defender: {defender}")
+        
         result = self.engine.defender_draw(defender)
-        self._run_ai_if_needed()
+        
+        # Only run AI if draw was successful
+        if not result.get('error'):
+            self._run_ai_if_needed()
+        
         return jsonify(result | self.engine.consume_ui_state())
 
     def rule_8_drop(self, value):

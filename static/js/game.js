@@ -8,6 +8,9 @@ let gameMode = null
 let myPlayer = null;
 let contZone = null;
 
+// Request locking to prevent duplicate/concurrent actions
+let isRequestInProgress = false;
+
 let dragCard = null;
 let dragIndex = null;
 let dragStartX = 0;
@@ -251,6 +254,14 @@ async function attack(index) {
     if (!currentState) return;
     if (currentState.phase !== "ATTACK") return;
     if (currentState.attacker !== 0) return;
+    
+    // Prevent duplicate/concurrent requests
+    if (isRequestInProgress) {
+        console.log("[FRONTEND] Request already in progress, ignoring attack");
+        return;
+    }
+    
+    isRequestInProgress = true;
 
     const cards = getHandCards();
     const cardEl = cards[index];
@@ -261,28 +272,42 @@ async function attack(index) {
         try { playAttackSound(); } catch (e) {}
     }
 
-    const res = await fetch(`/api/game/${gameId}/attack`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ index })
-    });
+    try {
+        const res = await fetch(`/api/game/${gameId}/attack`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ index })
+        });
 
-    focusedCardIndex = null;
-    const data = await res.json();
-    const ui = data.ui_state;
-    console.log("Attack response ui:", ui);
-    if (ui && ui.defence_cards) animateOpponentDefense(ui.defence_cards);
-    else if (ui && ui.defender_drawn_card) {
-        setOpponentStatus("Opponent drew a card");
-        // show ghost animation for opponent drawing
-        try { await animateOpponentDrawGhost(); } catch (e) { /* ignore */ }
+        focusedCardIndex = null;
+        const data = await res.json();
+        const ui = data.ui_state;
+        console.log("Attack response ui:", ui);
+        
+        // Check if attack was successful
+        if (data.results && data.results.error) {
+            console.error("[FRONTEND] Attack failed:", data.results.error);
+            setOpponentStatus(`Error: ${data.results.error}`);
+        } else {
+            if (ui && ui.defence_cards) animateOpponentDefense(ui.defence_cards);
+            else if (ui && ui.defender_drawn_card) {
+                setOpponentStatus("Opponent drew a card");
+                // show ghost animation for opponent drawing
+                try { await animateOpponentDrawGhost(); } catch (e) { /* ignore */ }
+            }
+        }
+        
+        if (ui && ui.ui_log) renderComments(ui.ui_log);
+
+        // Delay state refresh until animation finishes
+        setTimeout(() => {
+            fetchState();
+            isRequestInProgress = false;
+        }, 450);
+    } catch (error) {
+        console.error("[FRONTEND] Attack request failed:", error);
+        isRequestInProgress = false;
     }
-    if (ui && ui.ui_log) renderComments(ui.ui_log);
-
-    // Delay state refresh until animation finishes
-    setTimeout(fetchState, 450);
-
-
 }
 
 //Human input

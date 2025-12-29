@@ -1,0 +1,78 @@
+========================================
+ASSERTION ERROR FIX - Phase Mismatch
+========================================
+
+PROBLEM IDENTIFIED:
+-------------------
+Even with 1 Gunicorn worker, the AssertionError "assert self.state.phase == 'ATTACK'" 
+was occurring due to:
+
+1. RACE CONDITION: User could click attack multiple times rapidly
+2. STALE STATE: Frontend's currentState was outdated during animations (450ms delay)
+3. MISSING VALIDATION: Backend continued processing even when actions failed
+
+SCENARIO THAT CAUSED THE ERROR:
+--------------------------------
+1. User attacks with card → Phase changes to DEFENSE
+2. AI defends successfully → Phase changes to ATTACK, roles swap
+3. AI immediately attacks → Phase changes to DEFENSE again
+4. Meanwhile, user's second click arrives (before state refresh)
+5. Backend receives attack request while phase = DEFENSE
+6. AssertionError thrown ❌
+
+ROOT CAUSES:
+------------
+✗ No request locking in frontend - allowed concurrent/duplicate requests
+✗ Delayed state refresh (450ms) left currentState stale
+✗ Backend ran AI even when actions failed
+✗ No proper error handling - assertions crashed the server
+
+FIXES APPLIED:
+--------------
+
+1. FRONTEND (static/js/game.js):
+   ✓ Added isRequestInProgress flag to prevent concurrent requests
+   ✓ Added try-catch error handling
+   ✓ Display error messages to user when actions fail
+   ✓ Only release lock after state refresh completes
+
+2. BACKEND (controllers/flask_controller.py):
+   ✓ Check if action succeeded before running AI
+   ✓ Added detailed logging for phase transitions
+   ✓ Return errors instead of continuing on failure
+
+3. ENGINE (game/engine.py):
+   ✓ Better error messages with current phase info
+   ✓ Log all phase transitions for debugging
+   ✓ Return error dicts instead of using assertions (already done)
+
+WHAT TO MONITOR:
+----------------
+Watch your server logs for these messages:
+- "[ENGINE] Phase transition: X → Y" - Shows state changes
+- "[FLASK_CTRL] Attack/Defend request - Phase: ..." - Request tracking
+- "[FLASK_CTRL] Attack failed: ..." - Error detection
+- "[FRONTEND] Request already in progress" - Duplicate prevention
+
+TESTING:
+--------
+1. Try rapid-clicking attack cards
+2. Check that only one request processes at a time
+3. Verify error messages display when phase is wrong
+4. Confirm no more AssertionErrors in logs
+
+DEPLOYMENT:
+-----------
+1. Upload updated files to VPS:
+   - static/js/game.js
+   - controllers/flask_controller.py
+   - game/engine.py
+
+2. Restart Gunicorn:
+   sudo systemctl restart gunicorn
+
+3. Monitor logs:
+   sudo journalctl -u gunicorn -f
+
+The fix ensures graceful error handling and prevents race conditions,
+even with a single worker process.
