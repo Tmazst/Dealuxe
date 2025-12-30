@@ -952,6 +952,55 @@ function playAttackSound() {
     }
 }
 
+// Play game over sound (celebratory or sad tone)
+function playGameOverSound(isWin) {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioContext.currentTime;
+        const duration = 1.2;
+        
+        if (isWin) {
+            // Victory/celebratory sound - ascending tones
+            const notes = [523, 659, 784]; // C5, E5, G5
+            notes.forEach((freq, idx) => {
+                const osc = audioContext.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now);
+                
+                const gain = audioContext.createGain();
+                const startTime = now + idx * 0.25;
+                gain.gain.setValueAtTime(0.2, startTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.4);
+                
+                osc.connect(gain);
+                gain.connect(audioContext.destination);
+                osc.start(startTime);
+                osc.stop(startTime + 0.4);
+            });
+        } else {
+            // Loss/sad sound - descending tones
+            const notes = [349, 293, 246]; // F4, D4, B3
+            notes.forEach((freq, idx) => {
+                const osc = audioContext.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now);
+                
+                const gain = audioContext.createGain();
+                const startTime = now + idx * 0.25;
+                gain.gain.setValueAtTime(0.2, startTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.5);
+                
+                osc.connect(gain);
+                gain.connect(audioContext.destination);
+                osc.start(startTime);
+                osc.stop(startTime + 0.5);
+            });
+        }
+    } catch (e) {
+        console.warn('Could not play game over sound:', e);
+    }
+}
+
 function renderComments(lines) {
     const container = document.querySelector('.game-comments');
     if (!container) return;

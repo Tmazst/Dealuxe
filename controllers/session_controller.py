@@ -79,7 +79,7 @@ def create_game_session():
         if not player.has_sufficient_balance(bet_amount, bet_type):
             # Check if free cash expired
             if bet_type == 'fake' and player.fake_balance_expires_at:
-                if datetime.utcnow() > player.fake_balance_expires_at:
+                if datetime.now() > player.fake_balance_expires_at:
                     return jsonify({
                         'success': False,
                         'error': 'Free cash expired. Please claim new free cash.'
@@ -167,7 +167,7 @@ def complete_game_session():
         winnings_awarded = 0
         new_balance = None
         
-        if session.player_won():
+        if session.player_won(session.player_id):
             player = get_player(session.player_id)
             if player:
                 winnings_awarded = session.prize_pool
