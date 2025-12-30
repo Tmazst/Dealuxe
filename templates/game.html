@@ -23,7 +23,7 @@
     <div class="brand">🎁1500SZL</div>
     <div class="controls">
         <!-- <button class="btn" onclick="startTurn()">Start Turn</button> -->
-         <button class="btn-glass ambience">Rules</button>
+         <button class="btn-glass ambience" onclick="toggleRulesModal()">Rules</button>
         <button class="btn-glass ambience">Wallet</button>
     </div>
 </header>
@@ -135,6 +135,140 @@
             </div>
             <button class="btn-glass new-game-btn" onclick="location.reload()">New Game</button>
         </div>
+    </div>
+</div>
+
+<div class="rules-modal-cont gen-flex-col" id="rulesModalContainer">
+    <div class="rules-modal ambience gen-flex-col">
+        <div class="rules-header">
+            <h2>DEALUXE RULES</h2>
+            <button class="close-btn" onclick="toggleRulesModal()">✕</button>
+        </div>
+        
+        <div class="rules-content">
+            <!-- Basic Rule -->
+            <div class="rule-card">
+                <div class="rule-number">📋 BASIC RULE</div>
+                <div class="rule-body">
+                    <p><strong>ATTACK:</strong> Attacker plays a card <span class="card-badge">4-K</span></p>
+                    <p><strong>DEFEND:</strong> Defender plays 2 cards that sum to attacker's card value</p>
+                    <p class="rule-note">Example: Attacker plays <span class="card-example">8♠</span> → Defender plays <span class="card-example">3♥ + 5♦</span> = 8</p>
+                </div>
+            </div>
+
+            <!-- 4 Winning Ways -->
+            <div class="winning-ways-header">🏆 4 WAYS TO WIN</div>
+
+            <!-- Win 1: DEALUXE WIN -->
+            <div class="rule-card win-card">
+                <div class="win-icon">⚡</div>
+                <div class="win-title">DEALUXE WIN</div>
+                <div class="win-description">
+                    <p><strong>When:</strong> Defender FAILS to defend</p>
+                    <div class="win-flow">
+                        <div class="flow-step">
+                            <span class="step-icon">1️⃣</span>
+                            <span>Attacker plays <span class="card-example">Q♣</span></span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="step-icon">2️⃣</span>
+                            <span>Defender CAN'T match it</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="step-icon">3️⃣</span>
+                            <span>Defender DRAWS a card</span>
+                        </div>
+                        <div class="flow-step highlight">
+                            <span class="step-icon">✨</span>
+                            <span><strong>ATTACKER WINS!</strong></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Win 2: ESCAPE WIN -->
+            <div class="rule-card win-card">
+                <div class="win-icon">💨</div>
+                <div class="win-title">ESCAPE WIN</div>
+                <div class="win-description">
+                    <p><strong>When:</strong> Defender successfully defends AND reaches ≤3 cards</p>
+                    <div class="win-flow">
+                        <div class="flow-step">
+                            <span class="step-icon">1️⃣</span>
+                            <span>Attacker plays <span class="card-example">J♦</span></span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="step-icon">2️⃣</span>
+                            <span>Defender plays <span class="card-example">3♣ + 8♠</span> = 11</span>
+                        </div>
+                        <div class="flow-step highlight">
+                            <span class="step-icon">✨</span>
+                            <span><strong>DEFENDER WINS INSTANTLY!</strong></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Win 3: CRAZY ESCAPE WIN -->
+            <div class="rule-card win-card">
+                <div class="win-icon">🎯</div>
+                <div class="win-title">CRAZY ESCAPE WIN</div>
+                <div class="win-description">
+                    <p><strong>When:</strong> Attacker has 0 cards left when defender draws</p>
+                    <div class="win-flow">
+                        <div class="flow-step">
+                            <span class="step-icon">1️⃣</span>
+                            <span>Attacker plays last card <span class="card-example">10♥</span></span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="step-icon">2️⃣</span>
+                            <span>Defender can't defend & draws</span>
+                        </div>
+                        <div class="flow-step highlight">
+                            <span class="step-icon">✨</span>
+                            <span><strong>ATTACKER WINS!</strong></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Win 4: TRAIL WIN -->
+            <div class="rule-card win-card">
+                <div class="win-icon">🚀</div>
+                <div class="win-title">TRAIL WIN (Rule #8)</div>
+                <div class="win-description">
+                    <p><strong>When:</strong> Attacker has only low cards <span class="card-badge">A-2-3</span> (more than 3) but drops them one by one, and defender can't match ANY of them</p>
+                    <div class="win-flow">
+                        <div class="flow-step">
+                            <span class="step-icon">1️⃣</span>
+                            <span>Attacker has 5 cards: <span class="card-example">A♠ 2♣ 2♦ 3♥ A♦</span></span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="step-icon">2️⃣</span>
+                            <span>Drops each card (must reach ≤3)</span>
+                        </div>
+                        <div class="flow-step">
+                            <span class="step-icon">3️⃣</span>
+                            <span>Defender has NO matching cards</span>
+                        </div>
+                        <div class="flow-step highlight">
+                            <span class="step-icon">✨</span>
+                            <span><strong>ATTACKER WINS!</strong></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Win Condition -->
+            <div class="rule-card info-card">
+                <div class="info-icon">🎯</div>
+                <div class="info-title">HOW TO WIN THE GAME</div>
+                <p style="margin: 10px 0;"><strong>Be the first to reach ≤3 cards in hand</strong></p>
+                <p style="font-size: 0.9em; color: #aaa;">Use any of the 4 ways above to eliminate cards and become the champion!</p>
+            </div>
+        </div>
+
+        <button class="btn-glass" onclick="toggleRulesModal()" style="margin-top: 20px; align-self: center;">Close Rules</button>
     </div>
 </div>
 

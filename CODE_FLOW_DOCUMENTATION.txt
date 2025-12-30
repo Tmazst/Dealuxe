@@ -1,0 +1,1005 @@
+================================================================================
+DEALUXE GAME - CODE FLOW DOCUMENTATION
+Session Control, Player Model & Dependencies
+================================================================================
+
+## TABLE OF CONTENTS
+
+1. SYSTEM ARCHITECTURE OVERVIEW
+2. CONFIGURATION (GameConfig)
+3. PLAYER MODEL
+4. BET SESSION MODEL
+5. SESSION CONTROLLER
+6. GAME SESSION FLOW
+7. BALANCE MANAGEMENT FLOW
+8. DEPENDENCIES GRAPH
+9. ERROR HANDLING
+10. DATA STRUCTURES
+
+================================================================================
+1. SYSTEM ARCHITECTURE OVERVIEW
+================================================================================
+
+The Dealuxe game uses a three-tier architecture:
+
+    FRONTEND (HTML/JS)
+         |
+         | HTTP Requests
+         v
+    BACKEND (Flask + Controllers)
+         |
+         | Business Logic
+         v
+    DATA MODELS (Player, BetSession, GameConfig)
+
+Key Components:
+- config.py: Centralized configuration constants
+- models/player.py: Player data and balance management
+- models/bet_session.py: Betting session tracking
+- controllers/session_controller.py: REST API endpoints for session management
+
+================================================================================
+2. CONFIGURATION (GameConfig)
+================================================================================
+
+File: config.py
+
+Purpose: Central configuration for game rules and constants
+
+Key Constants:
+├── FREE_CASH_MIN = 1000
+├── FREE_CASH_MAX = 2000
+├── FREE_CASH_DURATION_HOURS = 24
+├── DEFAULT_CARD_COUNT = 6
+├── ALLOWED_CARD_COUNTS = [6, 8, 10]
+├── OPPONENT_AI = 'ai'
+├── OPPONENT_HUMAN = 'human'
+├── BET_TYPE_REAL = 'real'
+├── BET_TYPE_FAKE = 'fake'
+├── SESSION_ACTIVE = 'active'
+├── SESSION_COMPLETED = 'completed'
+└── SESSION_CANCELLED = 'cancelled'
+
+Key Methods:
+├── get_random_free_cash() → returns int (1000-2000)
+├── get_random_free_target() → returns int (8000-12000)
+└── get_free_cash_expiry() → returns timedelta (24 hours)
+
+Dependencies: datetime, random, timedelta
+
+Usage: Imported by Player, BetSession, SessionController
+
+================================================================================
+3. PLAYER MODEL
+================================================================================
+
+File: models/player.py
+
+Purpose: Manages player data, wallet balances, and game statistics
+
+CLASS: Player
+════════════════════════════════════════════════════════════════════════════
+
+CONSTRUCTOR: __init__(player_id: int, name: str, email: str, phone: str)
+─────────────────────────────────────────────────────────────────────────
+Initializes a new player with:
+  • id: unique identifier
+  • name: player username
+  • email: contact email
+  • phone: contact phone
+  • real_balance: real money balance (float)
+  • fake_balance: play money balance (float)
+  • fake_balance_expires_at: when play money expires (datetime)
+  • total_games: count of games played
+  • wins: count of games won
+  • losses: count of games lost
+
+METHODS:
+─────────────────────────────────────────────────────────────────────────
+
+1. has_sufficient_balance(amount: float, bet_type: str) → bool
+   ├─ Purpose: Check if player can afford a bet
+   ├─ Input: amount to bet, bet type ('real' or 'fake')
+   ├─ Logic:
+   │  ├─ If bet_type == 'real':
+   │  │  └─ return real_balance >= amount
+   │  ├─ If bet_type == 'fake':
+   │  │  ├─ Check if fake cash is still valid (not expired)
+   │  │  └─ return fake_balance >= amount
+   │  └─ Else: return False
+   └─ Output: True if sufficient, False otherwise
+
+2. is_fake_cash_valid() → bool
+   ├─ Purpose: Check if play money hasn't expired
+   ├─ Logic: Compare current time with fake_balance_expires_at
+   └─ Output: True if valid, False if expired or never set
+
+3. award_free_cash() → void
+   ├─ Purpose: Award new free/play money (24-hour promotion)
+   ├─ Logic:
+   │  ├─ Generate random amount (1000-2000)
+   │  ├─ Set fake_balance to random amount
+   │  ├─ Set fake_cash_target to random amount (8000-12000)
+   │  └─ Set expiry to now + 24 hours
+   └─ Side Effects: Modifies player balance and expiry time
+
+4. deduct_bet(amount: float, bet_type: str) → bool
+   ├─ Purpose: Remove bet amount from player balance
+   ├─ Input: amount to deduct, bet type
+   ├─ Logic:
+   │  ├─ First check: has_sufficient_balance(amount, bet_type)
+   │  ├─ If not sufficient: return False (no change)
+   │  ├─ If bet_type == 'real': real_balance -= amount
+   │  ├─ Elif bet_type == 'fake': fake_balance -= amount
+   │  └─ return True
+   └─ Side Effects: Modifies balance if successful
+
+5. award_winnings(amount: float, bet_type: str) → void
+   ├─ Purpose: Add prize money to player balance
+   ├─ Input: amount won, bet type
+   ├─ Logic:
+   │  ├─ Print logging: [PLAYER] Player X won Y with bet type Z
+   │  ├─ Print logging: [PLAYER] Player fake balance before award: Z
+   │  ├─ If bet_type == 'real': real_balance += amount
+   │  └─ Elif bet_type == 'fake': fake_balance += amount
+   └─ Side Effects: Modifies balance, prints to console
+
+6. record_game_result(won: bool) → void
+   ├─ Purpose: Update player statistics
+   ├─ Input: True if won, False if lost
+   ├─ Logic:
+   │  ├─ total_games += 1
+   │  ├─ If won: wins += 1
+   │  └─ Else: losses += 1
+   └─ Side Effects: Updates statistics
+
+7. get_win_rate() → float
+   ├─ Purpose: Calculate win percentage
+   ├─ Logic:
+   │  ├─ If total_games == 0: return 0.0
+   │  └─ Else: return (wins / total_games) * 100
+   └─ Output: Percentage (0-100)
+
+8. to_dict() → dict
+   ├─ Purpose: Serialize player data for JSON response
+   └─ Output: Dictionary with all player fields
+
+GLOBAL FUNCTIONS:
+─────────────────────────────────────────────────────────────────────────
+
+1. create_player(name: str, email: str, phone: str) → Player
+   ├─ Creates new Player with auto-incrementing ID
+   └─ Stores in global _players dict
+
+2. get_player(player_id: int) → Optional[Player]
+   ├─ Retrieves player by ID
+   └─ Returns None if not found
+
+3. get_or_create_demo_player() → Player
+   ├─ Gets player ID 1 or creates it
+   ├─ Sets real_balance = 5000.0
+   ├─ Calls award_free_cash()
+   └─ Used for development/testing
+
+STORAGE:
+─────────────────────────────────────────────────────────────────────────
+_players: dict {player_id: Player}
+_next_player_id: int (auto-increment counter)
+
+================================================================================
+4. BET SESSION MODEL
+================================================================================
+
+File: models/bet_session.py
+
+Purpose: Tracks betting context and session state for each game
+
+CLASS: BetSession
+════════════════════════════════════════════════════════════════════════════
+
+CONSTRUCTOR: __init__(session_id, game_id, player_id, opponent_type, 
+                      bet_type, bet_amount, card_count=6)
+─────────────────────────────────────────────────────────────────────────
+Initializes session with:
+  • id: unique session identifier
+  • game_id: unique game identifier (UUID)
+  • player_id: ID of human player
+  • opponent_type: 'ai' or 'human'
+  • bet_type: 'real' or 'fake'
+  • bet_amount: amount wagered
+  • card_count: cards per player (6, 8, or 10)
+  • prize_pool: bet_amount * 2 (what winner gets)
+  • status: 'active' (initial state)
+  • winner_id: None (set when game ends)
+  • created_at: timestamp
+  • completed_at: None (set when game ends)
+
+METHODS:
+─────────────────────────────────────────────────────────────────────────
+
+1. complete_session(winner_id: str) → void
+   ├─ Purpose: Mark session as completed
+   ├─ Input: winner_id ('player' or 'ai')
+   ├─ Logic:
+   │  ├─ self.winner_id = winner_id
+   │  ├─ self.status = 'completed'
+   │  └─ self.completed_at = current time
+   └─ Side Effects: Changes session status
+
+2. cancel_session() → void
+   ├─ Purpose: Mark session as cancelled
+   ├─ Logic:
+   │  ├─ self.status = 'cancelled'
+   │  └─ self.completed_at = current time
+   └─ Used for: Player disconnect, timeout, etc.
+
+3. is_active() → bool
+   ├─ Purpose: Check if session is still ongoing
+   └─ Logic: return status == 'active'
+
+4. player_won(player_id: int) → bool
+   ├─ Purpose: Check if player won this session
+   └─ Logic: return winner_id == player_id
+
+5. get_duration_seconds() → Optional[float]
+   ├─ Purpose: Calculate session length
+   ├─ Logic:
+   │  ├─ If completed_at is None: return None
+   │  └─ Else: return (completed_at - created_at).total_seconds()
+   └─ Output: Duration in seconds or None
+
+6. to_dict() → dict
+   ├─ Purpose: Serialize for JSON response
+   └─ Includes all fields and calculated duration
+
+GLOBAL FUNCTIONS:
+─────────────────────────────────────────────────────────────────────────
+
+1. create_session(game_id, player_id, opponent_type, 
+                  bet_type, bet_amount, card_count=6) → BetSession
+   ├─ Creates new BetSession with auto-incrementing ID
+   ├─ Stores in _sessions dict
+   ├─ Creates mapping: _game_to_session[game_id] = session_id
+   └─ Returns the created session
+
+2. get_session(session_id: int) → Optional[BetSession]
+   ├─ Retrieves session by ID
+   └─ Returns None if not found
+
+3. get_session_by_game(game_id: str) → Optional[BetSession]
+   ├─ Retrieves session using game ID
+   ├─ Logic:
+   │  ├─ Look up session_id in _game_to_session
+   │  └─ Return _sessions[session_id]
+   └─ Returns None if not found
+
+4. get_active_sessions(player_id: int) → list[BetSession]
+   ├─ Purpose: Find all ongoing sessions for a player
+   └─ Returns: List of sessions with status == 'active'
+
+5. get_player_session_history(player_id: int, limit: int=10) → list
+   ├─ Purpose: Get recent games for a player
+   ├─ Logic:
+   │  ├─ Filter sessions by player_id
+   │  ├─ Sort by created_at (newest first)
+   │  └─ Return top 'limit' results
+   └─ Returns: List of sessions
+
+STORAGE:
+─────────────────────────────────────────────────────────────────────────
+_sessions: dict {session_id: BetSession}
+_game_to_session: dict {game_id (UUID): session_id}
+_next_session_id: int (auto-increment)
+
+================================================================================
+5. SESSION CONTROLLER
+================================================================================
+
+File: controllers/session_controller.py
+
+Purpose: REST API endpoints for managing game sessions
+
+BLUEPRINT: session_bp
+════════════════════════════════════════════════════════════════════════════
+
+ENDPOINT 1: /api/session/create [POST]
+────────────────────────────────────────────────────────────────────────
+
+PURPOSE: Create a new game session and deduct bet from player balance
+
+REQUEST BODY:
+{
+  "opponent_type": "ai" or "human",    [REQUIRED]
+  "card_count": 6 or 8 or 10,          [REQUIRED]
+  "bet_type": "real" or "fake",        [REQUIRED]
+  "bet_amount": float,                 [REQUIRED]
+  "player_id": int                     [OPTIONAL - uses demo player if omitted]
+}
+
+RESPONSE ON SUCCESS (200):
+{
+  "success": true,
+  "session_id": int,
+  "game_id": "uuid-string",
+  "player_balance": {
+    "real": float,
+    "fake": float,
+    "fake_expires_at": "ISO datetime or null"
+  },
+  "prize_pool": float
+}
+
+RESPONSE ON ERROR (400/404/500):
+{
+  "success": false,
+  "error": "error message"
+}
+
+CODE FLOW:
+1. Receive request JSON
+2. Validate required fields:
+   ├─ opponent_type in ['ai', 'human']
+   ├─ bet_type in ['real', 'fake']
+   ├─ card_count provided
+   └─ bet_amount is numeric
+3. Get or create player:
+   ├─ If player_id provided: get_player(player_id)
+   ├─ Else: get_or_create_demo_player()
+   └─ Return 404 if player not found
+4. Check balance:
+   ├─ Call player.has_sufficient_balance(bet_amount, bet_type)
+   ├─ If bet_type == 'fake':
+   │  └─ Check if free cash expired
+   └─ Return 400 if insufficient
+5. Deduct bet:
+   ├─ Call player.deduct_bet(bet_amount, bet_type)
+   └─ Reduces player balance immediately
+6. Create session:
+   ├─ Generate game_id (UUID)
+   ├─ Call create_session(game_id, player_id, opponent_type, 
+                          bet_type, bet_amount)
+   └─ Session stores: prize_pool = bet_amount * 2
+7. Return success response with:
+   ├─ session_id
+   ├─ game_id
+   ├─ updated player_balance
+   └─ prize_pool
+
+
+ENDPOINT 2: /api/session/complete [POST]
+────────────────────────────────────────────────────────────────────────
+
+PURPOSE: End game session and award winnings to winner
+
+REQUEST BODY:
+{
+  "game_id": "uuid-string",      [REQUIRED]
+  "winner_id": "player" or "ai"  [REQUIRED]
+}
+
+RESPONSE ON SUCCESS (200):
+{
+  "success": true,
+  "winnings_awarded": float,
+  "new_balance": {
+    "real": float,
+    "fake": float,
+    "fake_expires_at": "ISO datetime or null"
+  }
+}
+
+RESPONSE ON ERROR (400/404/500):
+{
+  "success": false,
+  "error": "error message"
+}
+
+CODE FLOW:
+1. Receive request JSON with game_id and winner_id
+2. Get session:
+   ├─ Call get_session_by_game(game_id)
+   └─ Return 404 if session not found
+3. Get player:
+   ├─ Call get_player(session.player_id)
+   └─ Return 404 if player not found
+4. Check if already completed (CRITICAL - prevents double-awarding):
+   ├─ was_already_completed = (session.status == 'completed')
+   └─ If True, skip awarding
+5. Mark session complete:
+   ├─ Call session.complete_session(winner_id)
+   ├─ Sets status = 'completed'
+   ├─ Sets completed_at = current time
+   └─ Sets winner_id = winner_id
+6. Award winnings (only on first completion):
+   ├─ If NOT was_already_completed:
+   │  ├─ If winner_id == 'player':
+   │  │  ├─ winnings_awarded = session.prize_pool
+   │  │  ├─ Call player.award_winnings(prize_pool, session.bet_type)
+   │  │  ├─ Call player.record_game_result(won=True)
+   │  │  └─ Print: [SESSION] Player X won Y in session Z
+   │  └─ Else (player lost):
+   │     ├─ winnings_awarded = 0
+   │     ├─ Call player.record_game_result(won=False)
+   │     └─ Print: [SESSION] Player X lost in session Y
+   └─ Else (already completed):
+      └─ Print: [SESSION] Session already completed - no re-award
+7. Return updated balance:
+   ├─ Get current player.real_balance
+   ├─ Get current player.fake_balance
+   ├─ Get player.fake_balance_expires_at
+   └─ Return in new_balance object
+
+
+ENDPOINT 3: /api/player/balance [GET]
+────────────────────────────────────────────────────────────────────────
+
+PURPOSE: Get player's current balance and statistics
+
+QUERY PARAMETERS:
+  player_id: int [OPTIONAL - uses demo player if omitted]
+
+RESPONSE ON SUCCESS (200):
+{
+  "success": true,
+  "balance": {
+    "real": float,
+    "fake": float,
+    "fake_expires_at": "ISO datetime or null",
+    "free_cash_expired": bool
+  },
+  "stats": {
+    "total_games": int,
+    "wins": int,
+    "losses": int,
+    "win_rate": float (0-100)
+  }
+}
+
+CODE FLOW:
+1. Get player (or create demo player)
+2. Check if free cash expired
+3. Return current balance and statistics
+
+
+ENDPOINT 4: /api/player/claim-free-cash [POST]
+────────────────────────────────────────────────────────────────────────
+
+PURPOSE: Claim new free/play money for 24 hours
+
+REQUEST BODY:
+{
+  "player_id": int [OPTIONAL]
+}
+
+RESPONSE ON SUCCESS (200):
+{
+  "success": true,
+  "amount_awarded": float,
+  "target_amount": float,
+  "expires_at": "ISO datetime",
+  "new_balance": {
+    "real": float,
+    "fake": float,
+    "fake_expires_at": "ISO datetime"
+  }
+}
+
+RESPONSE ON ERROR (400/404):
+{
+  "success": false,
+  "error": "error message"
+}
+
+CODE FLOW:
+1. Get player
+2. Check if free cash already active:
+   ├─ If active: return 400 with time remaining
+   └─ Else: continue
+3. Award free cash:
+   ├─ Call player.award_free_cash()
+   ├─ Generates random amount (1000-2000)
+   └─ Sets expiry to now + 24 hours
+4. Return new balance with expiry time
+
+================================================================================
+6. GAME SESSION FLOW
+================================================================================
+
+COMPLETE USER FLOW - FROM START TO FINISH
+
+A. USER OPENS GAME (Frontend)
+   └─ Frontend loads game.html and game-start.js
+      └─ Shows game start modal
+
+B. USER SELECTS OPTIONS & CLICKS "START GAME"
+   ├─ Opponent: AI or Human
+   ├─ Card Count: 6, 8, or 10
+   ├─ Bet Type: Real or Fake
+   └─ Bet Amount: 100 - 5000 SZL
+
+C. FRONTEND CALLS: POST /api/session/create
+   ────────────────────────────────────────────────────────────────────
+   
+   REQUEST:
+   {
+     "opponent_type": "ai",
+     "card_count": 6,
+     "bet_type": "fake",
+     "bet_amount": 500
+   }
+   
+   BACKEND PROCESS:
+   │
+   ├─ 1. Validate input
+   ├─ 2. Get or create player (demo player if not specified)
+   ├─ 3. Check balance:
+   │     Player.has_sufficient_balance(500, 'fake')
+   │     ├─ Check fake balance >= 500
+   │     └─ Check fake cash not expired
+   ├─ 4. Deduct bet:
+   │     Player.deduct_bet(500, 'fake')
+   │     ├─ Reduce fake_balance by 500
+   │     └─ fake_balance: 1000 → 500
+   ├─ 5. Create session:
+   │     create_session(game_id, player_id, 'ai', 'fake', 500)
+   │     ├─ Create BetSession
+   │     ├─ Calculate prize_pool = 500 * 2 = 1000
+   │     └─ Store session
+   └─ 6. Return response
+   
+   RESPONSE:
+   {
+     "success": true,
+     "session_id": 1,
+     "game_id": "abc-123-def",
+     "player_balance": {
+       "real": 5000,
+       "fake": 500,
+       "fake_expires_at": "2025-12-31T23:59:59"
+     },
+     "prize_pool": 1000
+   }
+
+D. FRONTEND STORES IN SESSION STORAGE
+   ├─ game_id: "abc-123-def"
+   ├─ session_id: 1
+   ├─ prize_pool: 1000
+   └─ Initializes game.js
+
+E. GAME PLAY (Multiple turns)
+   ├─ Attack phase
+   ├─ Defense phase
+   ├─ Rounds continue until game over
+   └─ Handled by game engine (separate from session control)
+
+F. GAME ENDS - WINNER DETERMINED
+   ├─ Engine identifies winner (player or AI)
+   ├─ Frontend shows game-over modal
+   └─ Frontend gets ready to call session/complete
+
+G. FRONTEND CALLS: POST /api/session/complete
+   ────────────────────────────────────────────────────────────────────
+   
+   REQUEST:
+   {
+     "game_id": "abc-123-def",
+     "winner_id": "player"    [or "ai" if player lost]
+   }
+   
+   BACKEND PROCESS:
+   │
+   ├─ 1. Get session by game_id
+   │     get_session_by_game("abc-123-def") → returns BetSession
+   │
+   ├─ 2. Get player
+   │     get_player(session.player_id) → returns Player
+   │
+   ├─ 3. Check if already completed
+   │     was_already_completed = (session.status == 'completed')
+   │     └─ First call: False
+   │     └─ Second call: True (prevents double-awarding!)
+   │
+   ├─ 4. Mark session complete
+   │     session.complete_session('player')
+   │     ├─ session.status = 'completed'
+   │     ├─ session.winner_id = 'player'
+   │     └─ session.completed_at = now
+   │
+   ├─ 5. Award winnings (only if first completion)
+   │     if not was_already_completed:
+   │       if winner_id == 'player':
+   │         ├─ winnings_awarded = 1000
+   │         ├─ Player.award_winnings(1000, 'fake')
+   │         │  ├─ Print: [PLAYER] Player 1 won 1000 with bet type fake
+   │         │  └─ fake_balance: 500 + 1000 = 1500
+   │         ├─ Player.record_game_result(won=True)
+   │         │  ├─ total_games += 1
+   │         │  └─ wins += 1
+   │         └─ Print: [SESSION] Player 1 won 1000 in session 1
+   │       else (player lost):
+   │         ├─ winnings_awarded = 0
+   │         ├─ Player.record_game_result(won=False)
+   │         │  ├─ total_games += 1
+   │         │  └─ losses += 1
+   │         └─ Print: [SESSION] Player 1 lost in session 1
+   │     else (already completed):
+   │       └─ Print: [SESSION] Session already completed...
+   │
+   └─ 6. Return response with new balance
+   
+   RESPONSE:
+   {
+     "success": true,
+     "winnings_awarded": 1000,
+     "new_balance": {
+       "real": 5000,
+       "fake": 1500,        ← Updated from 500 to 1500
+       "fake_expires_at": "2025-12-31T23:59:59"
+     }
+   }
+
+H. FRONTEND DISPLAYS RESULT
+   ├─ Shows winnings: 1000 SZL
+   ├─ Shows final balance: 1500 SZL
+   └─ Displays game over modal with stats
+
+I. PLAYER CLICKS "NEW GAME"
+   └─ Page reloads, sessionStorage cleared
+   └─ Back to step A
+
+================================================================================
+7. BALANCE MANAGEMENT FLOW
+================================================================================
+
+BALANCE STATES THROUGHOUT GAME LIFECYCLE
+
+STATE 1: BEFORE GAME
+─────────────────────
+Player Balance:
+  real_balance: 5000.00
+  fake_balance: 1000.00
+  Status: Ready to play
+
+Frontend: Shows balance in UI
+
+STATE 2: AFTER SESSION/CREATE
+──────────────────────────────
+Request:
+  POST /api/session/create
+  Body: { "bet_type": "fake", "bet_amount": 500 }
+
+Backend Processing:
+  ├─ Check: has_sufficient_balance(500, 'fake')
+  │  └─ 1000 >= 500? YES
+  ├─ Deduct: fake_balance -= 500
+  │  └─ 1000 - 500 = 500
+  └─ Create: BetSession with prize_pool = 1000
+
+Response:
+  └─ new balance: { "fake": 500 }
+
+Frontend: Updates stored balance (not displayed yet)
+
+STATE 3: DURING GAME
+──────────────────────
+Balance: FROZEN at 500 (no changes)
+  └─ Session in progress
+  └─ Status: 'active'
+
+STATE 4: AFTER SESSION/COMPLETE (PLAYER WINS)
+──────────────────────────────────────────────
+Request:
+  POST /api/session/complete
+  Body: { "game_id": "xyz", "winner_id": "player" }
+
+Backend Processing:
+  ├─ Get session by game_id
+  ├─ Check if already completed: NO (first call)
+  ├─ Mark complete: session.status = 'completed'
+  ├─ Award winnings:
+  │  ├─ winnings_awarded = prize_pool = 1000
+  │  ├─ fake_balance += 1000
+  │  │  └─ 500 + 1000 = 1500
+  │  └─ Record: wins += 1, total_games += 1
+  └─ Return: new_balance = 1500
+
+Frontend: Displays:
+  ├─ Winnings: 1000.00 SZL ✓
+  ├─ Final Balance: 1500.00 SZL ✓
+  └─ (NO frontend calculation - just displays backend value)
+
+STATE 5: AFTER SESSION/COMPLETE (PLAYER LOSES)
+───────────────────────────────────────────────
+Request:
+  POST /api/session/complete
+  Body: { "game_id": "xyz", "winner_id": "ai" }
+
+Backend Processing:
+  ├─ Check if already completed: NO (first call)
+  ├─ Mark complete: session.status = 'completed'
+  ├─ NO winnings awarded (player lost)
+  │  ├─ winnings_awarded = 0
+  │  ├─ fake_balance stays at 500
+  │  └─ Record: losses += 1, total_games += 1
+  └─ Return: new_balance = 500
+
+Frontend: Displays:
+  ├─ Winnings: 0.00 SZL
+  └─ Final Balance: 500.00 SZL
+
+STATE 6: AFTER DOUBLE CALL (PREVENTION)
+────────────────────────────────────────
+Scenario: session/complete called twice by mistake
+
+First call:
+  ├─ session.status = 'active'
+  ├─ was_already_completed = False
+  ├─ Award winnings: 1000
+  ├─ fake_balance: 500 → 1500
+  └─ Set status = 'completed'
+
+Second call:
+  ├─ session.status = 'completed'
+  ├─ was_already_completed = True ← THIS PREVENTS RE-AWARD
+  ├─ Skip awarding (no change to balance)
+  ├─ fake_balance stays at 1500 (NOT 2500!)
+  └─ Return: new_balance = 1500 (correct!)
+
+SUMMARY:
+  ✓ Balance correctly reflects: 500 (after bet) + 1000 (winnings) = 1500
+  ✓ No double-awarding regardless of duplicate calls
+  ✓ Frontend simply displays returned balance (no calculations)
+
+================================================================================
+8. DEPENDENCIES GRAPH
+================================================================================
+
+IMPORT STRUCTURE:
+
+controllers/session_controller.py
+├── from config import GameConfig
+│   └─ Provides: BET_TYPE_REAL, BET_TYPE_FAKE, SESSION_ACTIVE, SESSION_COMPLETED
+│
+├── from models.player import get_or_create_demo_player, get_player
+│   └─ models/player.py
+│      └─ from config import GameConfig
+│         └─ Uses: BET_TYPE_REAL, BET_TYPE_FAKE
+│
+├── from models.bet_session import create_session, get_session_by_game
+│   └─ models/bet_session.py
+│      └─ from config import GameConfig
+│         └─ Uses: SESSION_ACTIVE, SESSION_COMPLETED
+│
+└── Flask, request, jsonify, datetime, uuid
+
+DEPENDENCY DIRECTION:
+
+config.py (LOWEST LEVEL)
+    ↑
+    ├─ models/player.py
+    │   ↓
+    ├─ models/bet_session.py (same level)
+    │   ↓
+    └─ controllers/session_controller.py (HIGHEST LEVEL)
+        ↓
+    Flask REST API Endpoints
+        ↓
+    Frontend (HTML/JS)
+
+CIRCULAR DEPENDENCY CHECK:
+  ✓ No circular imports detected
+  ✓ Clean layered architecture
+  ✓ Config at bottom, Controllers at top
+
+================================================================================
+9. ERROR HANDLING
+================================================================================
+
+VALIDATION ERRORS (400 Bad Request)
+────────────────────────────────────
+
+In /api/session/create:
+
+  1. Missing fields:
+     if not all([opponent_type, card_count, bet_type, bet_amount]):
+       → error: "Missing required fields"
+
+  2. Invalid opponent_type:
+     if opponent_type not in ['ai', 'human']:
+       → error: "Invalid opponent type"
+
+  3. Invalid bet_type:
+     if bet_type not in ['real', 'fake']:
+       → error: "Invalid bet type"
+
+  4. Insufficient balance:
+     if not player.has_sufficient_balance(bet_amount, bet_type):
+       → error: "Insufficient real/fake balance"
+
+  5. Free cash expired:
+     if bet_type == 'fake' and datetime.now() > fake_balance_expires_at:
+       → error: "Free cash expired. Please claim new free cash."
+
+NOT FOUND ERRORS (404 Not Found)
+─────────────────────────────────
+
+In /api/session/create:
+  └─ if get_player(player_id) is None:
+     → error: "Player not found"
+
+In /api/session/complete:
+  ├─ if get_session_by_game(game_id) is None:
+  │  → error: "Session not found"
+  └─ if get_player(session.player_id) is None:
+     → error: "Player not found"
+
+SERVER ERRORS (500 Internal Server Error)
+──────────────────────────────────────────
+
+All endpoints have try-except wrapper:
+  try:
+    [main logic]
+  except Exception as e:
+    → error: str(e)
+    → Prints: [SESSION] Error [operation]: [exception]
+
+BALANCE VALIDATION
+──────────────────
+
+Prevents negative balance:
+  Player.has_sufficient_balance(amount, bet_type)
+  ├─ If bet_type == 'real':
+  │  └─ real_balance >= amount? (prevents overdraft)
+  └─ If bet_type == 'fake':
+     ├─ is_fake_cash_valid()? (prevents expired cash usage)
+     └─ fake_balance >= amount? (prevents overdraft)
+
+Double-Award Prevention:
+  was_already_completed = (session.status == GameConfig.SESSION_COMPLETED)
+  if not was_already_completed:
+    └─ Only award winnings on first completion
+  else:
+    └─ Skip awarding on subsequent calls
+
+================================================================================
+10. DATA STRUCTURES
+================================================================================
+
+PLAYER OBJECT
+─────────────
+
+{
+  "id": 1,                                  ← Unique identifier
+  "name": "Demo Player",
+  "email": "demo@example.com",
+  "phone": "7600000000",
+  "real_balance": 5000.00,                  ← Real money (if applicable)
+  "fake_balance": 1500.00,                  ← Play money
+  "fake_balance_expires_at": "2025-12-31T23:59:59",
+  "fake_cash_target": 9500.00,              ← Challenge amount
+  "is_fake_cash_valid": true,
+  "total_games": 5,
+  "wins": 3,
+  "losses": 2,
+  "win_rate": 60.0                          ← Percentage
+}
+
+BET SESSION OBJECT
+──────────────────
+
+{
+  "id": 1,                                  ← Session ID
+  "game_id": "a1b2c3d4-e5f6-7890-abcd",    ← Game UUID
+  "player_id": 1,                           ← Human player
+  "opponent_type": "ai",                    ← "ai" or "human"
+  "bet_type": "fake",                       ← "real" or "fake"
+  "bet_amount": 500.00,                     ← Amount wagered
+  "prize_pool": 1000.00,                    ← bet_amount * 2
+  "card_count": 6,                          ← Cards per player
+  "winner_id": "player",                    ← "player" or "ai" (null if active)
+  "status": "completed",                    ← "active", "completed", "cancelled"
+  "created_at": "2025-12-30T15:06:00",
+  "completed_at": "2025-12-30T15:12:30",
+  "duration_seconds": 390.0                 ← Game length
+}
+
+API REQUEST/RESPONSE EXAMPLES
+──────────────────────────────
+
+Example 1: Create Session (Success)
+
+REQUEST:
+POST /api/session/create
+Content-Type: application/json
+
+{
+  "opponent_type": "ai",
+  "card_count": 6,
+  "bet_type": "fake",
+  "bet_amount": 500.00
+}
+
+RESPONSE (200):
+{
+  "success": true,
+  "session_id": 1,
+  "game_id": "uuid-1234-5678",
+  "player_balance": {
+    "real": 5000.00,
+    "fake": 500.00,
+    "fake_expires_at": "2025-12-31T23:59:59"
+  },
+  "prize_pool": 1000.00
+}
+
+Example 2: Complete Session (Player Wins)
+
+REQUEST:
+POST /api/session/complete
+Content-Type: application/json
+
+{
+  "game_id": "uuid-1234-5678",
+  "winner_id": "player"
+}
+
+RESPONSE (200):
+{
+  "success": true,
+  "winnings_awarded": 1000.00,
+  "new_balance": {
+    "real": 5000.00,
+    "fake": 1500.00,
+    "fake_expires_at": "2025-12-31T23:59:59"
+  }
+}
+
+Example 3: Insufficient Balance Error
+
+REQUEST:
+POST /api/session/create
+
+{
+  "opponent_type": "ai",
+  "card_count": 6,
+  "bet_type": "fake",
+  "bet_amount": 5000.00
+}
+
+RESPONSE (400):
+{
+  "success": false,
+  "error": "Insufficient fake balance"
+}
+
+Example 4: Session Not Found
+
+REQUEST:
+POST /api/session/complete
+
+{
+  "game_id": "invalid-uuid",
+  "winner_id": "player"
+}
+
+RESPONSE (404):
+{
+  "success": false,
+  "error": "Session not found"
+}
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
+This documentation provides a complete code-level breakdown of:
+✓ How sessions are created
+✓ How player balances are managed
+✓ How winnings are awarded
+✓ How double-awarding is prevented
+✓ All dependencies and imports
+✓ All error scenarios
+✓ Complete request/response examples
+
+For questions about specific functions or flows, refer to the line numbers
+and function names in the relevant sections above.

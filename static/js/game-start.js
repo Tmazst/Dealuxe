@@ -3,6 +3,33 @@
  * Handles form validation, bet type switching, and session creation
  */
 
+// ============================================================
+// RULES MODAL FUNCTION
+// ============================================================
+
+function toggleRulesModal() {
+    const rulesContainer = document.getElementById('rulesModalContainer');
+    if (rulesContainer) {
+        rulesContainer.classList.toggle('active');
+    }
+}
+
+// Close modal when clicking outside of it
+document.addEventListener('DOMContentLoaded', function() {
+    const rulesContainer = document.getElementById('rulesModalContainer');
+    if (rulesContainer) {
+        rulesContainer.addEventListener('click', function(event) {
+            if (event.target === rulesContainer) {
+                rulesContainer.classList.remove('active');
+            }
+        });
+    }
+});
+
+// ============================================================
+// GAME START FORM LOGIC
+// ============================================================
+
 // Game start form state
 let gameStartForm = {
     opponentType: 'ai',

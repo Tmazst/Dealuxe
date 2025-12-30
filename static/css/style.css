@@ -1190,4 +1190,319 @@ html,body{
     100%{transform: translateY(0) scale(1)}
 }
 
+/* ============================================================ */
+/* RULES MODAL STYLES */
+/* ============================================================ */
+
+.rules-modal-cont {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 5000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.rules-modal-cont.active {
+    display: flex;
+}
+
+.rules-modal {
+    background: linear-gradient(135deg, rgba(46, 11, 79, 0.95) 0%, rgba(26, 8, 54, 0.95) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    width: 100%;
+    max-width: 700px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.rules-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 25px 30px;
+    border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.rules-header h2 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent-1);
+    letter-spacing: 1px;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.close-btn:hover {
+    color: rgba(255, 255, 255, 1);
+}
+
+.rules-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 30px;
+}
+
+.rules-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.rules-content::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+.rules-content::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.5);
+    border-radius: 10px;
+}
+
+.rules-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.7);
+}
+
+.rule-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+}
+
+.rule-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(139, 92, 246, 0.4);
+}
+
+.rule-number {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--accent-1);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.rule-body p {
+    margin: 10px 0;
+    line-height: 1.6;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.card-badge {
+    display: inline-block;
+    background: rgba(139, 92, 246, 0.3);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--accent-1);
+    font-family: 'Courier New', monospace;
+}
+
+.card-example {
+    display: inline-block;
+    background: rgba(255, 228, 107, 0.15);
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-family: 'Courier New', monospace;
+    color: var(--accent-2);
+    white-space: nowrap;
+}
+
+.rule-note {
+    background: rgba(62, 230, 181, 0.1);
+    padding: 12px;
+    border-left: 3px solid var(--success);
+    border-radius: 6px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: rgba(62, 230, 181, 0.9);
+}
+
+.winning-ways-header {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent-2);
+    margin: 30px 0 20px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid rgba(255, 228, 107, 0.3);
+}
+
+.win-card {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(62, 230, 181, 0.05) 100%);
+    border: 2px solid rgba(139, 92, 246, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+.win-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent-1), transparent);
+}
+
+.win-icon {
+    font-size: 28px;
+    margin-bottom: 10px;
+}
+
+.win-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent-2);
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.win-description p {
+    margin: 10px 0;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.win-description p strong {
+    color: var(--accent-2);
+}
+
+.win-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.flow-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.85);
+    transition: all 0.2s ease;
+}
+
+.flow-step:hover {
+    background: rgba(255, 255, 255, 0.04);
+    padding-left: 16px;
+}
+
+.flow-step.highlight {
+    background: rgba(62, 230, 181, 0.15);
+    border-left: 3px solid var(--success);
+    color: var(--success);
+    font-weight: 600;
+}
+
+.step-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    min-width: 28px;
+    font-size: 16px;
+}
+
+.info-card {
+    background: linear-gradient(135deg, rgba(62, 230, 181, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+    border: 2px solid rgba(62, 230, 181, 0.3);
+    text-align: center;
+}
+
+.info-icon {
+    font-size: 32px;
+    margin-bottom: 10px;
+}
+
+.info-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--success);
+    margin: 10px 0 15px 0;
+}
+
+.info-card p {
+    margin: 10px 0;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+@media (max-width: 600px) {
+    .rules-modal {
+        max-height: 90vh;
+        border-radius: 15px;
+    }
+
+    .rules-header {
+        padding: 20px;
+    }
+
+    .rules-header h2 {
+        font-size: 24px;
+    }
+
+    .rules-content {
+        padding: 20px;
+    }
+
+    .rule-card {
+        padding: 15px;
+    }
+
+    .flow-step {
+        font-size: 13px;
+        padding: 8px 10px;
+    }
+
+    .win-icon {
+        font-size: 24px;
+    }
+}
+
+
 
