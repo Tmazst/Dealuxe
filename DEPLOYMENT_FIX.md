@@ -1,187 +1,272 @@
-# Fix for Production AssertionError - Multi-Worker State Management
+# Dealuxe Production Fixes - Complete Guide
 
-## Problem
-The game state was not persisting between HTTP requests because Gunicorn runs multiple worker processes, each with its own memory. Game created in Worker 1 couldn't be accessed by Worker 2.
+## Issues Fixed
 
-## Solution
-Implemented Redis-based session storage that all workers can access.
+### 1. ✅ Balance Calculation Accuracy (CRITICAL FIX)
+**Problem:** Winnings were being double-counted when session endpoint was called multiple times.
+
+**Root Cause:** Backend was awarding winnings every time `/api/session/complete` was called, without checking if the session was already completed.
+
+**Scenario That Caused Error:**
+- Player wins game → Balance: 543 + 1000 = 1543 ✓
+- Frontend calls `/api/session/complete` (first time) → Winnings awarded: 1000
+- Response returns: new_balance = 1543
+- Frontend somehow calls again → Winnings awarded AGAIN: 1000
+- Response returns: new_balance = 2543 ✗
+
+**Solution:** 
+- Backend now tracks if session is already completed
+- Only awards winnings on FIRST completion
+- Prevents double-awarding even if endpoint is called multiple times
+- Frontend simply displays the balance returned by backend (NO calculations)
+
+### 2. ✅ Game State Persistence (Multi-Worker)
+**Problem:** Game state was not persisting between HTTP requests because Gunicorn runs multiple worker processes, each with its own memory.
+
+**Solution:** Use Redis-based session storage for shared state across workers.
 
 ---
 
 ## Deployment Steps for VPS
 
-### 1. Install Redis on Your VPS
-
+### Step 1: Install Redis
 ```bash
 # Ubuntu/Debian
 sudo apt update
 sudo apt install redis-server -y
 
-# Start Redis
+# Start and enable Redis
 sudo systemctl start redis-server
 sudo systemctl enable redis-server
 
-# Verify Redis is running
+# Verify it's running
 redis-cli ping
 # Should return: PONG
 ```
 
-### 2. Update Your Application Code
+### Step 2: Upload Updated Files
+From your Windows workspace, upload these files to `/var/www/dealuxe-2/Dealuxe/`:
 
-The following files have been modified:
-- ✅ `game/manager_redis.py` - New Redis-backed manager
-- ✅ `app.py` - Added `manager.update_game()` calls after state changes
-- ✅ `requirements.txt` - Added `redis` package
+**Backend files:**
+- `controllers/session_controller.py` - Fixed balance awarding (CRITICAL)
+- `game/manager.py` or `game/manager_redis.py` - If using Redis
+- `app.py` - Updated with manager calls
 
-### 3. Backup and Replace manager.py
+**Frontend files:**
+- `static/js/game.js` - Simplified balance display
+- `static/js/game-start.js` - Removed balance storage
+- `templates/game.html` - Game over modal
 
+### Step 3: Install Dependencies
 ```bash
-# On your VPS
 cd /var/www/dealuxe-2/Dealuxe
-
-# Backup original manager
-cp game/manager.py game/manager_backup.py
-
-# Replace with Redis version
-cp game/manager_redis.py game/manager.py
-```
-
-### 4. Install Redis Python Package
-
-```bash
-# Activate your virtualenv
 source venv/bin/activate
 
-# Install redis
+# Install redis client (if not already installed)
 pip install redis
 
 # Or reinstall all requirements
 pip install -r requirements.txt
 ```
 
-### 5. Update app.py
-
-Upload the updated `app.py` from this workspace to your VPS, replacing the existing one.
-
-### 6. Restart Gunicorn
-
+### Step 4: Restart Gunicorn
 ```bash
-# Find your gunicorn process
-ps aux | grep gunicorn
-
-# Restart the service (adjust service name as needed)
+# If using systemd service
 sudo systemctl restart gunicorn
-# OR
-sudo systemctl restart dealuxe
-# OR manually kill and restart
+
+# OR find and restart manually
 sudo pkill gunicorn
 # Then start your gunicorn command again
 ```
 
-### 7. Verify It Works
-
+### Step 5: Verify Deployment
 ```bash
-# Check Redis is accessible
+# Check Redis connection
 redis-cli ping
 
-# Check your app logs
+# Monitor Gunicorn logs
 sudo journalctl -u gunicorn -f
 # OR
-sudo tail -f /var/log/your-app-name.log
+sudo tail -f /var/log/your-app.log
 
-# You should see: "[MANAGER] Connected to Redis at localhost:6379"
+# Look for these messages:
+# [SESSION] Player X won Y in session Z (First completion - awards winnings)
+# [SESSION] Session already completed - returning balance (Subsequent calls - no award)
 ```
 
 ---
 
-## Configuration (Optional)
+## Configuration
 
-### Environment Variables
-
-Set these if Redis is on a different host or requires auth:
+### Redis Connection (Optional)
+If Redis is on a different host or port, set environment variables:
 
 ```bash
 export REDIS_HOST=localhost
 export REDIS_PORT=6379
-export REDIS_PASSWORD=your_password  # If Redis has password
+export REDIS_PASSWORD=your_password  # If required
 ```
 
-Add to your systemd service file or `.env`:
+Add to your systemd service file `/etc/systemd/system/gunicorn.service`:
 ```ini
+[Service]
 Environment="REDIS_HOST=localhost"
 Environment="REDIS_PORT=6379"
 ```
 
----
-
-## Fallback Behavior
-
-The new manager automatically falls back to in-memory storage if Redis is unavailable. This means:
-- ✅ Development on Windows works without Redis
-- ✅ Production requires Redis for multi-worker support
-- ✅ No crashes if Redis temporarily goes down
-
----
-
-## Testing
-
-1. Create a game and note the game_id
-2. Make an attack
-3. Check logs - you should see:
-   ```
-   [MANAGER] Created game <uuid> in Redis (human_vs_ai)
-   ```
-   
-4. No more AssertionError!
-
----
-
-## Alternative Solution (If Redis is Not Available)
-
-If you cannot install Redis, you can run Gunicorn with a single worker:
-
+### Single-Worker Mode (If Redis Unavailable)
+Run Gunicorn with only 1 worker (not recommended for production):
 ```bash
 gunicorn --workers 1 --bind 0.0.0.0:8000 app:app
 ```
 
-**Note:** This limits your app to handle one request at a time. Not recommended for production with multiple users.
-
 ---
 
-## Monitoring Redis
+## Testing the Fixes
 
+### Test 1: Balance Accuracy (PRIMARY TEST)
+1. Start with known balance (e.g., 1000 SZL)
+2. Bet 500 SZL → Balance should be 500 SZL
+3. Win game with 1000 SZL prize → Balance should be 1500 SZL
+4. Check server logs show correct amounts
+5. ✅ Final balance in UI should match backend (NOT doubled)
+
+### Test 2: No Double-Awarding
 ```bash
-# Check Redis memory usage
-redis-cli info memory
+# Monitor logs while playing
+sudo journalctl -u gunicorn -f
 
-# List all game keys
-redis-cli keys "game:*"
+# You should see:
+# [SESSION] Player 1 won 1000 in session X  (First call - awards winnings)
+# [SESSION] Session already completed - returning balance (Second call - no award)
+```
 
-# Check a specific game
-redis-cli get "game:<game-id>"
+### Test 3: Multi-Worker State (With Redis)
+```bash
+# Start Gunicorn with multiple workers
+gunicorn --workers 4 --bind 0.0.0.0:8000 app:app
+
+# Create a game and make moves
+# Should work seamlessly across all workers
 ```
 
 ---
 
-## Security Note
+## Monitoring
 
-If your Redis instance is exposed to the internet, secure it:
+### Check Redis Health
+```bash
+# Connection test
+redis-cli ping
+
+# View all game keys
+redis-cli keys "game:*"
+
+# Check specific game state
+redis-cli get "game:your-game-id"
+
+# Monitor memory usage
+redis-cli info memory
+
+# Real-time command monitor
+redis-cli monitor
+```
+
+### Check Player Balances
+```bash
+# In your app or using a script
+from models.player import get_player
+player = get_player(1)
+print(f"Real: {player.real_balance}, Fake: {player.fake_balance}")
+```
+
+---
+
+## Security
+
+### Secure Redis (Production)
+If Redis is internet-facing, protect it:
 
 ```bash
 # Edit Redis config
 sudo nano /etc/redis/redis.conf
 
-# Set a password
+# Set these:
 requirepass your_strong_password_here
-
-# Bind only to localhost
-bind 127.0.0.1
-
-# Restart Redis
-sudo systemctl restart redis-server
+bind 127.0.0.1  # Only localhost
 ```
 
-Then set the environment variable:
+Then set environment variable:
 ```bash
 export REDIS_PASSWORD=your_strong_password_here
 ```
+
+### Firewall (iptables)
+```bash
+# Only allow localhost to Redis
+sudo iptables -A INPUT -p tcp --dport 6379 -s 127.0.0.1 -j ACCEPT
+sudo iptables -A INPUT -p tcp --dport 6379 -j DROP
+```
+
+---
+
+## Troubleshooting
+
+### Session Complete Called Multiple Times (FIXED)
+**Symptom:** Balance doubled in logs - saw 1543 then 2543
+**Solution:** Already fixed! Backend now checks `was_already_completed` and skips awarding winnings on subsequent calls
+
+### Redis Connection Error
+```bash
+# Check if Redis is running
+sudo systemctl status redis-server
+
+# Start if stopped
+sudo systemctl start redis-server
+
+# Test connection
+redis-cli ping
+```
+
+### Wrong Balance Displayed
+1. Check backend logs for award amount
+2. Verify Redis is storing correct data
+3. Clear browser cache and sessionStorage
+4. Reload page
+
+### Game State Lost Between Requests
+1. Check Redis is running: `redis-cli ping`
+2. Verify game keys exist: `redis-cli keys "game:*"`
+3. Check Gunicorn logs for errors
+4. Restart Redis: `sudo systemctl restart redis-server`
+
+---
+
+## Files Modified
+
+| File | Changes |
+|------|---------|
+| `controllers/session_controller.py` | ✅ Added session completion check to prevent double-awarding (CRITICAL) |
+| `static/js/game.js` | ✅ Removed all frontend balance calculations - only displays backend value |
+| `static/js/game-start.js` | ✅ Removed initial_balance storage |
+| `game/manager.py` or `manager_redis.py` | Game state persistence (if using Redis) |
+| `app.py` | Manager integration (if using Redis) |
+
+---
+
+## Performance Notes
+
+- **Redis Memory:** Game states are stored in Redis; memory usage depends on number of concurrent games
+- **Request Latency:** Redis queries add ~1-2ms latency (negligible)
+- **Scaling:** Can handle thousands of concurrent games with proper Redis configuration
+
+---
+
+## Fallback Behavior
+
+If Redis is unavailable:
+- ✅ Development on Windows continues to work (in-memory)
+- ✅ Single-worker deployment works (in-memory per worker)
+- ❌ Multi-worker deployment requires Redis
+
+**Recommendation:** Always use Redis in production with multiple Gunicorn workers.

@@ -65,6 +65,8 @@ class Player:
     
     def award_winnings(self, amount: float, bet_type: str):
         """Award winnings to player's balance"""
+        print(f"[PLAYER] Player {self.id} won {amount} with bet type {bet_type}")
+        print(f"[PLAYER] Player fake balance before award: {self.fake_balance}")
         if bet_type == GameConfig.BET_TYPE_REAL:
             self.real_balance += amount
         elif bet_type == GameConfig.BET_TYPE_FAKE:

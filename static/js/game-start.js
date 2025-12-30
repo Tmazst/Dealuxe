@@ -32,7 +32,7 @@ function initGameStartModal() {
         const liveOption = opponentSelect.querySelector('option[value="Live_Game"]');
         if (liveOption) {
             liveOption.disabled = true;
-            liveOption.textContent = 'Live Game (Coming Soon)';
+            liveOption.textContent = 'Live Game (Not Available)';
             liveOption.style.color = '#999';
         }
     }
@@ -96,6 +96,46 @@ function initGameStartModal() {
     playModalOpenSound();
 
     console.log('[GAME-START] Modal initialized');
+}
+
+// Play a pleasant sound when modal opens using Web Audio API
+function playModalOpenSound() {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioContext.currentTime;
+        const duration = 0.4;
+        
+        // Create a bright, welcoming tone (two harmonics)
+        const osc1 = audioContext.createOscillator();
+        osc1.frequency.setValueAtTime(523, now); // C5 note
+        osc1.type = 'sine';
+        
+        const osc2 = audioContext.createOscillator();
+        osc2.frequency.setValueAtTime(784, now); // G5 note
+        osc2.type = 'sine';
+        
+        // Gentle volume envelope
+        const gain1 = audioContext.createGain();
+        gain1.gain.setValueAtTime(0.1, now);
+        gain1.gain.exponentialRampToValueAtTime(0.01, now + duration);
+        
+        const gain2 = audioContext.createGain();
+        gain2.gain.setValueAtTime(0.08, now);
+        gain2.gain.exponentialRampToValueAtTime(0.01, now + duration);
+        
+        // Connect and play
+        osc1.connect(gain1);
+        osc2.connect(gain2);
+        gain1.connect(audioContext.destination);
+        gain2.connect(audioContext.destination);
+        
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + duration);
+        osc2.stop(now + duration);
+    } catch (e) {
+        console.warn('Could not play modal open sound:', e);
+    }
 }
 
 // Fetch player balance from API

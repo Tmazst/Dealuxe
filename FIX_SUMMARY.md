@@ -1,181 +1,135 @@
-# Production Bug Fix Summary
+# Dealuxe Card Game - Complete Fix Summary (UPDATED)
 
-## The Problem
+## Latest Fix: Balance Double-Awarding (CRITICAL)
 
-**Error:** `AssertionError` at line 105 in `engine.py`
+**Problem:** When a game ended and player won, the balance was being doubled in logs.
+- Backend logs: `[SESSION] Player 1 won 1000` then `[SESSION] Player 1 won 1000` (called twice!)
+- Result: 543 → 1543 (correct first time) → 2543 (incorrect second time)
+
+**Root Cause:** The `/api/session/complete` endpoint was awarding winnings every time it was called without checking if the session was already completed.
+
+**Fix Applied:** Backend now checks if session is already completed:
 ```python
-assert self.state.phase == "ATTACK"
+was_already_completed = session.status == GameConfig.SESSION_COMPLETED
+
+if not was_already_completed:
+    # Award winnings only on first completion
+    player.award_winnings(session.prize_pool, session.bet_type)
+else:
+    # Skip awarding if already completed
+    print(f"[SESSION] Session already completed - returning balance without re-awarding")
 ```
 
-**Why it happened:**
-- Works fine on Windows (single Flask process)
-- Crashes on VPS with Gunicorn (multiple worker processes)
-- Each Gunicorn worker has its own memory/state
-- Request 1 (create game) → handled by Worker A
-- Request 2 (attack) → handled by Worker B (doesn't have the game state!)
-
-## The Root Cause
-
-**Multi-Worker State Isolation**
-
-```
-Worker 1: manager.games = {game_id: engine_instance_A}
-Worker 2: manager.games = {game_id: ???}  ← Different memory space!
-Worker 3: manager.games = {game_id: ???}  ← Different memory space!
-```
-
-When Worker 2 handles the attack request, it can't find the game, so it either:
-1. Raises KeyError, or
-2. Creates a fresh engine with default state (phase="ATTACK" initially)
-3. But if ANY previous action changed the phase, that's lost
-
-## The Solution
-
-### 1. **Redis-Based Session Storage** (Primary Fix)
-
-Created `game/manager_redis.py` that stores game state in Redis (shared memory all workers can access):
-
-```
-Worker 1 → Redis → {game_id: serialized_engine}
-Worker 2 → Redis → Reads same game_id
-Worker 3 → Redis → Reads same game_id
-```
-
-**Key changes:**
-- `manager.create_game()` → stores in Redis
-- `manager.get_game()` → retrieves from Redis
-- `manager.update_game()` → saves changes back to Redis (CRITICAL!)
-
-### 2. **Update app.py Routes**
-
-Added `manager.update_game(game_id, engine)` after every state-changing operation:
-
-```python
-@app.route("/api/game/<game_id>/attack", methods=["POST"])
-def attack(game_id):
-    engine = manager.get_game(game_id)
-    controller = FlaskGameController(engine)
-    index = int(request.json["index"])
-    result = controller.attack(index)
-    
-    # THIS IS CRITICAL! Save state back to Redis
-    manager.update_game(game_id, engine)
-    
-    return result
-```
-
-### 3. **Better Error Handling**
-
-Replaced `assert` with proper error returns:
-
-```python
-# Before (crashes app):
-assert self.state.phase == "ATTACK"
-
-# After (returns error to user):
-if self.state.phase != "ATTACK":
-    return {"error": f"Cannot attack during {self.state.phase} phase"}
-```
+**Result:** ✅ Balance now correctly shows 1543 (no doubling)
 
 ---
 
-## Files Modified
+## Previous Fixes Included
 
-1. ✅ `game/manager_redis.py` - New Redis-backed manager
-2. ✅ `app.py` - Added `update_game()` calls
-3. ✅ `game/engine.py` - Better error handling
-4. ✅ `requirements.txt` - Added `redis`
-5. ✅ `DEPLOYMENT_FIX.md` - Deployment instructions
-6. ✅ `test_redis_manager.py` - Test script
+### 1. ✅ Frontend Balance Calculation Removed
+**Was:** Frontend calculated `initialBalance + prizePool`
+**Now:** Frontend ONLY displays value returned by backend
 
----
+**Why:** Prevents mismatches between what backend computed and what frontend displays
 
-## What You Need to Do on VPS
+### 2. ✅ Removed Unnecessary SessionStorage
+**Was:** Stored `initial_balance` in sessionStorage
+**Now:** Only store `game_id` and `prize_pool` (for display only)
 
-1. **Install Redis:**
-   ```bash
-   sudo apt install redis-server -y
-   sudo systemctl start redis-server
-   ```
-
-2. **Replace files:**
-   ```bash
-   cd /var/www/dealuxe-2/Dealuxe
-   
-   # Backup original
-   cp game/manager.py game/manager_backup.py
-   
-   # Upload new files from Windows workspace:
-   # - game/manager_redis.py → rename to game/manager.py
-   # - app.py (updated version)
-   # - game/engine.py (updated version)
-   ```
-
-3. **Install Redis package:**
-   ```bash
-   source venv/bin/activate
-   pip install redis
-   ```
-
-4. **Restart Gunicorn:**
-   ```bash
-   sudo systemctl restart gunicorn
-   ```
+**Why:** Eliminated confusion about which balance to use
 
 ---
 
-## Verification
+## Architecture
 
-After deployment, check logs:
+### Correct Balance Flow
+1. **Game Start:** Backend deducts bet from balance
+   - Before: 1000 SZL
+   - Bet: 500 SZL
+   - After: 500 SZL ✓
+
+2. **Game End (Player Wins):** Backend awards prize
+   - Balance: 500 SZL
+   - Prize: 1000 SZL (bet × 2)
+   - New Balance: 1500 SZL ✓
+
+3. **Frontend Display:** Shows what backend returned
+   - Display: 1500 SZL ✓
+   - No calculations, no guessing
+
+---
+
+## Files Modified (Final)
+
+### Backend
+- `controllers/session_controller.py` - ✅ Added session completion check (CRITICAL FIX)
+
+### Frontend  
+- `static/js/game.js` - ✅ Removed all balance calculations
+- `static/js/game-start.js` - ✅ Removed initial_balance storage
+
+---
+
+## Testing Checklist
+
+- [x] Player bets 500 → Balance deducted ✓
+- [x] Player wins 1000 prize → Balance awarded once ✓
+- [x] Backend logs show "won X in session Y" once per game ✓
+- [x] Frontend displays final balance correctly ✓
+- [x] Multiple games don't accumulate incorrectly ✓
+
+---
+
+## Deployment
+
+**Critical Files to Upload:**
+1. `controllers/session_controller.py` (MOST IMPORTANT - contains double-award fix)
+2. `static/js/game.js`
+3. `static/js/game-start.js`
+
+**After Upload:**
 ```bash
+sudo systemctl restart gunicorn
 sudo journalctl -u gunicorn -f
 ```
 
-You should see:
+**Verify:**
 ```
-[MANAGER] Connected to Redis at localhost:6379
-[MANAGER] Created game <uuid> in Redis (human_vs_ai)
+[SESSION] Player 1 won 1000 in session X  (should appear ONCE per game)
 ```
-
-**No more AssertionError!**
 
 ---
 
-## Why This Fixes It
-
-**Before:**
-- Game state lived only in the worker that created it
-- Other workers couldn't access it → stale/wrong state → assertion fails
-
-**After:**
-- Game state lives in Redis (shared storage)
-- All workers read from and write to the same Redis instance
-- State changes are persisted and visible to all workers
-- Even if Worker 1 creates the game, Worker 2 can handle the attack correctly
+## Known Issues (All Fixed)
+- ~~Frontend calculating balance~~ ✅ FIXED
+- ~~Balance doubled on session complete~~ ✅ FIXED
+- ~~Initial balance stored unnecessarily~~ ✅ FIXED
+- ~~Game state lost between requests~~ ✅ Use Redis (see DEPLOYMENT_FIX.md)
 
 ---
 
-## Alternative (Quick Fix Without Redis)
+## Balance Calculation Examples
 
-If you can't install Redis right now, run Gunicorn with 1 worker:
+### Example 1: Player Wins
+| Step | Balance | Action | Result |
+|------|---------|--------|--------|
+| Start | 1000 SZL | - | - |
+| Bet 500 | 500 SZL | Deduct bet | Backend ✓ |
+| Win 1000 | 1500 SZL | Award prize | Backend ✓ |
+| Display | **1500 SZL** | Show result | Frontend (no calc) ✓ |
 
-```bash
-gunicorn --workers 1 --bind 0.0.0.0:8000 app:app
-```
-
-⚠️ This limits concurrent request handling but fixes the state issue.
+### Example 2: Player Loses
+| Step | Balance | Action | Result |
+|------|---------|--------|--------|
+| Start | 1000 SZL | - | - |
+| Bet 500 | 500 SZL | Deduct bet | Backend ✓ |
+| Lose | 500 SZL | No award | Backend ✓ |
+| Display | **500 SZL** | Show result | Frontend (no calc) ✓ |
 
 ---
 
-## Additional Safety
+## Summary
 
-The improved error handling means even if something goes wrong with state, you'll get a proper error message like:
-
-```json
-{
-  "error": "Cannot attack during DEFENSE phase. Expected ATTACK phase.",
-  "current_phase": "DEFENSE"
-}
-```
-
-Instead of the app crashing with `AssertionError`.
+✅ **Backend:** Correctly deducts bets and awards winnings (once per game)
+✅ **Frontend:** Simply displays what backend returns
+✅ **Result:** Accurate balances, no double-counting

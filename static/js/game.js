@@ -702,22 +702,29 @@ async function displayGameOverFinancials(isPlayerWinner) {
     const finalBalance = document.getElementById('final-balance');
     
     // Get session data from sessionStorage
-    const sessionId = sessionStorage.getItem('session_id');
     const gameId = sessionStorage.getItem('game_id');
     const prizePool = parseFloat(sessionStorage.getItem('prize_pool')) || 0;
+    
+    console.log('[GAME-OVER] displayGameOverFinancials called');
+    console.log('[GAME-OVER] isPlayerWinner:', isPlayerWinner);
+    console.log('[GAME-OVER] prizePool:', prizePool);
+    console.log('[GAME-OVER] gameId:', gameId);
     
     // Show prize if player won
     if (isPlayerWinner && prizeDisplay) {
         prizeDisplay.style.display = 'block';
         if (winningsAmount) {
             winningsAmount.textContent = `${prizePool.toFixed(2)} SZL`;
+            console.log('[GAME-OVER] Displayed winnings:', prizePool.toFixed(2));
         }
     }
     
-    // Complete session and get updated balance
+    // Complete session and get updated balance from backend
     if (gameId) {
         try {
             const winnerId = isPlayerWinner ? 0 : 1;
+            console.log('[GAME-OVER] Calling session/complete with winnerId:', winnerId);
+            
             const response = await fetch('/api/session/complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -728,16 +735,26 @@ async function displayGameOverFinancials(isPlayerWinner) {
             });
             
             const data = await response.json();
+            console.log('[GAME-OVER] Session complete response:', data);
+            
+            // TRUST THE BACKEND - use the balance it returns
             if (data.success && data.new_balance && finalBalance) {
-                finalBalance.textContent = `${data.new_balance.fake.toFixed(2)} SZL`;
+                const backendBalance = data.new_balance.fake || data.new_balance;
+                finalBalance.textContent = `${backendBalance.toFixed(2)} SZL`;
+                console.log('[GAME-OVER] Final balance from backend:', backendBalance.toFixed(2));
+            } else if (finalBalance) {
+                // Fallback if no balance in response
+                finalBalance.textContent = 'Unable to fetch updated balance';
+                console.error('[GAME-OVER] No new_balance in response');
             }
         } catch (error) {
             console.error('[GAME-OVER] Error completing session:', error);
-            // Fallback to showing prize pool without API call
             if (finalBalance) {
-                finalBalance.textContent = 'Check wallet for updated balance';
+                finalBalance.textContent = 'Error fetching balance';
             }
         }
+    } else {
+        console.warn('[GAME-OVER] No gameId found in sessionStorage');
     }
 }
 

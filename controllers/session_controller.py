@@ -160,36 +160,47 @@ def complete_game_session():
                 'error': 'Session not found'
             }), 404
         
-        # Complete session
+        # Get player
+        player = get_player(session.player_id)
+        if not player:
+            return jsonify({
+                'success': False,
+                'error': 'Player not found'
+            }), 404
+        
+        # Check if session is already completed - prevent double awarding
+        was_already_completed = session.status == GameConfig.SESSION_COMPLETED
+        
+        # Complete session (only marks as completed, doesn't award winnings again)
         session.complete_session(winner_id)
         
-        # Award winnings if player won
+        # Award winnings ONLY if this is the first time completing this session
         winnings_awarded = 0
-        new_balance = None
         
-        if session.player_won(session.player_id):
-            player = get_player(session.player_id)
-            if player:
+        if not was_already_completed:
+            # This is the first completion - award winnings if player won
+            player_won = winner_id == 'player'
+            
+            if player_won:
+                # Player won - award the full prize pool
                 winnings_awarded = session.prize_pool
                 player.award_winnings(winnings_awarded, session.bet_type)
                 player.record_game_result(won=True)
-                
-                new_balance = {
-                    'real': player.real_balance,
-                    'fake': player.fake_balance,
-                    'fake_expires_at': player.fake_balance_expires_at.isoformat() if player.fake_balance_expires_at else None
-                }
-        else:
-            # Player lost, just record result
-            player = get_player(session.player_id)
-            if player:
+                print(f"[SESSION] Player {session.player_id} won {winnings_awarded} in session {session.id}")
+            else:
+                # Player lost - record result without awarding winnings
                 player.record_game_result(won=False)
-                
-                new_balance = {
-                    'real': player.real_balance,
-                    'fake': player.fake_balance,
-                    'fake_expires_at': player.fake_balance_expires_at.isoformat() if player.fake_balance_expires_at else None
-                }
+                print(f"[SESSION] Player {session.player_id} lost in session {session.id}")
+        else:
+            # Session already completed - just return current balance without awarding again
+            print(f"[SESSION] Session {session.id} already completed - returning balance without re-awarding")
+        
+        # Return updated balance
+        new_balance = {
+            'real': player.real_balance,
+            'fake': player.fake_balance,
+            'fake_expires_at': player.fake_balance_expires_at.isoformat() if player.fake_balance_expires_at else None
+        }
         
         return jsonify({
             'success': True,
@@ -235,7 +246,7 @@ def get_player_balance():
         # Check if free cash expired
         free_cash_expired = False
         if player.fake_balance_expires_at:
-            if datetime.utcnow() > player.fake_balance_expires_at:
+            if datetime.now() > player.fake_balance_expires_at:
                 free_cash_expired = True
         
         return jsonify({
@@ -295,8 +306,8 @@ def claim_free_cash():
         
         # Check if free cash already active
         if player.fake_balance_expires_at:
-            if datetime.utcnow() < player.fake_balance_expires_at:
-                time_remaining = (player.fake_balance_expires_at - datetime.utcnow()).total_seconds()
+            if datetime.now() < player.fake_balance_expires_at:
+                time_remaining = (player.fake_balance_expires_at - datetime.now()).total_seconds()
                 hours_remaining = time_remaining / 3600
                 
                 return jsonify({
