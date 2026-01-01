@@ -60,7 +60,7 @@ class CLIController:
             print(f"[{i}] {card}")
 
         while True:
-            choice = input("> ").strip()
+            choice = input("Card Index>> ").strip()
             if not choice.isdigit():
                 print("Enter a valid index.")
                 continue

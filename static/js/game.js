@@ -674,16 +674,16 @@ function showGameModal(){
         opponentCards.textContent = currentState.hands[1].length;
     }
     
-    console.log("[FRONTEND] Showing modal by adding 'show-game-over' class...");
-    gameOverCont.classList.add("show-game-over");
-    gameOverModal.classList.add("show-game-over");
-    console.log("[FRONTEND] Modal should now be visible");
-    
-    // Display winnings and balance if player won (async, happens in background)
+    // Display winnings and balance if player won
     displayGameOverFinancials(isPlayerWinner);
     
     // Play game over sound
     playGameOverSound(isPlayerWinner);
+    
+    console.log("[FRONTEND] Showing modal by adding 'show-game-over' class...");
+    gameOverCont.classList.add("show-game-over");
+    gameOverModal.classList.add("show-game-over");
+    console.log("[FRONTEND] Modal should now be visible");
 }
 
 // Toggle hand glow based on current user action

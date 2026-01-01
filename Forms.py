@@ -16,20 +16,24 @@ class NormalizedPhoneField(TelField):
 
 
 
-class RegistrationForm(FlaskForm):
+class LoginForm(FlaskForm):
+    username = StringField("Username", validators=[DataRequired()])
+    password = PasswordField("Password", validators=[DataRequired()])
+    submit = SubmitField('Sign In')
 
-    username = HiddenField(validators=[DataRequired()])
-    name = StringField("Name",validators=[DataRequired(), Length(min=3, max=80)])
-    email = StringField("Email",validators=[DataRequired(), Email()])
-    phone = NormalizedPhoneField("Phone Number",validators=[DataRequired()])
-    password = PasswordField("Password",validators=[DataRequired()])
-    country = SelectField(choices=[
+class RegistrationForm(FlaskForm):
+    username = StringField("Username", validators=[DataRequired(), Length(min=3, max=20)])
+    name = StringField("Full Name", validators=[DataRequired(), Length(min=3, max=80)])
+    email = StringField("Email", validators=[DataRequired(), Email()])
+    phone = NormalizedPhoneField("Phone Number", validators=[DataRequired()])
+    password = PasswordField("Password", validators=[DataRequired(), Length(min=6)])
+    country = SelectField('Country', choices=[
         ('Eswatini', 'Eswatini'), ('South Africa', 'South Africa'),
         ('Lesotho', 'Lesotho'), ('Mozambique', 'Mozambique'),
         ('Namibia', 'Namibia'), ('Botswana', 'Botswana'),
         ('Zimbabwe', 'Zimbabwe'), ('Malawi', 'Malawi'),
     ])
-    submit = SubmitField('Proceed To Game')
+    submit = SubmitField('Create Account')
 
 class GameStartForm(FlaskForm):
 
@@ -46,6 +50,6 @@ class GameStartForm(FlaskForm):
         default='fake'
     )
     bet_amount=FloatField("Real Bet Amount (SZL)")
-    freegame_fake_bet=FloatField("Fake Bet Amount (SZL)")
+    freegame_fake_bet=FloatField("Bet Amount (Not Real Money)", validators=[DataRequired()])
 
     submit = SubmitField('Start Game')

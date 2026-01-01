@@ -59,9 +59,10 @@ function initGameStartModal() {
         const liveOption = opponentSelect.querySelector('option[value="Live_Game"]');
         if (liveOption) {
             liveOption.disabled = true;
-            liveOption.textContent = 'Live Game (Not Available)';
+            liveOption.textContent = 'Live Game';
             liveOption.style.color = '#999';
         }
+        
     }
 
     // Handle bet type radio change
@@ -207,7 +208,7 @@ function displayPlayerBalance(balance) {
             <span class="balance-value ${freeExpired ? 'expired' : ''}">${fakeBalance.toFixed(2)} SZL</span>
         </div>
         <div class="balance-disclaimer">
-            Please note: This is not real money
+            This is not real money
         </div>
         ${freeExpired ? '<div class="balance-note">Free cash expired. Click to claim new free cash!</div>' : ''}
     `;

@@ -1,30 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-16">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Card Game</title>
-    <link rel="stylesheet" type="text/css" href="/static/css/style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
-    <link href="https://fonts.googleapis.com/css?family=Oswald:300,400,700&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.3.2/dist/tailwind.min.css" rel="stylesheet">
-
     
-
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/bs_stylesheet.css') }}" />
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Oswald:300,400,700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom Styles (must be last to override defaults) -->
+    <link rel="stylesheet" type="text/css" href="/static/css/style.css">
+    
+    <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
+
 <body>
 <header class="site-header">
     <div class="brand">🎁1500SZL</div>
     <div class="controls">
-        <!-- <button class="btn" onclick="startTurn()">Start Turn</button> -->
-         <button class="btn-glass ambience" onclick="toggleRulesModal()">Rules</button>
+        <button class="btn-glass ambience" onclick="toggleRulesModal()">Rules</button>
         <button class="btn-glass ambience">Wallet</button>
+        {% if session.get('user_id') %}
+            <span class="btn-glass ambience" style="pointer-events: none;">{{ session.get('username') }}</span>
+            <a href="{{ url_for('auth.logout') }}" class="btn-glass ambience" style="text-decoration: none;">Logout</a>
+        {% else %}
+            <a href="{{ url_for('auth.login') }}" class="btn-glass ambience" style="text-decoration: none;">Login</a>
+        {% endif %}
     </div>
 </header>
 
@@ -302,9 +309,9 @@
                 {% endif %}
             </div>
 
-            <div class="group">
+            <div style="display: none;" class="group">
                 <div class="acc-labels">Bet Type</div>
-                {{ form.bet_or_free(class="radio-group")}}
+                {{ form.bet_or_free(class="radio-group",type="hidden",)}}
                 {% if form.bet_or_free.errors %}
                     {% for error in form.bet_or_free.errors %}
                         <span class="span-error" >* {{error}}</span>
@@ -314,7 +321,7 @@
 
             <div class="group real-bet-field" style="display: none;">
                 <div class="acc-labels">{{ form.bet_amount.label(class="labels")}}</div>
-                {{ form.bet_amount(class="form-control",placeholder="Enter Bet Amount (SZL)",id="bet_amount")}}
+                {{ form.bet_amount(class="form-control",placeholder="Enter Bet Amount",id="bet_amount")}}
                 {% if form.bet_amount.errors %}
                     {% for error in form.bet_amount.errors %}
                         <span class="span-error" >* {{error}}</span>
