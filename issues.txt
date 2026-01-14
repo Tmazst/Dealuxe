@@ -1,6 +1,0 @@
-'/api/player/claim-free-cash' session controller
-
-ini:1043
-bal:543
-bet:500
-

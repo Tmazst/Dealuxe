@@ -159,6 +159,11 @@ def login():
         session['username'] = user.username
         
         flash('Login successful!', 'success')
+        
+        # Redirect to 'next' parameter or default to index
+        next_page = request.args.get('next')
+        if next_page:
+            return redirect(next_page)
         return redirect(url_for('index'))
     
     return render_template('login.html', form=form)

@@ -3,7 +3,8 @@ import time
 
 from game.engine import CardGameEngine
 from game.models import Player
-
+from database import Player as db_player
+# from flask import session
 
 class GameManager:
     """
@@ -28,15 +29,16 @@ class GameManager:
 
         if mode == "human_vs_ai":
             players = [
-                Player("Human"),
+                Player("human"),
                 Player("Computer")
             ]
-
+            print("[MANANGER] Game Mode: human_vs_ai")
         elif mode == "local":
             players = [
                 Player("Player 1"),
                 Player("Player 2")
             ]
+            print("[MANANGER] Game Mode: LOCAL")
 
         else:
             raise ValueError(f"Unsupported game mode: {mode}")

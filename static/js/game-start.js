@@ -54,15 +54,66 @@ function initGameStartModal() {
     const fakeBetField = document.querySelector('.fake-bet-field');
     const startButton = document.querySelector('.game_start_btn');
 
-    // Disable "Live Game" option (not implemented yet)
+    // Enable "Live Game" option - redirects to multiplayer lobby
     if (opponentSelect) {
         const liveOption = opponentSelect.querySelector('option[value="Live_Game"]');
         if (liveOption) {
-            liveOption.disabled = true;
-            liveOption.textContent = 'Live Game';
-            liveOption.style.color = '#999';
+            liveOption.disabled = false;
+            liveOption.textContent = 'Live Multiplayer 🌐';
+            liveOption.style.color = '#27ae60';
         }
         
+        // Open embedded lobby modal when Live Game is selected (no redirect)
+        opponentSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'Live_Game') {
+                // Hide the game-start modal and open the embedded lobby modal (no redirect)
+                if (typeof hideGameStartModal === 'function') {
+                    hideGameStartModal();
+                }
+                if (typeof showLobbyModal === 'function') {
+                    showLobbyModal();
+                    getFakeBal();
+                } else {
+                    const modal = document.getElementById('lobbyModal');
+                    if (modal) modal.classList.add('active');
+                }
+                // Keep form state in sync
+                gameStartForm.opponentType = 'live';
+
+            }
+        });
+    }
+
+    async function getFakeBal(){
+        const balLobbyDisplay = document.getElementById('user-balance');
+        if (!balLobbyDisplay) {
+            console.log("[LOBBY] Balance element not found");
+            return;
+        }
+
+        // Prefer unified API; fallback to legacy route on error
+        try {
+            const res = await fetch('/api/player/balance');
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.success && data.balance) {
+                    const bal = typeof data.balance.fake === 'number' ? data.balance.fake : 0;
+                    balLobbyDisplay.textContent = bal;
+                    return;
+                }
+            }
+            // Fallback
+            try {
+                const legacy = await fetch('/get_player_fake_balance');
+                if (legacy.ok) {
+                    const d2 = await legacy.json();
+                    const bal2 = (d2 && d2.player_fake_bal != null) ? d2.player_fake_bal : 0;
+                    balLobbyDisplay.textContent = bal2;
+                }
+            } catch (e) { /* ignore */ }
+        } catch (err) {
+            console.error('[LOBBY] Error fetching balance:', err);
+        }
     }
 
     // Handle bet type radio change

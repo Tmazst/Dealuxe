@@ -6,6 +6,7 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
 db = SQLAlchemy()
 
 
@@ -97,8 +98,22 @@ class Player(db.Model):
     # Relationships - specify foreign_keys to avoid ambiguity
     bet_sessions = db.relationship('BetSession', 
                                    foreign_keys='BetSession.player_id',
-                                   backref='player', 
+                                   backref='player',
                                    lazy='dynamic')
+    
+    # Multiplayer rooms as player 1
+    rooms_as_player1 = db.relationship('GameRoom',
+                                       primaryjoin='Player.user_id==GameRoom.player1_id',
+                                       foreign_keys='GameRoom.player1_id',
+                                       backref='player1_user',
+                                       lazy='dynamic')
+    
+    # Multiplayer rooms as player 2
+    rooms_as_player2 = db.relationship('GameRoom',
+                                       primaryjoin='Player.user_id==GameRoom.player2_id',
+                                       foreign_keys='GameRoom.player2_id',
+                                       backref='player2_user',
+                                       lazy='dynamic')
     
     def has_sufficient_balance(self, amount, bet_type):
         """Check if player has enough balance for a bet"""
@@ -187,6 +202,9 @@ class Player(db.Model):
     
     def __repr__(self):
         return f'<Player {self.id} - User: {self.user_id}>'
+    
+    def username(self):
+        return self.user.username if self.user else None
 
 
 # ========================================
@@ -260,7 +278,8 @@ class BetSession(db.Model):
             'status': self.status,
             'created_at': self.created_at.isoformat(),
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'duration_seconds': self.get_duration_seconds()
+            'duration_seconds': self.get_duration_seconds(),
+            'created_by_username': self.player.user.username if self.player and self.player.user else None
         }
     
     def __repr__(self):
@@ -440,3 +459,192 @@ def log_transaction(player_id, transaction_type, amount, balance_type, balance_b
     db.session.add(transaction)
     db.session.commit()
     return transaction
+
+
+# ========================================
+# GAME ROOM MODEL (Multiplayer)
+# ========================================
+
+class GameRoom(db.Model):
+    """Multiplayer game room for live player vs player games"""
+    __tablename__ = 'game_rooms'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    room_code = db.Column(db.String(10), unique=True, nullable=False, index=True)
+    
+    # Players
+    player1_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    player2_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    
+    # Game settings
+    game_id = db.Column(db.String(100), unique=True, nullable=True)  # UUID from GameManager
+    bet_session_id = db.Column(db.Integer, db.ForeignKey('bet_sessions.id'), nullable=True)
+    card_count = db.Column(db.Integer, default=6)
+    bet_amount = db.Column(db.Float, default=0.0)
+    bet_type = db.Column(db.String(10), default='fake')  # 'real' or 'fake'
+    
+    # Room state
+    status = db.Column(db.String(20), default='waiting')  # waiting, in_progress, paused, completed, abandoned
+    current_turn_player = db.Column(db.Integer, nullable=True)  # user_id whose turn it is
+    turn_deadline = db.Column(db.DateTime, nullable=True)  # when current turn expires
+    turn_duration_seconds = db.Column(db.Integer, default=300)  # time limit per turn (5 minutes)
+    
+    # Pause/Resume
+    pause_requested_by = db.Column(db.Integer, nullable=True)  # user_id who requested pause
+    pause_approved_by = db.Column(db.Integer, nullable=True)  # user_id who approved pause
+    paused_at = db.Column(db.DateTime, nullable=True)
+    
+    # Reconnection tracking
+    player1_connected = db.Column(db.Boolean, default=False)
+    player2_connected = db.Column(db.Boolean, default=False)
+    player1_last_seen = db.Column(db.DateTime, nullable=True)
+    player2_last_seen = db.Column(db.DateTime, nullable=True)
+    
+    # Results
+    winner_id = db.Column(db.Integer, nullable=True)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    
+    # Relationships
+    bet_session = db.relationship('BetSession', backref='game_room', uselist=False)
+    
+    def to_dict(self):
+        """Convert room to dictionary"""
+        from datetime import timedelta
+        player1_username = User.query.get(self.player1_id).username if self.player1_id else None
+        
+        # Check if creator is online (connected in last 2 minutes)
+        creator_online = False
+        if self.player1_last_seen:
+            time_since_seen = datetime.utcnow() - self.player1_last_seen
+            creator_online = time_since_seen.total_seconds() < 120  # 2 minutes
+        
+        # Calculate room age and if it's expired (5 hours)
+        room_age_hours = (datetime.utcnow() - self.created_at).total_seconds() / 3600
+        is_expired = room_age_hours > 5.0
+        
+        return {
+            'id': self.id,
+            'room_code': self.room_code,
+            'player1_id': self.player1_id,
+            'player2_id': self.player2_id,
+            'player1_username': player1_username,
+            'player2_username': User.query.get(self.player2_id).username if self.player2_id else None,
+            'created_by_username': player1_username,  # player1 is always the creator
+            'creator_online': creator_online,
+            'status': self.status,
+            'card_count': self.card_count,
+            'bet_amount': self.bet_amount,
+            'bet_type': self.bet_type,
+            'current_turn_player': self.current_turn_player,
+            'turn_deadline': self.turn_deadline.isoformat() if self.turn_deadline else None,
+            'turn_duration_seconds': self.turn_duration_seconds,
+            'is_paused': self.status == 'paused',
+            'pause_requested_by': self.pause_requested_by,
+            'created_at': self.created_at.isoformat(),
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'room_age_hours': round(room_age_hours, 1),
+            'is_expired': is_expired,
+        }
+    
+    def can_join(self, user_id):
+        """Check if user can join this room"""
+        if self.status != 'waiting':
+            return False
+        if self.player2_id is not None:
+            return False
+        if self.player1_id == user_id:
+            return False
+        return True
+    
+    def is_player_in_room(self, user_id):
+        """Check if user is a player in this room"""
+        return user_id in [self.player1_id, self.player2_id]
+    
+    def get_opponent_id(self, user_id):
+        """Get opponent's user ID"""
+        if user_id == self.player1_id:
+            return self.player2_id
+        elif user_id == self.player2_id:
+            return self.player1_id
+        return None
+    
+    def __repr__(self):
+        return f'<GameRoom {self.room_code} - {self.status}>'
+
+
+# ========================================
+# GAME SESSION, MOVES, SNAPSHOTS (Migration additions)
+# ========================================
+
+
+class GameSession(db.Model):
+    """Optional consolidated session record for match persistence and reconnection"""
+    __tablename__ = 'game_sessions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_uuid = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    game_id = db.Column(db.String(100), nullable=True, index=True)
+    game_version = db.Column(db.String(50), nullable=True)
+
+    # JSON/text fields to store players metadata, result and stats
+    players = db.Column(db.Text)  # JSON: [{player_id, seat_id, reconnect_token, joined_at, connected}]
+    result = db.Column(db.Text)   # JSON: {winner_id, scores}
+    stats = db.Column(db.Text)    # JSON: aggregates
+
+    # State tracking
+    turn_index = db.Column(db.Integer, default=0)
+    phase = db.Column(db.String(50))
+    current_turn_player = db.Column(db.Integer, nullable=True)
+
+    status = db.Column(db.String(20), default='waiting')  # waiting, in_progress, completed, abandoned
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    ended_at = db.Column(db.DateTime, nullable=True)
+    last_active_at = db.Column(db.DateTime, nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
+
+    def __repr__(self):
+        return f'<GameSession {self.session_uuid} - {self.status}>'
+
+
+class Move(db.Model):
+    """Persistent move log for every action taken during a match"""
+    __tablename__ = 'moves'
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Link to either BetSession (existing) or GameSession (new)
+    bet_session_id = db.Column(db.Integer, db.ForeignKey('bet_sessions.id'), nullable=True, index=True)
+    game_session_id = db.Column(db.Integer, db.ForeignKey('game_sessions.id'), nullable=True, index=True)
+
+    seq_num = db.Column(db.Integer, nullable=False, index=True)
+    player_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=True)
+
+    action_type = db.Column(db.String(50), nullable=False)
+    action_payload = db.Column(db.Text)   # JSON payload
+    result_snapshot = db.Column(db.Text)  # Optional JSON snapshot after move
+
+    idempotency_key = db.Column(db.String(100), index=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Move {self.id} - seq:{self.seq_num} type:{self.action_type}>'
+
+
+class Snapshot(db.Model):
+    """Periodic snapshots of the game engine state to speed up restore"""
+    __tablename__ = 'snapshots'
+
+    id = db.Column(db.Integer, primary_key=True)
+    game_session_id = db.Column(db.Integer, db.ForeignKey('game_sessions.id'), nullable=False, index=True)
+    seq_num = db.Column(db.Integer, nullable=False, index=True)
+    snapshot_blob = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Snapshot {self.id} - seq:{self.seq_num}>'

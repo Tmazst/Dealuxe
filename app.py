@@ -1,15 +1,23 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
 
+from flask_socketio import SocketIO
 from game.manager import GameManager
 from controllers.flask_controller import FlaskGameController
 from controllers.session_controller import session_bp
 from controllers.auth_controller import auth_bp
 from Forms import  *
 from database import db, init_db
+from database import Player
 
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = 'fght6hg234g5f6g7h8j9k0l1q2w3e4r5t6y7u8i9o0p'
+
+# -----------------------------
+# SOCKETIO INITIALIZATION
+# -----------------------------
+
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # -----------------------------
 # DATABASE INITIALIZATION
@@ -31,6 +39,44 @@ app.register_blueprint(auth_bp)
 manager = GameManager()
 
 # -----------------------------
+# MULTIPLAYER SETUP
+# -----------------------------
+
+from controllers.multiplayer_controller import init_multiplayer_events
+init_multiplayer_events(socketio, manager, app)
+
+#-------------------
+# Routes Methods
+#-------------------
+def get_player_fake_balance():
+    # Prefer logged-in DB player
+    from database import get_player_by_user_id, db as _db
+    user_id = session.get('user_id')
+    if user_id:
+        player = get_player_by_user_id(user_id)
+        if player:
+            if not player.is_fake_cash_valid() or player.fake_balance <= 0:
+                player.award_free_cash()
+                _db.session.commit()
+            print("[APP] player current balance: ", player.fake_balance)
+            return player.fake_balance
+
+    # No logged-in user: fall back to demo/in-memory player
+    try:
+        from models.player import get_or_create_demo_player
+        demo = get_or_create_demo_player()
+        # ensure demo has free cash if expired or empty
+        if not getattr(demo, 'is_fake_cash_valid', lambda: False)() or getattr(demo, 'fake_balance', 0) <= 0:
+            try:
+                demo.award_free_cash()
+            except Exception:
+                pass
+        print("[APP] demo player balance:", getattr(demo, 'fake_balance', 0))
+        return getattr(demo, 'fake_balance', 0)
+    except Exception:
+        return 0
+
+# -----------------------------
 # ROUTES
 # -----------------------------
 
@@ -38,6 +84,35 @@ manager = GameManager()
 def index():
     form = GameStartForm()
     return render_template("game.html",form=form)
+
+@app.route("/get_player_fake_balance")
+def get_balance():
+    fake_bal = get_player_fake_balance()
+    return jsonify({"player_fake_bal":fake_bal})
+
+@app.route("/lobby")
+def lobby():
+    """Multiplayer lobby - show user balance and available rooms"""
+    from database import get_player_by_user_id, Player
+    
+    user_id = session.get('user_id')
+    user_balance = 0
+    
+    if user_id:
+        player = get_player_by_user_id(user_id)
+        if player:
+            # Auto-award free cash if needed
+            if not player.is_fake_cash_valid() or player.fake_balance <= 0:
+                player.award_free_cash()
+                db.session.commit()
+            user_balance = player.fake_balance
+    
+    return render_template("lobby.html", user_balance=user_balance)
+
+
+@app.route("/game/<room_code>")
+def multiplayer_game(room_code):
+    return render_template("game_multiplayer.html", room_code=room_code)
 
 
 # -----------------------------
@@ -175,4 +250,4 @@ def leaderboard(game_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)

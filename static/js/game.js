@@ -7,6 +7,18 @@ let currentState = null;
 let gameMode = null
 let myPlayer = null;
 let contZone = null;
+let currBalance = null;
+// Local player index (0 or 1). For multiplayer this may be set by the client helper.
+let localPlayerIndex = 0;
+
+// Expose setter so multiplayer-client can configure which index is 'me'
+window.setLocalPlayerIndex = function(i) {
+    localPlayerIndex = Number(i) || 0;
+    console.log('[UI] localPlayerIndex set to', localPlayerIndex);
+};
+
+// Store previous card counts to detect changes
+let previousCardCounts = { me: null, opponent: null };
 
 // Request locking to prevent duplicate/concurrent actions
 let isRequestInProgress = false;
@@ -130,11 +142,22 @@ function renderLeaderboard(data) {
         const right = document.createElement('div');
         right.innerHTML = `<div class="role-badge">${p.hand_count} cards</div>`;
 
-        if(i === 0){
+        // Map player ids to local/opponent using localPlayerIndex
+        if (p.id === localPlayerIndex) {
+            if (previousCardCounts.me !== null && previousCardCounts.me !== p.hand_count) {
+                myPlayerScoreB.classList.add('flash-update');
+                setTimeout(() => myPlayerScoreB.classList.remove('flash-update'), 700);
+            }
             myPlayerScoreB.textContent = p.hand_count;
-        }else if(i === 1){
+            previousCardCounts.me = p.hand_count;
+        } else {
+            if (previousCardCounts.opponent !== null && previousCardCounts.opponent !== p.hand_count) {
+                myOpponentScoreB.classList.add('flash-update');
+                setTimeout(() => myOpponentScoreB.classList.remove('flash-update'), 500);
+            }
             myOpponentScoreB.textContent = p.hand_count;
-        };
+            previousCardCounts.opponent = p.hand_count;
+        }
 
         row.appendChild(left);
         row.appendChild(right);
@@ -217,13 +240,13 @@ async function updateAgent(state) {
     console.log("[FRONTEND] updateAgent called with phase:", phase);
 
     if (phase === 'ATTACK') {
-        if (attacker === 0) {
+        if (attacker === localPlayerIndex) {
             text.innerText = `It's your turn to attack. Choose a card to attack with (4-13).`;
         } else {
             text.innerText = `Opponent is deciding their attack...`;
         }
     } else if (phase === 'DEFENSE') {
-        if (defender === 0) {
+        if (defender === localPlayerIndex) {
             text.innerText = `Defend against ${attackCard}. Choose two cards whose values sum to it, or draw.`;
         } else {
             text.innerText = `Waiting for opponent to defend against ${attackCard}...`;
@@ -236,6 +259,27 @@ async function updateAgent(state) {
         showGameModal();
     } else {
         text.innerText = `Phase: ${phase}`;
+    }
+
+    // Update a simple turn indicator in the header
+    try {
+        let turnIndicator = document.getElementById('turn-indicator');
+        const controls = document.querySelector('.site-header .controls');
+        if (!turnIndicator && controls) {
+            const span = document.createElement('span');
+            span.id = 'turn-indicator';
+            span.className = 'turn-indicator';
+            controls.appendChild(span);
+            turnIndicator = span;
+        }
+        if (turnIndicator) {
+            const myTurn = (phase === 'ATTACK' && attacker === localPlayerIndex) || (phase === 'DEFENSE' && defender === localPlayerIndex) || (phase === 'RULE_8' && attacker === localPlayerIndex);
+            turnIndicator.textContent = myTurn ? 'Your Turn' : 'Opponent Turn';
+            turnIndicator.classList.toggle('your-turn', myTurn);
+            turnIndicator.classList.toggle('opponent-turn', !myTurn);
+        }
+    } catch (e) {
+        // non-fatal
     }
 }
 
@@ -256,7 +300,8 @@ async function startTurn() {
 async function attack(index) {
     if (!currentState) return;
     if (currentState.phase !== "ATTACK") return;
-    if (currentState.attacker !== 0) return;
+    // allow whichever local player index matches current attacker
+    if (currentState.attacker !== localPlayerIndex) return;
     
     // Prevent duplicate/concurrent requests
     if (isRequestInProgress) {
@@ -276,6 +321,21 @@ async function attack(index) {
     }
 
     try {
+        // If we're in a multiplayer session, emit socket action instead of REST
+        if (window.currentMultiplayer && window.currentMultiplayer.room_code && window.socket) {
+            window.socket.emit('game_action', {
+                room_code: window.currentMultiplayer.room_code,
+                action: 'attack',
+                data: { index: index }
+            });
+
+            // keep local animations and optimistic UI; server will send authoritative update
+            focusedCardIndex = null;
+            // Delay to allow animation then rely on server 'game_update'
+            setTimeout(() => { isRequestInProgress = false; }, 450);
+            return;
+        }
+
         const res = await fetch(`/api/game/${gameId}/attack`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -299,7 +359,7 @@ async function attack(index) {
                 try { await animateOpponentDrawGhost(); } catch (e) { /* ignore */ }
             }
         }
-        
+
         if (ui && ui.ui_log) renderComments(ui.ui_log);
 
         // Delay state refresh until animation finishes
@@ -321,6 +381,18 @@ async function defend(indices) {
     console.log("Defend indices:", indices);
     const i1 = indices[0];
     const i2 = indices[1];
+    // If multiplayer, emit over socket
+    if (window.currentMultiplayer && window.currentMultiplayer.room_code && window.socket) {
+        window.socket.emit('game_action', {
+            room_code: window.currentMultiplayer.room_code,
+            action: 'defend',
+            data: { i1: i1, i2: i2 }
+        });
+
+        // animate locally, server will send authoritative update
+        return;
+    }
+
     const res = await fetch(`/api/game/${gameId}/defend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -331,7 +403,7 @@ async function defend(indices) {
     console.log("Defend response data:", data);
     // If backend returned used_cards (defense success), animate them
     if (data.used_cards) {
-        animateOpponentDefense(data.used_cards);
+        animateUserDefense(data.used_cards);
     }
 
     // Render any ui log included in the response
@@ -347,6 +419,17 @@ async function drawCard() {
     const pile = document.getElementById('attack-pile');
     if (pile) pile.innerHTML = '';
     hideAttackConfirmModal();
+
+    // If multiplayer, emit draw action
+    if (window.currentMultiplayer && window.currentMultiplayer.room_code && window.socket) {
+        window.socket.emit('game_action', {
+            room_code: window.currentMultiplayer.room_code,
+            action: 'draw',
+            data: {}
+        });
+        try { await animateDrawGhost(); } catch (e) { /* ignore */ }
+        return;
+    }
 
     const res = await fetch(`/api/game/${gameId}/draw`, { method: "POST" });
     const data = await res.json();
@@ -472,9 +555,10 @@ async function rule8Crash(crash) {
 }
 
 
-function animateOpponentDefense(values) {
-    // Create non-animated duplicates and push into the pile box.
+function animateUserDefense(values) {
+    // Create ghost cards animating from bottom (user's hand) to attack pile
     const pile = document.getElementById("attack-pile");
+    const zone = document.getElementById("attack-zone");
     if (!pile) return;
     const pileRect = pile.getBoundingClientRect();
 
@@ -494,22 +578,177 @@ function animateOpponentDefense(values) {
         }
     });
 
-    // compute size so up to 3 cards fit inside pile horizontally
+    // Create flying ghost cards from bottom (user's position)
+    cards.forEach((card, i) => {
+        const ghost = document.createElement("div");
+        ghost.className = "card ghost player-card entering";
+        ghost.innerHTML = `
+            <div class="rank">${card.rank}</div>
+            <div class="center">${card.suit}</div>
+            <div class="suit">${card.suit}</div>
+        `;
+
+        document.body.appendChild(ghost);
+        ghost.style.position = "fixed";
+        ghost.style.left = "50%";
+        ghost.style.bottom = "-200px";
+        ghost.style.transform = "translateX(-50%) scale(0.6)";
+        ghost.style.zIndex = 1000;
+        ghost.style.opacity = "0";
+
+        const offsetX = i === 0 ? -12 : 12;
+        const rotate = i === 0 ? -6 : 6;
+
+        // Animate from bottom to pile
+        setTimeout(() => {
+            ghost.classList.remove('entering');
+            ghost.classList.add('visible');
+            ghost.style.transition = "all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)";
+            ghost.style.left = (pileRect.left + pileRect.width/2 + offsetX) + "px";
+            ghost.style.top = (pileRect.top + pileRect.height/2) + "px";
+            ghost.style.bottom = "auto";
+            ghost.style.transform = `translate(-50%, -50%) rotate(${rotate}deg) scale(0.9)`;
+            ghost.style.opacity = "1";
+        }, i * 100);
+
+        // Flash attack zone when cards land
+        setTimeout(() => {
+            if (zone) {
+                zone.classList.add('flash');
+                setTimeout(() => zone.classList.remove('flash'), 600);
+            }
+        }, 600 + (i * 100));
+
+        // Fade out
+        setTimeout(() => {
+            ghost.classList.add('fade-out');
+            setTimeout(() => ghost.remove(), 400);
+        }, 1500 + (i * 100));
+    });
+
+    // Also add static cards to pile for persistence
     const maxCardsAcross = 3;
-    const cardMargin = 6; // px
+    const cardMargin = 6;
     const cardWidth = Math.max(40, Math.floor((pileRect.width - (cardMargin * (maxCardsAcross + 1))) / maxCardsAcross));
     const cardHeight = Math.max(56, Math.floor(pileRect.height - 8));
 
-    // append each card as a simple static element inside pile
+    // Remove any previous defense visuals to avoid duplication on repeated updates
+    try {
+        const prevDefense = pile.querySelectorAll('.pile-defense');
+        prevDefense.forEach(el => el.remove());
+    } catch (e) { /* non-fatal */ }
+
     cards.forEach((card, i) => {
         const el = document.createElement('div');
-        el.className = 'card pile-defense entering';
+        el.className = 'card pile-defense player-card entering';
         el.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
             <div class="suit">${card.suit}</div>
         `;
-        // sizing to fit pile
+        el.style.width = cardWidth + 20 + 'px';
+        el.style.height = cardHeight + 'px';
+        el.style.display = 'inline-block';
+        el.style.margin = cardMargin + 'px';
+        el.style.verticalAlign = 'top';
+
+        pile.appendChild(el);
+        requestAnimationFrame(() => el.classList.remove('entering'));
+    });
+
+    setOpponentStatus("You defended with cards: " + cards.map(v => v.rank + v.suit).join(", "));
+}
+
+function animateOpponentDefense(values) {
+    // Create ghost cards animating from top to attack pile
+    const pile = document.getElementById("attack-pile");
+    const zone = document.getElementById("attack-zone");
+    if (!pile) return;
+    const pileRect = pile.getBoundingClientRect();
+
+    // normalize values so we have objects with {rank, suit}
+    const cards = values.map(v => {
+        if (typeof v === 'string') {
+            const s = v.replace(/\s*icon$/i, '').trim();
+            const m = s.match(/^([0-9]{1,2}|[AJQK])([a-zA-Z]+)$/i);
+            if (m) return { rank: m[1], suit: m[2] };
+            const alt = s.match(/^(.+?)([a-zA-Z]+)$/);
+            if (alt) return { rank: alt[1], suit: alt[2] };
+            return { rank: s, suit: '' };
+        } else if (v && typeof v === 'object') {
+            return { rank: v.rank, suit: v.suit };
+        } else {
+            return { rank: String(v), suit: '' };
+        }
+    });
+
+    // Create flying ghost cards from top
+    cards.forEach((card, i) => {
+        const ghost = document.createElement("div");
+        ghost.className = "card ghost opponent-card entering";
+        ghost.innerHTML = `
+            <div class="rank">${card.rank}</div>
+            <div class="center">${card.suit}</div>
+            <div class="suit">${card.suit}</div>
+        `;
+
+        document.body.appendChild(ghost);
+        ghost.style.position = "fixed";
+        ghost.style.left = "50%";
+        ghost.style.top = "-200px";
+        ghost.style.transform = "translateX(-50%) scale(0.6)";
+        ghost.style.zIndex = 1000;
+        ghost.style.opacity = "0";
+
+        const offsetX = i === 0 ? -12 : 12;
+        const rotate = i === 0 ? -6 : 6;
+
+        // Animate from top to pile
+        setTimeout(() => {
+            ghost.classList.remove('entering');
+            ghost.classList.add('visible');
+            ghost.style.transition = "all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)";
+            ghost.style.left = (pileRect.left + pileRect.width/2 + offsetX) + "px";
+            ghost.style.top = (pileRect.top + pileRect.height/2) + "px";
+            ghost.style.transform = `translate(-50%, -50%) rotate(${rotate}deg) scale(0.9)`;
+            ghost.style.opacity = "1";
+        }, i * 100);
+
+        // Flash attack zone when cards land
+        setTimeout(() => {
+            if (zone) {
+                zone.classList.add('flash');
+                setTimeout(() => zone.classList.remove('flash'), 600);
+            }
+        }, 600 + (i * 100));
+
+        // Fade out
+        setTimeout(() => {
+            ghost.classList.add('fade-out');
+            setTimeout(() => ghost.remove(), 400);
+        }, 1500 + (i * 100));
+    });
+
+    // Also add static cards to pile for persistence
+    const maxCardsAcross = 3;
+    const cardMargin = 6;
+    const cardWidth = Math.max(40, Math.floor((pileRect.width - (cardMargin * (maxCardsAcross + 1))) / maxCardsAcross));
+    const cardHeight = Math.max(56, Math.floor(pileRect.height - 8));
+
+    // Remove any previous defense visuals to avoid duplication on repeated updates
+    try {
+        const prevDefense = pile.querySelectorAll('.pile-defense');
+        prevDefense.forEach(el => el.remove());
+    } catch (e) { /* non-fatal */ }
+
+    cards.forEach((card, i) => {
+        const el = document.createElement('div');
+        el.className = 'card pile-defense opponent-card entering';
+        el.innerHTML = `
+            <div class="rank">${card.rank}</div>
+            <div class="center">${card.suit}</div>
+            <div class="suit">${card.suit}</div>
+        `;
         el.style.width = cardWidth + 20 + 'px';
         el.style.height = cardHeight + 'px';
         el.style.display = 'inline-block';
@@ -535,20 +774,26 @@ async function renderState(state) {
     //     JSON.stringify(state, null, 2);
     let myHand = null;
 
-    // Prefer authoritative player details from server
-    const playerDetails = await fetchPlayerDetails();
-    if (playerDetails && Array.isArray(playerDetails.hand)) {
-        myHand = playerDetails.hand;
+    // First priority: if server provided masked `players` array with full `hand` for this client,
+    // use it (this is how multiplayer sends per-player masked hands).
+    if (state && Array.isArray(state.players) && state.players[localPlayerIndex] && Array.isArray(state.players[localPlayerIndex].hand)) {
+        myHand = state.players[localPlayerIndex].hand;
     } else {
-        // Try to find our index in state.players by name
-        if (myPlayer && myPlayer.name && Array.isArray(state.players)) {
-            const idx = state.players.findIndex(p => p.name === myPlayer.name);
-            if (idx >= 0 && state.hands && state.hands[idx]) {
-                myHand = state.hands[idx];
+        // Prefer authoritative player details from server API as before
+        const playerDetails = await fetchPlayerDetails();
+        if (playerDetails && Array.isArray(playerDetails.hand)) {
+            myHand = playerDetails.hand;
+        } else {
+            // Try to find our index in state.players by name (legacy)
+            if (myPlayer && myPlayer.name && Array.isArray(state.players)) {
+                const idx = state.players.findIndex(p => p.name === myPlayer.name);
+                if (idx >= 0 && state.hands && state.hands[idx]) {
+                    myHand = state.hands[idx];
+                }
             }
+            // Fallback: use hands mapping if available, else empty array
+            if (!myHand) myHand = (state.hands && state.hands[localPlayerIndex]) || [];
         }
-        // Fallback to attacker index or first hand
-        if (!myHand) myHand = (state.hands && state.hands[state.attacker]) || (state.hands && state.hands[0]) || [];
     }
 
     renderCards(myHand);
@@ -556,8 +801,7 @@ async function renderState(state) {
     // update tracking badge based on phase and whether it's our turn
     if (state) {
         const phase = state.phase || '';
-        // determine if local player is attacker or defender (assume player index 0 for now)
-        const localPlayerIndex = 0;
+        // determine if local player is attacker or defender
         const isLocalAttacker = state.attacker === localPlayerIndex;
         const isLocalDefender = state.defender === localPlayerIndex;
 
@@ -584,11 +828,27 @@ async function renderState(state) {
             setTrackingBadge('Waiting...', 'info');
             updateHandHighlight('none');
         }
-        // If opponent has played an attack card and we're the defender, require user confirmation
-        if (state.attack_card && state.attacker !== 0 && state.defender === 0) {
+        // If opponent has played an attack card and we're the defender
+        if (state.attack_card && state.attacker !== localPlayerIndex && state.defender === localPlayerIndex) {
             if (state.attack_card !== lastDisplayedAttack) {
-                pendingOpponentAttack = state.attack_card;
-                showAttackConfirmModal();
+                // In multiplayer: proceed automatically (no confirm modal)
+                if (window.currentMultiplayer && window.currentMultiplayer.room_code) {
+                    hideAttackConfirmModal();
+                    try {
+                        await animateOpponentGhost(state.attack_card);
+                        try { playAttackSound(); } catch (e) {}
+                        appendOpponentAttack(state.attack_card);
+                        lastDisplayedAttack = state.attack_card;
+                    } catch (e) {
+                        // Fallback: append without animation
+                        appendOpponentAttack(state.attack_card);
+                        lastDisplayedAttack = state.attack_card;
+                    }
+                } else {
+                    // Single-player: require user confirmation so they can follow AI
+                    pendingOpponentAttack = state.attack_card;
+                    showAttackConfirmModal();
+                }
             }
         }
         // Update draw button visibility/state
@@ -619,7 +879,7 @@ function showGameModal(){
     
     // Populate winner information
     const winnerId = currentState.winner;
-    const isPlayerWinner = winnerId === 0;
+    const isPlayerWinner = winnerId === localPlayerIndex;
     const winnerBadge = document.getElementById('winner-badge');
     const winType = document.getElementById('win-type');
     
@@ -675,7 +935,24 @@ function showGameModal(){
     }
     
     // Display winnings and balance if player won
-    displayGameOverFinancials(isPlayerWinner);
+    // In multiplayer, the server awards winnings; skip client-side session completion
+    // and just show prize pool if available.
+    try {
+        if (window.currentMultiplayer && window.currentMultiplayer.room_code) {
+            const prizeDisplay = document.getElementById('prize-display');
+            const winningsAmount = document.getElementById('winnings-amount');
+            if (isPlayerWinner && prizeDisplay) {
+                prizeDisplay.style.display = 'block';
+                if (winningsAmount) {
+                    const prizePool = parseFloat(sessionStorage.getItem('prize_pool')) || 0;
+                    winningsAmount.textContent = `${prizePool.toFixed(2)} SZL`;
+                }
+            }
+        } else {
+            // single-player: complete session and fetch updated balance
+            displayGameOverFinancials(isPlayerWinner);
+        }
+    } catch (e) { /* non-fatal */ }
     
     // Play game over sound
     playGameOverSound(isPlayerWinner);
@@ -722,7 +999,7 @@ async function displayGameOverFinancials(isPlayerWinner) {
     // Complete session and get updated balance from backend
     if (gameId) {
         try {
-            const winnerId = isPlayerWinner ? 0 : 1;
+            const winnerId = isPlayerWinner ? localPlayerIndex : (localPlayerIndex === 0 ? 1 : 0);
             console.log('[GAME-OVER] Calling session/complete with winnerId:', winnerId);
             
             const response = await fetch('/api/session/complete', {
@@ -785,7 +1062,7 @@ function appendOpponentAttack(value) {
     prevDefense.forEach(el => el.remove());
 
     const el = document.createElement('div');
-    el.className = 'card pile-attack entering';
+    el.className = 'card pile-attack opponent-card entering';
     el.innerHTML = `\n            <div class="rank">${card.rank}</div>\n            <div class="center">${card.suit}</div>\n            <div class="suit">${card.suit}</div>\n        `;
     el.style.width = cardWidth + 'px';
     el.style.height = cardHeight + 'px';
@@ -811,7 +1088,7 @@ function animateOpponentGhost(value) {
 
         const card = parseCardString(value);
         const ghost = document.createElement('div');
-        ghost.className = 'card ghost entering';
+        ghost.className = 'card ghost opponent-card entering';
         ghost.innerHTML = `\n            <div class="rank">${card.rank}</div>\n            <div class="center">${card.suit}</div>\n            <div class="suit">${card.suit}</div>\n        `;
         document.body.appendChild(ghost);
 
@@ -1018,18 +1295,43 @@ function playGameOverSound(isWin) {
     }
 }
 
-function renderComments(lines) {
+function renderComments(lines, context) {
     const container = document.querySelector('.game-comments');
     if (!container) return;
+    const textEl = document.getElementById('game-comments-text') || container;
     // Show only the most recent relevant message (not a log dump).
     if (!lines || !Array.isArray(lines) || lines.length === 0) return;
     // pick last message
     const raw = lines[lines.length - 1];
-    if (!raw) return;
+    if (raw == null) return;
+    // normalize message: support strings or simple objects
+    let msg = '';
+    if (typeof raw === 'string') {
+        msg = raw;
+    } else if (raw && typeof raw === 'object') {
+        // try common fields
+        msg = raw.message || raw.text || raw.msg || JSON.stringify(raw);
+    } else {
+        msg = String(raw);
+    }
     // sanitize: hide drawn card identities
-    const sanitized = String(raw).replace(/draws\s+[^\s]+/i, 'draws a card');
-    // display single message
-    container.textContent = sanitized;
+    const sanitized = msg.replace(/draws\s+[^\s]+/i, 'draws a card');
+    // Optional multiplayer context for perspective labeling
+    let prefix = '';
+    try {
+        if (context && typeof context === 'object') {
+            const localIndex = (window.currentMultiplayer && typeof window.currentMultiplayer.player_index === 'number')
+                ? window.currentMultiplayer.player_index
+                : (typeof context.player_index === 'number' ? context.player_index : null);
+            const actorIndex = (typeof context.actor_index === 'number') ? context.actor_index : null;
+            if (localIndex !== null && actorIndex !== null) {
+                prefix = (actorIndex === localIndex) ? 'You: ' : 'Opponent: ';
+            }
+        }
+    } catch (e) { /* best-effort only */ }
+    // display single message inside the comments text span
+    textEl.textContent = prefix + sanitized;
+    try { console.log('[Comments]', { prefix, msg: sanitized }); } catch (e) {}
     // briefly highlight the comments box to draw attention
     container.classList.add('flash');
     // Play bell sound when animating
@@ -1131,6 +1433,7 @@ function createHandScrollButtons() {
 
 // --- Draw button UI ---
 function createDrawButton() {
+    console.log("Creating Draw Button");
     if (document.getElementById('draw-button')) return;
     const wrapper = document.createElement('div');
     wrapper.className = 'draw-button-wrapper';
@@ -1146,7 +1449,9 @@ function createDrawButton() {
     btn.setAttribute('aria-label', 'Draw a card');
     btn.innerHTML = '<span class="icon"><i class="fa-solid fa-plus"></i></span>';
     wrapper.appendChild(btn);
-    document.body.appendChild(wrapper);
+    // Prefer placing the draw button next to the player's hand container
+    const handBox = document.querySelector('.player-cards-box') || document.body;
+    handBox.appendChild(wrapper);
 
     btn.addEventListener('click', async () => {
         // disable to prevent double clicks
@@ -1163,16 +1468,29 @@ function createDrawButton() {
 }
 
 function updateDrawButton(state) {
-    const btn = document.getElementById('draw-button');
-    if (!btn) return;
+    console.log("DRAW BUTTON DEBUG: ",state.phase);
+    try { console.log('[UI] updateDrawButton called, phase=', state && state.phase, 'defender=', state && state.defender, 'localPlayerIndex=', localPlayerIndex); } catch (e) {}
+    let btn = document.getElementById('draw-button');
+    // Ensure the draw button exists (create if missing)
+    if (!btn) {
+        if (typeof createDrawButton === 'function') createDrawButton();
+        btn = document.getElementById('draw-button');
+    }
+    if (!btn)
+        {
+            console.log("Button not created or found");
+            return;
+        } 
     // Show only when it's DEFENSE phase and local player is defender (defender === 0)
-    const visible = state && state.phase === 'DEFENSE' && state.defender === 0;
+    const visible = state && state.phase === 'DEFENSE' && state.defender === localPlayerIndex;
     btn.style.display = visible ? 'flex' : 'none';
     if (visible) {
         // flash when available
         btn.classList.add('flash');
+        console.log("Draw Button Flashing");
     } else {
         btn.classList.remove('flash');
+        console.log("Draw Button Not Found");
     }
 }
 
@@ -1191,7 +1509,7 @@ function renderCards(cards) {
 
     cards.forEach((card, index) => {
         const div = document.createElement("div");
-        div.className = "card";
+        div.className = "card player-card";
         div.style.left = `${index * overlap}px`;
         div.style.zIndex = index;
 
@@ -1218,9 +1536,13 @@ function getHandCards() {
 
 function onCardClick(index) {
     const cards = getHandCards();
+    console.log('[onCardClick] index:', index, 'currentState:', currentState, 'localPlayerIndex:', localPlayerIndex);
+    if (currentState) {
+        console.log('[onCardClick] phase:', currentState.phase, 'attacker:', currentState.attacker, 'defender:', currentState.defender);
+    }
 
     // Defense selection flow: when it's DEFENSE phase and human is defender
-    if (currentState && currentState.phase === 'DEFENSE' && currentState.defender === 0) {
+    if (currentState && currentState.phase === 'DEFENSE' && currentState.defender === localPlayerIndex) {
         // if clicked card is already selected, toggle it off
         const selIndex = defenseSelected.indexOf(index);
         if (selIndex >= 0) {
@@ -1256,7 +1578,7 @@ function onCardClick(index) {
     }
 
     // Attack phase: raise/lower card mechanism
-    if (currentState && currentState.phase === 'ATTACK' && currentState.attacker === 0) {
+    if (currentState && currentState.phase === 'ATTACK' && currentState.attacker === localPlayerIndex) {
         // If this card is already raised, lower it
         if (raisedCardIndex === index) {
             lowerRaisedCard();
@@ -1497,7 +1819,7 @@ function animateCardToAttackPile(cardEl) {
 
     // create a new static duplicate for the pile
     const el = document.createElement('div');
-    el.className = 'card pile-attack entering';
+    el.className = 'card pile-attack player-card entering';
     el.innerHTML = cardEl.innerHTML;
     el.style.width = cardWidth + 'px';
     el.style.height = cardHeight + 'px';
@@ -1506,6 +1828,19 @@ function animateCardToAttackPile(cardEl) {
     el.style.verticalAlign = 'top';
 
     pile.appendChild(el);
+
+    // Flash attack zone when card lands - trigger immediately
+    const zone = document.getElementById("attack-zone");
+    if (zone) {
+        console.log('[FLASH] Triggering attack-zone flash');
+        zone.classList.add('flash');
+        setTimeout(() => {
+            zone.classList.remove('flash');
+            console.log('[FLASH] Removed flash class');
+        }, 600);
+    } else {
+        console.warn('[FLASH] Attack zone element not found!');
+    }
 
     // remove the source card from the player's hand immediately so it
     // disappears from the drop zone and the hand UI while we wait for
@@ -1538,7 +1873,7 @@ function animateDefenseToAttackPile(cardEls) {
 
     cardEls.forEach((cardEl, i) => {
         const el = document.createElement('div');
-        el.className = 'card pile-defense entering';
+        el.className = 'card pile-defense player-card entering';
         el.innerHTML = cardEl.innerHTML;
         el.style.width = cardWidth + 'px';
         el.style.height = cardHeight + 'px';

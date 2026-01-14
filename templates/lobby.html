@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Lobby - Dealuxe</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        .lobby-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .lobby-header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        .lobby-header h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            font-family: Oswald, sans-serif;
+        }
+        
+        .lobby-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .lobby-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .lobby-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .lobby-card h2 {
+            color: white;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        .create-room-section {
+            text-align: center;
+        }
+        
+        .bet-input-group {
+            margin: 20px 0;
+        }
+        
+        .bet-input-group label {
+            display: block;
+            color: white;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .bet-input-group input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+        }
+        
+        .bet-input-group input:focus {
+            outline: none;
+            border-color: #8b5cf6;
+        }
+        
+        .create-room-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+            font-family: Oswald, sans-serif;
+        }
+        
+        .create-room-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .create-room-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .room-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .room-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .room-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #8b5cf6;
+            transform: translateY(-2px);
+        }
+        
+        .room-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            position: relative;
+            flex-shrink: 0;
+        }
+        
+        .online-indicator {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid #1a1a2e;
+        }
+        
+        .online-indicator.online {
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+        
+        .online-indicator.offline {
+            background: #6b7280;
+        }
+        
+        .room-details-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .room-id {
+            color: #8b5cf6;
+            font-weight: bold;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .room-code-badge {
+            background: rgba(139, 92, 246, 0.2);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .creator-name {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .room-stats {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+        }
+        
+        .stat-icon {
+            color: #8b5cf6;
+            font-size: 14px;
+        }
+        
+        .room-status {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-waiting {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border: 1px solid #fbbf24;
+        }
+        
+        .status-ready {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border: 1px solid #10b981;
+        }
+        
+        .room-age {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 12px;
+        }
+        
+        .room-info {
+            color: white;
+            margin-bottom: 15px;
+        }
+        
+        .room-info p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        
+        .join-room-btn {
+            padding: 12px 24px;
+            background: #10b981;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .join-room-btn:hover {
+            background: #059669;
+        }
+        
+        .join-room-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-online {
+            background: #10b981;
+            box-shadow: 0 0 10px #10b981;
+        }
+        
+        .status-offline {
+            background: #6b7280;
+        }
+        
+        .player-count {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        
+        .back-link {
+            display: inline-block;
+            color: white;
+            text-decoration: none;
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        
+        .back-link:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .header-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .login-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.2s;
+            font-family: Oswald, sans-serif;
+        }
+        
+        .login-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .username-display {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .logout-btn {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+        
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        /* Login Modal */
+        .login-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-modal-overlay.active {
+            display: flex;
+        }
+        
+        .login-modal {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 40px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        
+        .login-modal h2 {
+            color: white;
+            margin-bottom: 20px;
+            font-family: Oswald, sans-serif;
+        }
+        
+        .login-modal p {
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 30px;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        .modal-btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .modal-btn-primary {
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            color: white;
+        }
+        
+        .modal-btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+        
+        .modal-btn:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="lobby-container">
+        <!-- Header Controls (Login/Logout) -->
+        <div class="header-controls">
+            {% if session.get('user_id') %}
+                <span class="username-display">
+                    <i class="fa-solid fa-user"></i> {{ session.get('username') }}
+                </span>
+                <a href="{{ url_for('auth.logout') }}" class="logout-btn">
+                    <i class="fa-solid fa-right-from-bracket"></i> Logout
+                </a>
+            {% else %}
+                <a href="{{ url_for('auth.login', next='/lobby') }}" class="login-btn">
+                    <i class="fa-solid fa-right-to-bracket"></i> Login
+                </a>
+            {% endif %}
+        </div>
+        
+        <a href="{{ url_for('index') }}" class="back-link">
+            <i class="fa-solid fa-arrow-left"></i> Back to Game
+        </a>
+        
+        <div class="lobby-header">
+            <h1>Game Lobby</h1>
+            <p class="player-count">
+                <span class="status-indicator status-online"></span>
+                <span id="online-count">0</span> players online
+            </p>
+        </div>
+        
+        <div class="lobby-grid">
+            <!-- Create Room Section -->
+            <div class="lobby-card create-room-section">
+                <h2><i class="fa-solid fa-plus-circle"></i> Create New Room</h2>
+                
+                <div class="bet-input-group">
+                    <label for="bet-amount">
+                        <i class="fa-solid fa-coins"></i> Bet Amount (SZL)
+                    </label>
+                    <input type="number" id="bet-amount" placeholder="Enter bet amount" min="0" step="0.01" value="100">
+                </div>
+                
+                <button class="create-room-btn" id="create-room-btn">
+                    <i class="fa-solid fa-door-open"></i> Create Room
+                </button>
+                
+                <div class="player-count" style="margin-top: 20px;">
+                    Your balance: <strong id="user-balance">{{ "%.2f"|format(user_balance) }}</strong> SZL (Free Cash)
+                </div>
+            </div>
+            
+            <!-- Available Rooms Section -->
+            <div class="lobby-card">
+                <h2><i class="fa-solid fa-list"></i> Available Rooms</h2>
+                <div id="room-list" class="room-list">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-inbox"></i>
+                        <p>No rooms available. Create one to start playing!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Login Required Modal -->
+    <div class="login-modal-overlay" id="loginModal">
+        <div class="login-modal">
+            <h2><i class="fa-solid fa-lock"></i> Login Required</h2>
+            <p>You need to be logged in to play multiplayer games. Please login or create an account to continue.</p>
+            <div class="modal-buttons">
+                <a href="{{ url_for('auth.login', next='/lobby') }}" class="modal-btn modal-btn-primary">
+                    <i class="fa-solid fa-right-to-bracket"></i> Login
+                </a>
+                <button onclick="closeLoginModal()" class="modal-btn modal-btn-secondary">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Check if user is logged in
+        const isLoggedIn = {{ 'true' if session.get('user_id') else 'false' }};
+        
+        function showLoginModal() {
+            document.getElementById('loginModal').classList.add('active');
+        }
+        
+        function closeLoginModal() {
+            document.getElementById('loginModal').classList.remove('active');
+        }
+        
+        // Close modal when clicking outside
+        document.getElementById('loginModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeLoginModal();
+            }
+        });
+        
+        // Check login before allowing actions
+        function checkLoginAndExecute(callback) {
+            if (!isLoggedIn) {
+                showLoginModal();
+                return false;
+            }
+            callback();
+            return true;
+        }
+        
+        // Intercept create room button
+        document.addEventListener('DOMContentLoaded', function() {
+            const createRoomBtn = document.getElementById('create-room-btn');
+            if (createRoomBtn) {
+                const originalClickHandler = createRoomBtn.onclick;
+                createRoomBtn.onclick = function(e) {
+                    if (!isLoggedIn) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        showLoginModal();
+                        return false;
+                    }
+                };
+            }
+        });
+        
+        // Override joinRoom function to check login
+        const originalJoinRoom = window.joinRoom;
+        window.joinRoom = function(roomCode) {
+            if (!isLoggedIn) {
+                showLoginModal();
+                return;
+            }
+            if (typeof originalJoinRoom === 'function') {
+                originalJoinRoom(roomCode);
+            }
+        };
+    </script>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/multiplayer.js') }}"></script>
+</body>
+</html>

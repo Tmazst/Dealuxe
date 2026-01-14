@@ -20,12 +20,14 @@
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 
+
 <body>
+<div id="turn-indicator" aria-live="polite"></div>
 <header class="site-header">
-    <div class="brand">🎁1500SZL</div>
+    <div class="brand">🎁0SZL</div>
     <div class="controls">
         <button class="btn-glass ambience" onclick="toggleRulesModal()">Rules</button>
-        <button class="btn-glass ambience">Wallet</button>
+        <!-- <button class="btn-glass ambience">Wallet</button> -->
         {% if session.get('user_id') %}
             <span class="btn-glass ambience" style="pointer-events: none;">{{ session.get('username') }}</span>
             <a href="{{ url_for('auth.logout') }}" class="btn-glass ambience" style="text-decoration: none;">Logout</a>
@@ -75,7 +77,7 @@
                 </div>
             </div>
             <div class="cont-narrative gen-flex-col">
-                <div class="game-comments">Game Comments<span id="cards-ids"></span></div>
+                <div class="game-comments"><span id="game-comments-text"></span></div>
                 <div class="tracking-badge">ACTIONS<span id="cards-ids"></span></div>
             </div>
             <div class="player-cards-box">
@@ -105,6 +107,9 @@
 
 <div class="game-over-modal-cont gen-flex-col">
     <div class="game-over-modal ambience gen-flex-col">
+        <button class="modal-close-btn" onclick="location.reload()" title="Close">
+            <i class="fa-solid fa-times"></i>
+        </button>
         <div class="game-over-header">
             <i class="fa-solid fa-trophy game-over-icon"></i>
             <h1 class="game-over-title">GAME OVER!</h1>
@@ -281,6 +286,9 @@
 
 <div class="game-start-modal-cont gen-flex-col">
     <div class="game-start-modal ambience gen-flex-col ">
+        <button class="modal-close-btn" onclick="showLobbyModal()" title="Open Lobby">
+            <i class="fa-solid fa-times"></i>
+        </button>
         <h2>Dealuxe 2</h2>
         <small>Attack-Defend Card Game</small>
         <h5>4 Winning Ways</h5>
@@ -356,6 +364,91 @@
 
 <script src="/static/js/game.js"></script>
 <script src="/static/js/game-start.js"></script>
+<!-- Multiplayer scripts: lobby + in-page client -->
+<script src="/static/js/multiplayer.js"></script>
+<script src="/static/js/multiplayer-client.js"></script>
+<!-- Embedded Lobby Modal (moved from templates/lobby.html) -->
+<div class="lobby-modal-overlay" id="lobbyModal">
+    <div class="lobby-modal" style="max-width:1100px; width:95%;">
+        <button class="modal-close-btn" onclick="closeLobbyModal()" title="Close Lobby" style="position:absolute; right:16px; top:12px;">
+            <i class="fa-solid fa-times"></i>
+        </button>
+        <div class="lobby-grid" style="background:transparent; gap:20px;">
+            <div class="lobby-card create-room-section" style="flex:1;">
+                <h2><i class="fa-solid fa-plus-circle"></i> Create New Room</h2>
+                <div class="bet-input-group">
+                    <label for="bet-amount"><i class="fa-solid fa-coins"></i> Bet Amount (SZL)</label>
+                    <input type="number" id="bet-amount" placeholder="Enter bet amount" min="0" step="0.01" value="100">
+                </div>
+                <button class="create-room-btn" id="create-room-btn"> <i class="fa-solid fa-door-open"></i> Create Room</button>
+                <div class="player-count" style="margin-top: 20px;">Your balance: <strong id="user-balance">{{ "%.2f"|format(user_balance|default(0.0)) }}</strong> SZL (Free Cash)</div>
+            </div>
+
+            <div class="lobby-card" style="flex:1;">
+                <h2><i class="fa-solid fa-list"></i> Available Rooms</h2>
+                <div id="room-list" class="room-list">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-inbox"></i>
+                        <p>No rooms available. Create one to start playing!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Login Modal (from lobby) -->
+<div class="login-modal-overlay" id="loginModal">
+    <div class="login-modal">
+        <h2><i class="fa-solid fa-lock"></i> Login Required</h2>
+        <p>You need to be logged in to play multiplayer games. Please login or create an account to continue.</p>
+        <div class="modal-buttons">
+            <a href="{{ url_for('auth.login', next='/') }}" class="modal-btn modal-btn-primary"><i class="fa-solid fa-right-to-bracket"></i> Login</a>
+            <button onclick="closeLoginModal()" class="modal-btn modal-btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Lobby modal controls
+    function showLobbyModal() {
+        document.getElementById('lobbyModal').classList.add('active');
+    }
+    function closeLobbyModal() {
+        document.getElementById('lobbyModal').classList.remove('active');
+    }
+
+    // Login modal controls (reused)
+    const isLoggedIn = {{ 'true' if session.get('user_id') else 'false' }};
+    function showLoginModal() { document.getElementById('loginModal').classList.add('active'); }
+    function closeLoginModal() { document.getElementById('loginModal').classList.remove('active'); }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Prevent creating/joining rooms if not logged in
+        const createRoomBtn = document.getElementById('create-room-btn');
+        if (createRoomBtn) {
+            createRoomBtn.addEventListener('click', function(e) {
+                if (!isLoggedIn) { showLoginModal(); return; }
+                // Forward to multiplayer client handler if present
+                if (window.multiplayerCreateRoom) {
+                    const bet = parseFloat(document.getElementById('bet-amount').value || '0');
+                    // Ensure the game-start modal stays hidden when creating a room
+                    if (typeof hideGameStartModal === 'function') hideGameStartModal();
+                    window.multiplayerCreateRoom({bet_amount: bet});
+                }
+            });
+        }
+
+        // Close login modal on overlay click
+        const loginModal = document.getElementById('loginModal');
+        if (loginModal) {
+            loginModal.addEventListener('click', function(e) { if (e.target === this) closeLoginModal(); });
+        }
+    });
+</script>
+
+<script src="/static/js/multiplayer.js"></script>
+<script src="/static/js/multiplayer-client.js"></script>
 </body>
 </html>
 
