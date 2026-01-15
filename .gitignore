@@ -1,0 +1,3 @@
+instance/*.db
+instance/*.sqlite
+instance/*.sqlite3
