@@ -357,6 +357,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 'your_player_index': 0,
                 'your_turn': _is_my_turn(state, 0),
                 'state': transformed_p1,
+                'bet_total': (room.bet_amount or 0) * 2,
                 'turn_deadline': turn_deadline_iso
             }, room=f"user_{player1_id}")
 
@@ -366,6 +367,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 'your_player_index': 1,
                 'your_turn': _is_my_turn(state, 1),
                 'state': transformed_p2,
+                'bet_total': (room.bet_amount or 0) * 2,
                 'turn_deadline': turn_deadline_iso
             }, room=f"user_{player2_id}")
             
@@ -601,7 +603,8 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 'is_my_turn': is_my_turn,
                 'action': action_type,
                 'result': result.get_json() if hasattr(result, 'get_json') else result,
-                'turn_deadline': room.turn_deadline.isoformat()
+                'turn_deadline': room.turn_deadline.isoformat(),
+                'bet_total': (room.bet_amount or 0) * 2
             }, room=f"user_{pid}")
             print(f"[MULTIPLAYER] Emitted game_update to user_{pid}")
     
@@ -884,7 +887,8 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                     'is_my_turn': is_my_turn,
                     'turn_deadline': room.turn_deadline.isoformat() if room.turn_deadline else None,
                     'room_code': room_code,
-                    'game_id': room.game_id
+                    'game_id': room.game_id,
+                    'bet_total': (room.bet_amount or 0) * 2
                 })
                 
                 # Notify opponent

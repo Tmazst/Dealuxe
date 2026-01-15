@@ -250,6 +250,14 @@ if (socket) {
                 var modeVal = document.querySelector('.mode-caption-cont .mode-value');
                 if (modeVal) modeVal.textContent = 'Multiplayer';
             } catch (e) {}
+            // Update brand with current bet total if provided
+            try {
+                var betTotal = data.bet_total;
+                if (typeof betTotal !== 'undefined' && betTotal !== null) {
+                    var brandEl = document.querySelector('.brand');
+                    if (brandEl) brandEl.textContent = '🎁' + (Number(betTotal).toFixed(2)) + 'SZL';
+                }
+            } catch (e) {}
             // Update progress bars for multiplayer
             try { updateMultiplayerProgressBars(data.state, data.your_player_index); } catch (e) {}
             // Update turn indicator
@@ -347,6 +355,14 @@ if (socket) {
             // Update progress bars and turn indicator
             try { updateMultiplayerProgressBars(payload.game_state, payload.player_index); } catch (e) {}
             try { updateTurnIndicator(payload.game_state, payload.player_index); } catch (e) {}
+            // Update brand if server included bet_total in this update
+            try {
+                var b = (typeof payload.bet_total !== 'undefined' && payload.bet_total !== null) ? payload.bet_total : (payload.game_state && payload.game_state.bet_total);
+                if (typeof b !== 'undefined' && b !== null) {
+                    var brandEl2 = document.querySelector('.brand');
+                    if (brandEl2) brandEl2.textContent = '🎁' + (Number(b).toFixed(2)) + 'SZL';
+                }
+            } catch (e) {}
         }
     });
 
