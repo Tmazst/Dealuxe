@@ -1,23 +1,47 @@
+try:
+    # Optional: if running under gevent, patch the stdlib to be cooperative.
+    # Doing this before other imports is safest. Wrapped in try/except so
+    # the app still runs when gevent isn't installed locally.
+    from gevent import monkey
+    monkey.patch_all()
+    print("[APP] gevent monkey patched")
+except Exception:
+    pass
+
 from flask import Flask, render_template, request, jsonify, session
 
 from flask_socketio import SocketIO
-from game.manager import GameManager
+from game.manager_redis import GameManager
 from controllers.flask_controller import FlaskGameController
 from controllers.session_controller import session_bp
 from controllers.auth_controller import auth_bp
 from Forms import  *
 from database import db, init_db
 from database import Player
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1,x_proto=1)
 
-app.config['SECRET_KEY'] = 'fght6hg234g5f6g7h8j9k0l1q2w3e4r5t6y7u8i9o0p'
+app.config['SECRET_KEY'] = 'fght6hg234g5f6g7h8j9o0p'
 
 # -----------------------------
 # SOCKETIO INITIALIZATION
 # -----------------------------
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+# local should use threading async mode
+if app.config.get("ENV") == "development":
+    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+else:
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins="*",
+        async_mode="gevent",
+        message_queue="redis://127.0.0.1:6379/0",  # hardcoded Redis
+        logger=True,
+        engineio_logger=True
+    )
+# socketio = SocketIO(app, cors_allowed_origins="*",async_mode='threading')
 
 # -----------------------------
 # DATABASE INITIALIZATION

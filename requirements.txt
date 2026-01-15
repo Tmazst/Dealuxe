@@ -39,3 +39,5 @@ flask-bcrypt
 redis
 flask-socketio
 python-socketio
+gevent
+gevent-websocket

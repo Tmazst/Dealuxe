@@ -19,7 +19,7 @@ class GameManager:
         try:
             redis_host = os.getenv('REDIS_HOST', 'localhost')
             redis_port = int(os.getenv('REDIS_PORT', 6379))
-            redis_password = os.getenv('REDIS_PASSWORD', None)
+            redis_password = os.getenv('secret', None)
             
             self.redis_client = redis.Redis(
                 host=redis_host,
@@ -41,7 +41,7 @@ class GameManager:
     # CREATE GAME
     # -----------------------------
 
-    def create_game(self, mode="human_vs_ai"):
+    def create_game(self, mode="human_vs_ai", card_count=6):
         """
         Creates a new game session and returns game_id.
         """
@@ -61,14 +61,15 @@ class GameManager:
         else:
             raise ValueError(f"Unsupported game mode: {mode}")
 
-        engine = CardGameEngine(players)
+        engine = CardGameEngine(players, cards_per_player=card_count)
 
         session_data = {
             "engine": engine,
             "mode": mode,
             "created_at": time.time(),
             "status": "active",
-            "players": players
+            "players": players,
+            "card_count": card_count
         }
 
         # Store in Redis or in-memory
