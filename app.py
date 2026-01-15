@@ -19,6 +19,7 @@ from Forms import  *
 from database import db, init_db
 from database import Player
 from werkzeug.middleware.proxy_fix import ProxyFix
+import os
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1,x_proto=1)
@@ -30,7 +31,7 @@ app.config['SECRET_KEY'] = 'fght6hg234g5f6g7h8j9o0p'
 # -----------------------------
 
 # local should use threading async mode
-if app.config.get("ENV") == "development":
+if os.environ.get("ENV") == "development":
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 else:
     socketio = SocketIO(
@@ -41,6 +42,7 @@ else:
         logger=True,
         engineio_logger=True
     )
+
 # socketio = SocketIO(app, cors_allowed_origins="*",async_mode='threading')
 
 # -----------------------------
@@ -201,7 +203,12 @@ def start_turn(game_id):
     controller = FlaskGameController(engine)
 
     controller.start_turn()
-    
+    # Persist change for Redis-backed manager
+    try:
+        manager.update_game(game_id, engine)
+    except Exception:
+        pass
+
     return jsonify(engine.get_state())
 
 
@@ -216,7 +223,12 @@ def attack(game_id):
 
     index = int(request.json["index"])
     result = controller.attack(index)
-    
+    # Persist change for Redis-backed manager
+    try:
+        manager.update_game(game_id, engine)
+    except Exception:
+        pass
+
     return result
 
 
@@ -229,7 +241,12 @@ def defend(game_id):
     i2 = int(request.json["i2"])
 
     result = controller.defend(i1, i2)
-    
+    # Persist change for Redis-backed manager
+    try:
+        manager.update_game(game_id, engine)
+    except Exception:
+        pass
+
     return result
 
 
@@ -239,7 +256,12 @@ def draw(game_id):
     controller = FlaskGameController(engine)
 
     result = controller.draw()
-    
+    # Persist change for Redis-backed manager
+    try:
+        manager.update_game(game_id, engine)
+    except Exception:
+        pass
+
     return result
 
 
@@ -250,7 +272,12 @@ def rule8_drop(game_id):
 
     value = int(request.json["value"])
     result = controller.rule_8_drop(value)
-    
+    # Persist change for Redis-backed manager
+    try:
+        manager.update_game(game_id, engine)
+    except Exception:
+        pass
+
     return result
 
 
@@ -261,7 +288,12 @@ def rule8_crash(game_id):
 
     crash = bool(request.json["crash"])
     result = controller.rule_8_crash(crash)
-    
+    # Persist change for Redis-backed manager
+    try:
+        manager.update_game(game_id, engine)
+    except Exception:
+        pass
+
     return result
 
 

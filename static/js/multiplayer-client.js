@@ -191,7 +191,7 @@ function renderMultiplayerCommentFromPayload(payload) {
 // Handle game_started: if on game page, initialize without redirect
 if (socket) {
     socket.on('game_started', function(data) {
-        console.log('[multiplayer-client] game_started', data);
+        console.debug('[multiplayer-client] game_started', data);
         // If the server intends to redirect to /game/<room_code> we will instead initialize in-page
         if (isGamePage()) {
             window.currentMultiplayer = {
@@ -262,7 +262,7 @@ if (socket) {
 
     socket.on('game_update', function(payload) {
         // payload: { game_state, player_index, is_my_turn, action, result, turn_deadline }
-        console.log('[multiplayer-client] game_update', payload);
+        console.debug('[multiplayer-client] game_update', payload);
         if (isGamePage()) {
             // Capture previous state before applying update to decide animations
             var prevState = null;
@@ -360,7 +360,7 @@ if (socket) {
     });
 
     socket.on('opponent_reconnected', function(data) {
-        console.log('[multiplayer-client] opponent_reconnected', data);
+        console.debug('[multiplayer-client] opponent_reconnected', data);
         if (isGamePage()) {
             var agentText = document.getElementById('agent-text');
             if (agentText) agentText.textContent = 'Opponent reconnected - game resumed';
@@ -376,7 +376,7 @@ if (socket) {
 
     // Show game-over modal on both clients simultaneously (multiplayer)
     socket.on('game_over', function(data) {
-        console.log('[multiplayer-client] game_over', data);
+        console.debug('[multiplayer-client] game_over', data);
         if (!isGamePage()) return;
         try {
             // persist prize pool for modal display logic

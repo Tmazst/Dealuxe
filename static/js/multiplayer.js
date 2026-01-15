@@ -12,6 +12,17 @@ const socket = io({
 // expose socket to page-level scripts so multiplayer-client.js can reuse it
 window.socket = socket;
 
+// Debounce frequent lobby requests so we don't spam the server
+let __lastGetLobbyAt = 0;
+function debouncedEmitGetLobby(minIntervalMs = 5000) {
+    try {
+        const now = Date.now();
+        if (now - __lastGetLobbyAt < minIntervalMs) return;
+        __lastGetLobbyAt = now;
+        socket.emit('get_lobby');
+    } catch (e) { /* ignore */ }
+}
+
 let currentUserId = null;
 let currentRoomCode = null;
 
@@ -20,9 +31,9 @@ let currentRoomCode = null;
 // ==============================================
 
 socket.on('connect', () => {
-    console.log('✅ Connected to server:', socket.id);
+    console.debug('✅ Connected to server:', socket.id);
     // Request lobby data (works for both authenticated and guest users)
-    socket.emit('get_lobby');
+    debouncedEmitGetLobby();
 });
 
 socket.on('connected', (data) => {
@@ -48,24 +59,24 @@ socket.on('error', (data) => {
 // ==============================================
 
 socket.on('lobby_data', (data) => {
-    console.log('📋 Lobby data received:', data);
+    console.debug('📋 Lobby data received:', data);
     updateAvailableRooms(data.available_rooms);
     // updateMyGames is not used in current lobby.html layout
 });
 
 socket.on('room_created', (data) => {
-    console.log('🎉 Room created:', data);
+    console.debug('🎉 Room created:', data);
     const roomCode = data.room ? data.room.room_code : data.room_code;
     alert(`Room ${roomCode} created! Waiting for opponent...`);
     // Refresh lobby
-    socket.emit('get_lobby');
+    debouncedEmitGetLobby();
 });
 
 socket.on('opponent_joined', (data) => {
-    console.log('👥 Opponent joined:', data);
+    console.debug('👥 Opponent joined:', data);
     alert(`Opponent ${data.opponent_username} joined! Game starting soon...`);
     // Refresh lobby
-    socket.emit('get_lobby');
+    debouncedEmitGetLobby();
 });
 
 socket.on('game_starting', (data) => {
@@ -74,7 +85,7 @@ socket.on('game_starting', (data) => {
 });
 
 socket.on('game_started', (data) => {
-    console.log('🎮 Game started:', data);
+    console.debug('🎮 Game started:', data);
     // If we're already on the in-page game UI, do not redirect — the in-page
     // multiplayer client will handle applying the state. Otherwise redirect.
     if (document.getElementById && document.getElementById('player-cards')) {
@@ -86,7 +97,7 @@ socket.on('game_started', (data) => {
 });
 
 socket.on('room_joined', (data) => {
-    console.log('✅ Joined room:', data);
+    console.debug('✅ Joined room:', data);
     currentRoomCode = data.room_code;
     
     if (data.status === 'in_progress') {
@@ -94,7 +105,7 @@ socket.on('room_joined', (data) => {
         window.location.href = `/game/${data.room_code}`;
     } else {
         alert(`Joined room ${data.room_code}! Waiting for game to start...`);
-        socket.emit('get_lobby');
+        debouncedEmitGetLobby();
     }
 });
 
@@ -122,8 +133,8 @@ if (createRoomBtn) {
         const betAmount = parseFloat(document.getElementById('bet-amount').value) || 0;
         const betType = 'fake'; // Default to fake for now
         
-        console.log('🎲 Creating room:', { cardCount, betAmount, betType });
-        
+        console.debug('🎲 Creating room:', { cardCount, betAmount, betType });
+
         socket.emit('create_room', {
             card_count: cardCount,
             bet_amount: betAmount,
@@ -296,7 +307,11 @@ function rejoinRoom(roomCode) {
 // AUTO-REFRESH LOBBY
 // ==============================================
 
-// Refresh lobby every 5 seconds
+// Refresh lobby periodically, but only while page is visible and debounced
+const LOBBY_REFRESH_MS = 15000;
 setInterval(() => {
-    socket.emit('get_lobby');
-}, 5000);
+    try {
+        if (typeof document !== 'undefined' && document.visibilityState && document.visibilityState !== 'visible') return;
+        debouncedEmitGetLobby(LOBBY_REFRESH_MS);
+    } catch (e) {}
+}, LOBBY_REFRESH_MS);
