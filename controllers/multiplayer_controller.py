@@ -523,7 +523,13 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             print(f"[MULTIPLAYER] Error executing action: {e}")
             emit('error', {'message': str(e)})
             return
-        
+
+        # Persist updated engine state back to manager (important for Redis-backed storage)
+        try:
+            game_manager.update_game(game_id, engine)
+        except Exception as e:
+            print(f"[MULTIPLAYER] Warning: failed to persist game state: {e}")
+
         # Get updated state
         state = engine.get_state()
         
