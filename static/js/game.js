@@ -379,14 +379,13 @@ async function defend(indices) {
     const cardEls = indices.map(i => cards[i]).filter(Boolean);
     console.log("Animating defense cards:", cardEls);
     console.log("Defend indices:", indices);
-    const i1 = indices[0];
-    const i2 = indices[1];
+    const payload = { card_indices: indices };
     // If multiplayer, emit over socket
     if (window.currentMultiplayer && window.currentMultiplayer.room_code && window.socket) {
         window.socket.emit('game_action', {
             room_code: window.currentMultiplayer.room_code,
             action: 'defend',
-            data: { i1: i1, i2: i2 }
+            data: payload
         });
 
         // animate locally, server will send authoritative update
@@ -396,7 +395,7 @@ async function defend(indices) {
     const res = await fetch(`/api/game/${gameId}/defend`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ i1, i2 })
+        body: JSON.stringify(payload)
     });
 
     const data = await res.json();
@@ -1543,37 +1542,37 @@ function onCardClick(index) {
 
     // Defense selection flow: when it's DEFENSE phase and human is defender
     if (currentState && currentState.phase === 'DEFENSE' && currentState.defender === localPlayerIndex) {
-        // if clicked card is already selected, toggle it off
         const selIndex = defenseSelected.indexOf(index);
         if (selIndex >= 0) {
-            // remove selection
-            cards[index].classList.remove('defense-first', 'defense-second');
+            cards[index].classList.remove('defense-first', 'defense-second', 'defense-third');
             defenseSelected.splice(selIndex, 1);
             hideDefendButtonIfNeeded();
             return;
         }
 
-        // add selection (max 2)
+        if (defenseSelected.length >= 3) {
+            clearDefenseSelections();
+            defenseSelected.push(index);
+            cards[index].classList.add('defense-first');
+            return;
+        }
+
         if (defenseSelected.length === 0) {
             defenseSelected.push(index);
             cards[index].classList.add('defense-first');
             return;
         }
 
-        if (defenseSelected.length === 1) {
-            // prevent selecting the same card twice
+        if (defenseSelected.length === 1 || defenseSelected.length === 2) {
             if (defenseSelected[0] === index) return;
             defenseSelected.push(index);
-            cards[index].classList.add('defense-second');
-            // show confirm button
-            showDefendButton();
+            cards[index].classList.add(defenseSelected.length === 2 ? 'defense-second' : 'defense-third');
+            if (defenseSelected.length >= 2) {
+                showDefendButton();
+            }
             return;
         }
 
-        // If already had two selected, reset and start new selection
-        clearDefenseSelections();
-        defenseSelected.push(index);
-        cards[index].classList.add('defense-first');
         return;
     }
 
@@ -1742,38 +1741,30 @@ function highlightFocusedCard(index) {
 }
 
 function showDefendButton() {
-    // create or reuse a confirm button that submits the selected defense indices
     let btn = document.getElementById('defend-confirm-btn');
     if (!btn) {
         btn = document.createElement('button');
         btn.id = 'defend-confirm-btn';
         btn.className = 'btn defend-btn';
         btn.innerHTML = '<i class="fa-solid fa-shield"></i> Push to Defend';
-        
-        // Place in player-cards-box, same as attack button
+
         const handBox = document.querySelector('.player-cards-box');
         if (handBox) {
             handBox.appendChild(btn);
         } else {
             document.body.appendChild(btn);
         }
-        
+
         btn.addEventListener('click', async () => {
-            // send selected indices to backend
-            if (defenseSelected.length !== 2) return;
-            
-            // Animate ghost cards to pile
+            if (defenseSelected.length < 2 || defenseSelected.length > 3) return;
+
             const cards = getHandCards();
             const cardEls = defenseSelected.map(i => cards[i]).filter(Boolean);
-            if (cardEls.length === 2) {
-                // Animate both cards sequentially
-                await animateCardGhostToPile(cardEls[0]);
-                await animateCardGhostToPile(cardEls[1]);
+            for (const cardEl of cardEls) {
+                if (cardEl) await animateCardGhostToPile(cardEl);
             }
-            
-            // call existing defend() helper
+
             await defend(defenseSelected.slice());
-            // cleanup UI selections
             clearDefenseSelections();
             hideDefendButton();
         });
@@ -1793,7 +1784,7 @@ function hideDefendButtonIfNeeded() {
 function clearDefenseSelections() {
     const cards = getHandCards();
     defenseSelected.forEach(i => {
-        if (cards[i]) cards[i].classList.remove('defense-first', 'defense-second');
+        if (cards[i]) cards[i].classList.remove('defense-first', 'defense-second', 'defense-third');
     });
     defenseSelected = [];
 }

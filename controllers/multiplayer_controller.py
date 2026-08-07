@@ -7,7 +7,10 @@ from flask_socketio import emit, join_room, leave_room, rooms
 from datetime import datetime, timedelta
 from database import db, GameRoom, User, BetSession, Player, get_player_by_user_id, Move
 import json
-from game.manager import GameManager
+# NOTE: no `from game.manager import GameManager` here -- that import was
+# unused (this file always receives its live GameManager instance, built
+# from game.manager_redis, as the `game_manager` parameter). See the
+# deprecation banner at the top of game/manager.py for details.
 from controllers.flask_controller import FlaskGameController
 import random
 import string
@@ -178,7 +181,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         # Broadcast to lobby (use to=None instead of broadcast=True)
         socketio.emit('lobby_updated', {}, to=None)
     
-    
+
     @socketio.on('join_room')
     def handle_join_room(data):
         """Join an existing room"""
@@ -271,10 +274,15 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             game_id, game_details = game_manager.create_game(mode="local", card_count=room.card_count)
             
             # Create bet session
+            # NOTE: BetSession.player_id / opponent_id are ForeignKey('players.id') --
+            # the wallet Player table's PK -- NOT the same as GameRoom.player1_id /
+            # player2_id, which store users.id. Must pass player1.id / player2.id here,
+            # not room.player1_id / room.player2_id, or these FKs point at the wrong
+            # (or a nonexistent) player row.
             bet_session = BetSession(
                 game_id=game_id,
-                player_id=room.player1_id,
-                opponent_id=room.player2_id,
+                player_id=player1.id if player1 else None,
+                opponent_id=player2.id if player2 else None,
                 opponent_type='human',
                 bet_type=room.bet_type,
                 bet_amount=room.bet_amount,
@@ -459,8 +467,17 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             # Only defender can act during DEFENSE phase
             is_valid_turn = (state.get('defender') == player_index)
         elif phase == 'RULE_8':
-            # Only attacker can act during RULE_8 phase
-            is_valid_turn = (state.get('attacker') == player_index)
+            # RULE_8 has two distinct actors, not one:
+            #   - rule8_drop is performed by the ATTACKER (they're trailing low cards)
+            #   - rule8_crash is performed by the DEFENDER (they decide whether to crash the trail)
+            # Gating both actions on "attacker == player_index" silently rejected every
+            # defender rule8_crash attempt with "Not your turn", which is why crashing
+            # never worked in real play.
+            if action_type == 'rule8_crash':
+                is_valid_turn = (state.get('defender') == player_index)
+            else:
+                # rule8_drop (and any other RULE_8 action) is the attacker's
+                is_valid_turn = (state.get('attacker') == player_index)
         
         if not is_valid_turn:
             print(f"[MULTIPLAYER] Invalid turn - User {user_id} (index {player_index}) tried to act during {phase} phase. Attacker: {state.get('attacker')}, Defender: {state.get('defender')}")
@@ -481,6 +498,25 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 print(f"[MULTIPLAYER] Auto-attack with first card for expired attack turn")
                 action_data = {'index': 0}  # Attack with first card
                 action_type = 'attack'
+            elif state.get('phase') == 'RULE_8' and state.get('attacker') == player_index:
+                # Attacker timed out deciding which low card to trail -- auto-drop
+                # their lowest-value card so the trail keeps moving.
+                attacker_hand = engine.players[player_index].hand
+                if attacker_hand:
+                    auto_drop_value = min(c.value for c in attacker_hand)
+                    print(f"[MULTIPLAYER] Auto rule8_drop (value={auto_drop_value}) for expired RULE_8 attacker turn")
+                    action_data = {'value': auto_drop_value}
+                    action_type = 'rule8_drop'
+                else:
+                    emit('error', {'message': 'Turn expired - unable to auto-play'})
+                    return
+            elif state.get('phase') == 'RULE_8' and state.get('defender') == player_index:
+                # Defender timed out deciding whether to crash the trail -- default
+                # to NOT crashing (the passive/non-committal choice) so the trail
+                # simply continues instead of the game stalling indefinitely.
+                print(f"[MULTIPLAYER] Auto rule8_crash(False) for expired RULE_8 defender turn")
+                action_data = {'crash': False}
+                action_type = 'rule8_crash'
             else:
                 # Shouldn't happen, but emit error and return
                 emit('error', {'message': 'Turn expired - unable to auto-play'})
@@ -511,7 +547,15 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             if action_type == 'attack':
                 result = controller.attack(action_data.get('index'))
             elif action_type == 'defend':
-                result = controller.defend(action_data.get('i1'), action_data.get('i2'))
+                card_indices = action_data.get('card_indices')
+                if not card_indices:
+                    i1 = action_data.get('i1')
+                    i2 = action_data.get('i2')
+                    i3 = action_data.get('i3')
+                    card_indices = [i1, i2]
+                    if i3 is not None:
+                        card_indices.append(i3)
+                result = controller.defend(card_indices)
             elif action_type == 'draw':
                 result = controller.draw()
             elif action_type == 'rule8_drop':
@@ -648,7 +692,9 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                     }
 
                 bet_session.status = 'completed'
-                bet_session.winner_id = winner_id
+                # Same FK mismatch as above: bet_session.winner_id -> players.id,
+                # so it must be winner_player_db.id, not the raw user_id.
+                bet_session.winner_id = winner_player_db.id if winner_player_db else None
                 bet_session.completed_at = datetime.utcnow()
 
         db.session.commit()

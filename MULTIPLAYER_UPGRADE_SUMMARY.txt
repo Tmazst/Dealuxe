@@ -1,0 +1,84 @@
+Multiplayer Upgrade - Work Summary
+Date: 2026-01-04
+
+Overview
+- Goal: Integrate a live multiplayer lobby/modal into the existing game UI while preserving existing REST-driven single-player/human_vs_ai flow.
+- Outcome: Server-side idempotency and move persistence added; lobby embedded into `game.html`; client SocketIO helper added; DB models and migration drafted.
+
+What I changed (high level)
+1) Server-side (multiplayer controller)
+   - Modified: `controllers/multiplayer_controller.py`
+     - Added idempotency handling for incoming actions (`idempotency_key`). Duplicate actions are ignored and current masked state returned.
+     - Persisted moves to new `moves` table (uses `Move` model): stores `seq_num`, `action_payload`, `result_snapshot`, `idempotency_key`.
+     - Updated broadcasts to emit per-player masked state (full hand to recipient, opponent only `hand_count`).
+     - Small hardening to recreate game engine if missing (existing behavior preserved).
+
+2) Database
+   - Modified: `database.py`
+     - Added models: `GameSession`, `Move`, `Snapshot` to support persistent session records, move logs, and engine snapshots.
+   - Added migration draft: `migrations/001_add_game_session_moves_snapshots.sql` (SQLite syntax). Adjust if you use MySQL/Postgres or Alembic.
+
+3) Frontend
+   - Modified: `templates/game.html`
+     - Embedded lobby modal and login modal into `game.html` (removed standalone `templates/lobby.html`).
+     - Added jinja-safe default for `user_balance` to avoid render errors.
+     - Removed inline modal CSS (moved into `static/css/style.css`).
+   - Added: `static/js/multiplayer-client.js`
+     - Exposes `window.multiplayerCreateRoom` and listens for `game_started` and `game_update` events.
+     - Applies masked state into the existing game UI (card counts + debug state dump).
+   - Kept and adjusted: `static/js/multiplayer.js` (lobby logic) and `static/js/game-start.js`
+     - `game-start.js`: replaced redirect-to-/lobby with opening the embedded lobby modal and hiding the start modal.
+     - Added checks to hide start modal when Live_Game selected.
+   - Moved modal CSS into `static/css/style.css` for organization.
+
+4) Clean-up
+   - Deleted standalone `templates/lobby.html` (its markup embedded into `game.html`).
+
+Files added
+- `c:\Card Game\static\js\multiplayer-client.js`
+- `c:\Card Game\migrations\001_add_game_session_moves_snapshots.sql`
+- `c:\Card Game\MULTIPLAYER_UPGRADE_SUMMARY.txt` (this file)
+
+Files modified (not exhaustive)
+- `c:\Card Game\controllers\multiplayer_controller.py`
+- `c:\Card Game\database.py`
+- `c:\Card Game\templates\game.html`
+- `c:\Card Game\static\js\multiplayer.js`
+- `c:\Card Game\static\js\game-start.js`
+- `c:\Card Game\static\css\style.css`
+
+Important notes & assumptions
+- The server uses SQLite by default (see `init_db`); the provided SQL migration is SQLite-formatted. If you migrate to MySQL/Postgres later, adjust types/indices accordingly.
+- The `Move` model persists JSON blobs for payload and snapshots; consider normalizing if you need queryable move fields.
+- The SocketIO server remains authoritative for real-time events; the REST endpoints remain for existing single-player/human_vs_ai flows.
+- Masking: server now always sends per-player masked states at game start and on updates to avoid leaking opponent hands.
+
+Next recommended steps (when you return)
+1) Run DB migration / create tables:
+   - Option A (quick dev): Start app and let `db.create_all()` create new tables.
+   - Option B: Run the SQL in `migrations/001_add_game_session_moves_snapshots.sql` against your DB.
+2) Add small helper functions on `database.py` or `game/manager.py`:
+   - `append_move(session_id, player_id, action, payload, idempotency_key)` to centralize move persistence.
+   - `snapshot_now(session_id)` to write snapshots periodically.
+3) Integrate idempotency and seq_num checks in other code paths if you introduce alternative clients.
+4) Improve frontend lobby UX:
+   - Auto-focus the bet input when lobby opens.
+   - Replace the debug `state` dump with proper UI rendering of player hands (use masked data from server).
+5) Testing & QA:
+   - Test reconnection flow: player disconnects and reconnects; ensure engine restored from snapshot + replayed moves.
+   - Test idempotency: repeat action with same `idempotency_key` and confirm no double-apply.
+   - Test timeouts & auto-play behavior.
+
+Quick dev commands
+- Run Flask app (example):
+    set FLASK_APP=app.py
+    flask run
+- Or run your usual dev command used before.
+
+If you change the LLM or pick this up tomorrow
+- Review this file first (`MULTIPLAYER_UPGRADE_SUMMARY.txt`). It lists exact files changed and the next practical steps.
+- If you want me to continue, I can: add DB helper functions, convert the SQL to an Alembic revision, or add stronger UI (render hands and action buttons).
+
+If you want anything archived or committed (git), I can prepare a commit message and staged changes next time.
+
+— End of summary —

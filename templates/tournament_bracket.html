@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Tournament Bracket</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; background: #111; color: #f5f5f5; }
+      .panel { background: #1f1f1f; padding: 1rem 1.2rem; border-radius: 8px; margin-bottom: 1rem; }
+      .match { background: #2a2a2a; padding: 0.8rem; border-radius: 8px; margin-bottom: 0.6rem; }
+      button { padding: 0.65rem; border-radius: 6px; border: none; background: #2f7cf6; color: white; cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <h1>Bracket</h1>
+      <div id="bracket">Loading…</div>
+    </div>
+    <script>
+      const tournamentId = window.location.pathname.split('/').filter(Boolean).pop();
+      async function loadBracket() {
+        const response = await fetch(`/api/tournaments/${tournamentId}/generate-bracket`, { method: 'POST' });
+        const data = await response.json();
+        document.getElementById('bracket').innerHTML = `<p>${data.message}</p><p>Matches generated: ${data.bracket_count}</p>`;
+      }
+      loadBracket();
+    </script>
+  </body>
+</html>

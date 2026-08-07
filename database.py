@@ -4,10 +4,62 @@ SQLAlchemy setup for Dealuxe Card Game
 """
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from sqlalchemy import text
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
 db = SQLAlchemy()
+
+
+def _table_has_column(table_name, column_name):
+    """Check whether an SQLite table already includes a column."""
+    if db.engine is None:
+        return False
+    if db.engine.name != 'sqlite':
+        return True
+
+    with db.engine.connect() as connection:
+        rows = connection.execute(text(f'PRAGMA table_info({table_name})')).fetchall()
+    return any(row[1] == column_name for row in rows)
+
+
+def ensure_tournament_schema():
+    """Add tournament-related columns to existing tables when the database already exists."""
+    if db.engine is None:
+        return
+
+    if db.engine.name != 'sqlite':
+        return
+
+    with db.session.begin():
+        for table_name, column_definition in [
+            ('bet_sessions', 'tournament_id INTEGER'),
+            ('game_rooms', 'tournament_id INTEGER'),
+            ('game_rooms', 'match_id INTEGER'),
+            ('transactions', 'tournament_id INTEGER'),
+        ]:
+            column_name = column_definition.split()[0]
+            if not _table_has_column(table_name, column_name):
+                db.session.execute(text(f'ALTER TABLE {table_name} ADD COLUMN {column_definition}'))
+
+        for index_sql in [
+            'CREATE INDEX IF NOT EXISTS idx_bet_sessions_tournament_id ON bet_sessions (tournament_id)',
+            'CREATE INDEX IF NOT EXISTS idx_game_rooms_tournament_id ON game_rooms (tournament_id)',
+            'CREATE INDEX IF NOT EXISTS idx_game_rooms_match_id ON game_rooms (match_id)',
+            'CREATE INDEX IF NOT EXISTS idx_transactions_tournament_id ON transactions (tournament_id)',
+            'CREATE INDEX IF NOT EXISTS idx_tournaments_status ON tournaments (status)',
+            'CREATE INDEX IF NOT EXISTS idx_tournaments_tournament_type ON tournaments (tournament_type)',
+            'CREATE INDEX IF NOT EXISTS idx_tournament_participants_tournament_id ON tournament_participants (tournament_id)',
+            'CREATE INDEX IF NOT EXISTS idx_tournament_participants_user_id ON tournament_participants (user_id)',
+            'CREATE INDEX IF NOT EXISTS idx_tournament_participants_status ON tournament_participants (status)',
+            'CREATE INDEX IF NOT EXISTS idx_tournament_brackets_tournament_id ON tournament_brackets (tournament_id)',
+            'CREATE INDEX IF NOT EXISTS idx_tournament_matches_tournament_id ON tournament_matches (tournament_id)',
+            'CREATE INDEX IF NOT EXISTS idx_tournament_matches_status ON tournament_matches (status)',
+            'CREATE INDEX IF NOT EXISTS idx_tournament_prize_pools_tournament_id ON tournament_prize_pools (tournament_id)',
+            'CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_user_id ON withdrawal_requests (user_id)',
+            'CREATE INDEX IF NOT EXISTS idx_withdrawal_requests_status ON withdrawal_requests (status)',
+        ]:
+            db.session.execute(text(index_sql))
 
 
 def init_db(app):
@@ -21,6 +73,7 @@ def init_db(app):
     
     with app.app_context():
         db.create_all()
+        ensure_tournament_schema()
         print("[DATABASE] Database initialized successfully")
 
 
@@ -231,6 +284,9 @@ class BetSession(db.Model):
     winner_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=True)
     win_type = db.Column(db.String(50))  # 'dealuxe', 'escape', 'crazy', 'trail'
     status = db.Column(db.String(20), default='active')  # 'active', 'completed', 'cancelled'
+
+    # Tournament linkage
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -276,6 +332,7 @@ class BetSession(db.Model):
             'winner_id': self.winner_id,
             'win_type': self.win_type,
             'status': self.status,
+            'tournament_id': self.tournament_id,
             'created_at': self.created_at.isoformat(),
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
             'duration_seconds': self.get_duration_seconds(),
@@ -380,10 +437,190 @@ class Transaction(db.Model):
     game_id = db.Column(db.String(50))
     
     description = db.Column(db.String(255))
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def __repr__(self):
         return f'<Transaction {self.id} - {self.transaction_type}: {self.amount}>'
+
+
+class Tournament(db.Model):
+    """Represents a tournament instance for the upgraded platform."""
+    __tablename__ = 'tournaments'
+    __table_args__ = (
+        db.CheckConstraint('entry_fee >= 0', name='ck_tournaments_entry_fee_nonnegative'),
+        db.CheckConstraint('max_players IN (4, 8, 16)', name='ck_tournaments_max_players_allowed'),
+        db.Index('idx_tournaments_status', 'status'),
+        db.Index('idx_tournaments_tournament_type', 'tournament_type'),
+        db.Index('idx_tournaments_creator_id', 'creator_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_code = db.Column(db.String(20), unique=True, nullable=False, index=True)
+    tournament_name = db.Column(db.String(255), nullable=False)
+    tournament_type = db.Column(db.String(20), nullable=False)  # standard, premium, deluxe
+    creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    entry_fee = db.Column(db.Float, nullable=False, default=10.0)
+    prize_pool_amount = db.Column(db.Float, nullable=False, default=0.0)
+    max_players = db.Column(db.Integer, nullable=False)
+    current_player_count = db.Column(db.Integer, nullable=False, default=1)
+    status = db.Column(db.String(20), nullable=False, default='open')
+    is_auto_lock = db.Column(db.Boolean, default=False)
+    locked_player_count = db.Column(db.Integer, nullable=True)
+    locked_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    finals_match_id = db.Column(db.Integer, nullable=True)
+    third_place_match_id = db.Column(db.Integer, nullable=True)
+    winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    runner_up_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    third_place_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    creator = db.relationship('User', foreign_keys='Tournament.creator_id', backref='created_tournaments')
+    bet_sessions = db.relationship('BetSession', foreign_keys='BetSession.tournament_id', backref='tournament', lazy='dynamic')
+    game_rooms = db.relationship('GameRoom', foreign_keys='GameRoom.tournament_id', backref='tournament', lazy='dynamic')
+    transactions = db.relationship('Transaction', foreign_keys='Transaction.tournament_id', backref='tournament', lazy='dynamic')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'tournament_code': self.tournament_code,
+            'tournament_name': self.tournament_name,
+            'tournament_type': self.tournament_type,
+            'creator_id': self.creator_id,
+            'entry_fee': self.entry_fee,
+            'prize_pool_amount': self.prize_pool_amount,
+            'max_players': self.max_players,
+            'current_player_count': self.current_player_count,
+            'status': self.status,
+            'is_auto_lock': self.is_auto_lock,
+            'locked_player_count': self.locked_player_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
+
+
+class TournamentParticipant(db.Model):
+    """Tracks a user's participation in a tournament."""
+    __tablename__ = 'tournament_participants'
+    __table_args__ = (
+        db.UniqueConstraint('tournament_id', 'user_id', name='uq_tournament_participant_tournament_user'),
+        db.Index('idx_tournament_participants_tournament_id', 'tournament_id'),
+        db.Index('idx_tournament_participants_user_id', 'user_id'),
+        db.Index('idx_tournament_participants_status', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='registered')
+    payment_status = db.Column(db.String(20), nullable=False, default='pending')
+    transaction_id = db.Column(db.String(255), nullable=True)
+    external_payment_id = db.Column(db.String(255), nullable=True)
+    paid_amount = db.Column(db.Float, nullable=True)
+    payment_method = db.Column(db.String(100), nullable=True)
+    final_placement = db.Column(db.Integer, nullable=True)
+    prize_awarded = db.Column(db.Float, nullable=False, default=0.0)
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    payment_completed_at = db.Column(db.DateTime, nullable=True)
+    withdrew_at = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    tournament = db.relationship('Tournament', backref='participants')
+    user = db.relationship('User', backref='tournament_participations')
+
+
+class TournamentBracket(db.Model):
+    """Represents a bracket slot in a tournament."""
+    __tablename__ = 'tournament_brackets'
+    __table_args__ = (
+        db.UniqueConstraint('tournament_id', 'round_number', 'match_number', name='uq_tournament_bracket_position'),
+        db.Index('idx_tournament_brackets_tournament_id', 'tournament_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
+    round_number = db.Column(db.Integer, nullable=False)
+    round_name = db.Column(db.String(50), nullable=False)
+    match_number = db.Column(db.Integer, nullable=False)
+    player1_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    player2_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    match_id = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default='pending')
+    winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+
+class TournamentMatch(db.Model):
+    """Represents an individual tournament match bound to a real game room."""
+    __tablename__ = 'tournament_matches'
+    __table_args__ = (
+        db.CheckConstraint('card_count > 0', name='ck_tournament_matches_card_count_positive'),
+        db.Index('idx_tournament_matches_tournament_id', 'tournament_id'),
+        db.Index('idx_tournament_matches_status', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
+    bracket_id = db.Column(db.Integer, nullable=False)
+    game_room_id = db.Column(db.Integer, nullable=True)
+    player1_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    player2_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='scheduled')
+    winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    loser_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    card_count = db.Column(db.Integer, nullable=False, default=6)
+    bet_amount = db.Column(db.Float, nullable=False, default=0.0)
+    scheduled_for = db.Column(db.DateTime, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    win_type = db.Column(db.String(50), nullable=True)
+    duration_seconds = db.Column(db.Integer, nullable=True)
+    player1_timeout = db.Column(db.Boolean, default=False)
+    player2_timeout = db.Column(db.Boolean, default=False)
+    player1_forfeited = db.Column(db.Boolean, default=False)
+    player2_forfeited = db.Column(db.Boolean, default=False)
+    notes = db.Column(db.Text, nullable=True)
+
+
+class TournamentPrizePool(db.Model):
+    """Tracks prize distribution for a tournament."""
+    __tablename__ = 'tournament_prize_pools'
+    __table_args__ = (
+        db.UniqueConstraint('tournament_id', name='uq_tournament_prize_pool_tournament'),
+        db.Index('idx_tournament_prize_pools_tournament_id', 'tournament_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False, default=0.0)
+    first_place_amount = db.Column(db.Float, nullable=False, default=0.0)
+    second_place_amount = db.Column(db.Float, nullable=False, default=0.0)
+    third_place_amount = db.Column(db.Float, nullable=False, default=0.0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class WithdrawalRequest(db.Model):
+    """Tracks withdrawal requests for tournament prizes."""
+    __tablename__ = 'withdrawal_requests'
+    __table_args__ = (
+        db.Index('idx_withdrawal_requests_user_id', 'user_id'),
+        db.Index('idx_withdrawal_requests_status', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
+    amount = db.Column(db.Float, nullable=False, default=0.0)
+    status = db.Column(db.String(20), nullable=False, default='pending')
+    mobile_number = db.Column(db.String(30), nullable=True)
+    transaction_id = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 # ========================================
@@ -425,7 +662,7 @@ def get_player_by_user_id(user_id):
     return Player.query.filter_by(user_id=user_id).first()
 
 
-def create_bet_session(game_id, player_id, opponent_type, bet_type, bet_amount, card_count=6, opponent_id=None):
+def create_bet_session(game_id, player_id, opponent_type, bet_type, bet_amount, card_count=6, opponent_id=None, tournament_id=None):
     """Create a new bet session"""
     session = BetSession(
         game_id=game_id,
@@ -435,7 +672,8 @@ def create_bet_session(game_id, player_id, opponent_type, bet_type, bet_amount, 
         bet_type=bet_type,
         bet_amount=bet_amount,
         prize_pool=bet_amount * 2,
-        card_count=card_count
+        card_count=card_count,
+        tournament_id=tournament_id,
     )
     db.session.add(session)
     db.session.commit()
@@ -443,7 +681,7 @@ def create_bet_session(game_id, player_id, opponent_type, bet_type, bet_amount, 
 
 
 def log_transaction(player_id, transaction_type, amount, balance_type, balance_before, balance_after, 
-                    session_id=None, game_id=None, description=None):
+                    session_id=None, game_id=None, description=None, tournament_id=None):
     """Log a wallet transaction"""
     transaction = Transaction(
         player_id=player_id,
@@ -454,11 +692,50 @@ def log_transaction(player_id, transaction_type, amount, balance_type, balance_b
         balance_after=balance_after,
         session_id=session_id,
         game_id=game_id,
-        description=description
+        description=description,
+        tournament_id=tournament_id,
     )
     db.session.add(transaction)
     db.session.commit()
     return transaction
+
+
+def create_tournament_record(creator_id, tournament_type, tournament_name=None, entry_fee=10.0, max_players=None, is_auto_lock=False, locked_player_count=None):
+    """Create a basic tournament record and return it."""
+    if max_players is None:
+        max_players = {'standard': 4, 'premium': 8, 'deluxe': 16}.get(tournament_type, 4)
+
+    code = f"TMT-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{tournament_type[:3].upper()}"
+    tournament = Tournament(
+        tournament_code=code,
+        tournament_name=tournament_name or f"{tournament_type.title()} Tournament",
+        tournament_type=tournament_type,
+        creator_id=creator_id,
+        entry_fee=entry_fee,
+        prize_pool_amount=entry_fee,
+        max_players=max_players,
+        current_player_count=1,
+        status='open',
+        is_auto_lock=is_auto_lock,
+        locked_player_count=locked_player_count,
+    )
+    db.session.add(tournament)
+    db.session.flush()
+    return tournament
+
+
+def add_tournament_participant(tournament_id, user_id, payment_status='pending', paid_amount=None, payment_method=None):
+    """Register a user into a tournament."""
+    participant = TournamentParticipant(
+        tournament_id=tournament_id,
+        user_id=user_id,
+        payment_status=payment_status,
+        paid_amount=paid_amount,
+        payment_method=payment_method,
+    )
+    db.session.add(participant)
+    db.session.flush()
+    return participant
 
 
 # ========================================
@@ -502,6 +779,10 @@ class GameRoom(db.Model):
     
     # Results
     winner_id = db.Column(db.Integer, nullable=True)
+
+    # Tournament linkage
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
+    match_id = db.Column(db.Integer, db.ForeignKey('tournament_matches.id'), nullable=True)
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -542,6 +823,8 @@ class GameRoom(db.Model):
             'current_turn_player': self.current_turn_player,
             'turn_deadline': self.turn_deadline.isoformat() if self.turn_deadline else None,
             'turn_duration_seconds': self.turn_duration_seconds,
+            'tournament_id': self.tournament_id,
+            'match_id': self.match_id,
             'is_paused': self.status == 'paused',
             'pause_requested_by': self.pause_requested_by,
             'created_at': self.created_at.isoformat(),

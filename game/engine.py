@@ -154,48 +154,73 @@ class CardGameEngine:
     # DEFENSE PHASE
     # ---------------------
 
-    def defend(self, player_id, i1, i2):
+    def defend(self, player_id, card_indices):
         if self.state.game_over:
             safe_print("[ENGINE] GAME WAS OVER - defend")
             return {"error": "Game is already over"}
-        
-        # Better error handling instead of assert
+
         if self.state.phase != "DEFENSE":
             error_msg = f"Cannot defend during {self.state.phase} phase. Expected DEFENSE phase."
             safe_print(f"[ENGINE] {error_msg}")
             return {"error": error_msg, "current_phase": self.state.phase}
-        
-        DEFENCE_SUCCESSFUL = True
 
         defender = self.players[player_id]
-        c1 = defender.hand[i1]
-        c2 = defender.hand[i2]
 
-        if c1.value + c2.value != self.state.attack_card.value:
-            DEFENCE_SUCCESSFUL = False
-            return {"error": "Invalid sum"}
+        if not isinstance(card_indices, list):
+            return {"error": "card_indices must be a list"}
 
-        defender.hand.remove(c1)
-        defender.hand.remove(c2)
+        if len(card_indices) not in [2, 3]:
+            return {
+                "error": f"Defense requires 2 or 3 cards, got {len(card_indices)}",
+                "expected_range": [2, 3],
+                "received": len(card_indices)
+            }
 
-        self._log(f"[ENGINE] Defense successful: {c1.value} + {c2.value} = {self.state.attack_card.value}")
+        if len(card_indices) != len(set(card_indices)):
+            return {"error": "Cannot use the same card twice"}
 
-        # Check for ESCAPE WIN - Defender wins immediately after successful defense
-        defender = self.players[player_id]
+        for idx in card_indices:
+            if idx < 0 or idx >= len(defender.hand):
+                safe_print(f"[ENGINE] Invalid card index: {idx} (hand size: {len(defender.hand)})")
+                return {"error": f"Invalid card index: {idx}"}
+
+        cards_to_play = [defender.hand[idx] for idx in card_indices]
+        total_value = sum(card.value for card in cards_to_play)
+        attack_value = self.state.attack_card.value
+
+        if total_value != attack_value:
+            safe_print(f"[ENGINE] Invalid sum: {total_value} != {attack_value}")
+            return {
+                "error": f"Cards sum to {total_value}, need {attack_value}",
+                "cards_played": [str(card) for card in cards_to_play],
+                "sum": total_value,
+                "required": attack_value
+            }
+
+        for idx in sorted(card_indices, reverse=True):
+            defender.hand.pop(idx)
+
+        self._log(f"[ENGINE] Defense successful: {' + '.join(str(card.value) for card in cards_to_play)} = {attack_value}")
+
         if is_winner(defender):
-            '''ESCAPE WIN'''
             self.state.game_over = True
             self.state.winner = player_id
             self.state.phase = "GAME_OVER"
             safe_print(f"[ENGINE] Player {player_id} wins by ESCAPE WIN")
             self._log(f"[ENGINE] Player {player_id} wins by ESCAPE WIN")
-            # Return immediately - don't swap turns or change phase
-            self.state.defence_cards = [str(c1), str(c2)]
-            return {"ok": True, "success": True, "used_cards": [str(c1), str(c2)],
-                    "phase": self.state.phase, "attacker": self.state.attacker, "used_indices": [i1, i2],
-                    "game_over": True, "winner": player_id}
+            self.state.defence_cards = [str(card) for card in cards_to_play]
+            return {
+                "ok": True,
+                "success": True,
+                "used_cards": [str(card) for card in cards_to_play],
+                "used_count": len(cards_to_play),
+                "phase": self.state.phase,
+                "attacker": self.state.attacker,
+                "used_indices": card_indices,
+                "game_over": True,
+                "winner": player_id
+            }
 
-        # swap turns
         self.state.attacker, self.state.defender = (
             self.state.defender,
             self.state.attacker,
@@ -203,10 +228,17 @@ class CardGameEngine:
         self.state.attack_card = None
         self.state.phase = "ATTACK"
         safe_print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (roles swapped, new attacker: {self.state.attacker})")
-        self.state.defence_cards = [str(c1),str(c2)]
+        self.state.defence_cards = [str(card) for card in cards_to_play]
 
-        return {"ok": True, "success": True,"used_cards": [str(c1), str(c2)],
-                "phase": self.state.phase, "attacker": self.state.attacker, "used_indices": [i1, i2]}
+        return {
+            "ok": True,
+            "success": True,
+            "used_cards": [str(card) for card in cards_to_play],
+            "used_count": len(cards_to_play),
+            "phase": self.state.phase,
+            "attacker": self.state.attacker,
+            "used_indices": card_indices
+        }
 
 
     def defender_draw(self, player_id):

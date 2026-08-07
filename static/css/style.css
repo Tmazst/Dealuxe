@@ -1610,6 +1610,13 @@ html,body{
     animation: defense-second-pulse 1.5s ease-in-out infinite;
 }
 
+.card.defense-third {
+    box-shadow: 0 0 0 4px rgba(245,158,11,0.95), 0 0 30px rgba(245,158,11,0.7), 0 0 60px rgba(251,191,36,0.45) !important;
+    border-color: rgba(255,255,255,0.95) !important;
+    transform: scale(0.9);
+    animation: defense-third-pulse 1.5s ease-in-out infinite;
+}
+
 @keyframes defense-first-pulse {
     0%, 100% { 
         box-shadow: 0 0 0 4px rgba(16,185,129,0.9), 0 0 30px rgba(16,185,129,0.7), 0 0 60px rgba(52,211,153,0.5);
@@ -1625,6 +1632,15 @@ html,body{
     }
     50% { 
         box-shadow: 0 0 0 6px rgba(139,92,246,1), 0 0 40px rgba(139,92,246,0.9), 0 0 80px rgba(168,85,247,0.7);
+    }
+}
+
+@keyframes defense-third-pulse {
+    0%, 100% { 
+        box-shadow: 0 0 0 4px rgba(245,158,11,0.95), 0 0 30px rgba(245,158,11,0.7), 0 0 60px rgba(251,191,36,0.45);
+    }
+    50% { 
+        box-shadow: 0 0 0 6px rgba(245,158,11,1), 0 0 40px rgba(245,158,11,0.9), 0 0 80px rgba(251,191,36,0.7);
     }
 }
 

@@ -15,6 +15,7 @@ from game.manager_redis import GameManager
 from controllers.flask_controller import FlaskGameController
 from controllers.session_controller import session_bp
 from controllers.auth_controller import auth_bp
+from controllers.tournament_controller import tournament_bp
 from Forms import  *
 from database import db, init_db
 from database import Player
@@ -57,6 +58,7 @@ init_db(app)
 
 app.register_blueprint(session_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(tournament_bp)
 
 # -----------------------------
 # GAME MANAGER (GLOBAL)
@@ -87,10 +89,13 @@ def get_player_fake_balance():
             print("[APP] player current balance: ", player.fake_balance)
             return player.fake_balance
 
-    # No logged-in user: fall back to demo/in-memory player
+    # No logged-in user: fall back to a per-browser-session practice player
+    # (NOT the old shared demo player -- that meant every guest saw and spent
+    # the same balance as every other guest on the server).
     try:
         from models.player import get_or_create_demo_player
-        demo = get_or_create_demo_player()
+        from controllers.session_controller import _get_practice_session_key
+        demo = get_or_create_demo_player(_get_practice_session_key())
         # ensure demo has free cash if expired or empty
         if not getattr(demo, 'is_fake_cash_valid', lambda: False)() or getattr(demo, 'fake_balance', 0) <= 0:
             try:
@@ -139,6 +144,21 @@ def lobby():
 @app.route("/game/<room_code>")
 def multiplayer_game(room_code):
     return render_template("game_multiplayer.html", room_code=room_code)
+
+
+@app.route("/tournaments")
+def tournaments_page():
+    return render_template("tournaments.html")
+
+
+@app.route("/tournaments/<int:tournament_id>")
+def tournament_waiting_room_page(tournament_id):
+    return render_template("tournament_waiting_room.html")
+
+
+@app.route("/tournaments/<int:tournament_id>/bracket")
+def tournament_bracket_page(tournament_id):
+    return render_template("tournament_bracket.html")
 
 
 # -----------------------------
@@ -236,11 +256,17 @@ def attack(game_id):
 def defend(game_id):
     engine = manager.get_game(game_id)
     controller = FlaskGameController(engine)
-    
-    i1 = int(request.json["i1"])
-    i2 = int(request.json["i2"])
 
-    result = controller.defend(i1, i2)
+    payload = request.json or {}
+    card_indices = payload.get("card_indices")
+    if not card_indices:
+        i1 = int(payload.get("i1"))
+        i2 = int(payload.get("i2"))
+        card_indices = [i1, i2]
+        if payload.get("i3") is not None:
+            card_indices.append(int(payload.get("i3")))
+
+    result = controller.defend(card_indices)
     # Persist change for Redis-backed manager
     try:
         manager.update_game(game_id, engine)

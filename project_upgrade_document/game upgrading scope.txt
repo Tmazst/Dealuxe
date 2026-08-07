@@ -1,0 +1,42 @@
+Scope:
+We want to create a version 2 of the Dealuxe game. The v2 will be called the 'uMshova Deluxe'. This upgrade will mainly be focused on a tournament style. 
+
+Tournament brainstorm:
+The game will have different level tournaments;
+1. uMshova - standard: Will have 4 players
+2. uMshova - Premium: 8 players
+3. uMshova - Deluxe: 16 players
+
+These tournaments are exactly matching the soccer games tournament style/system of eliminations. The 4-players game will automatically get into the semi final level. 
+
+Winning procedure:
+Only 3 players are going to be awarded money on each tournament.
+1. Number 1 (The winner who won the finals' match) - wins 50% of the tournament's package.
+2. Number 2 (Runner-up) - wins 12.5%
+3. Number 3 (the one who won on the losers final) - wins 6%
+
+Scenario: In a 4-player tournament (uMshova - standard), its E40 package game. The winner will win E20, runner-up wins E5, third place E2.40
+
+Game joining fee:
+The fee for every player is E10 for each tournament.
+
+Tournaments Selection/locking:
+The app is pre-build with the 3 tournaments blueprint structure. One player will create each tournament. The user can pre-define the tournament to either 4-player,8-player or 16-player, or either optionally set it to be a tournament-lock game. On the tournament log config the admin can lock the tournament whether they are 4 players in the tournament container or 8 or 16. But not lock to a 4-player game if they player who have currently are more than 4. Optionally the game can be locked by the other participating or joined players, if all agree to press the lock button on either level 4/8/16. Example; the first player creates a tournament and choose the game to be locked optionally instead of predefining it. If lets say 2 players (except for first player/admin who created the game) have joined to the tournament at the moment. The tournament will lock at the 4-player game if either the admin/first-player presses the lock button or if the other 2 players presses the lock and the fourth one to join if he/she presses the lock button the game will be 4-player game. This applies the same with the 8-player tournament but the 16-player will automatically be configured if the players are already 9 in the tournament container.
+
+Joining Game/Transactions:
+The system use an ecommerce style of accepting money. The system will be configure to accept money through different gateway although we will first use one gateway at the moment ie. MojaPOS(mojapos.com). When the user presses join game our backend will process credits, create an external ID and the will be deposited into the player's real wallet, then a request for payment will be generated through our gateway. the gateway(MojaPOS) will handle the how they money is received and then send a callback tour system that a payment is received with external to confirm the payment of that user/player. After that the system will validate the player to join that tournament they chose.
+
+Winner awarding/transactions:
+When the user wins, the money will be deposited/credited to their wallet eg. E40. Then the user can withdraw by pressing the withdraw button in their wallet UI. Our backend will trigger the gateway to send the money into the user's mobile money number. 
+
+Terms and conditions:
+A user will not be allowed to play with more than E50 on the game platform per 24 hours. We are doing this control people spending so that they don't waste all their funds uncontrollably. This game should be an entertainment(fun) game and also as a brain exercise game not a way of generating money. There currently no limit on how much a person can win per day.
+
+Tournaments Rules:
+The platform can handle at least 40 tournaments at the same time with unlimited number of tournaments/games per day.
+
+Instructions for AI agent: 
+You are acting as a consultant, team player, developer and advisor in the project
+
+
+

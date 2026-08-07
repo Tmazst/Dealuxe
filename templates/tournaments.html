@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Tournaments</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; background: #111; color: #f5f5f5; }
+      .panel { background: #1f1f1f; padding: 1rem 1.2rem; border-radius: 8px; margin-bottom: 1rem; }
+      .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+      input, select, button { padding: 0.65rem; border-radius: 6px; border: 1px solid #444; }
+      button { cursor: pointer; background: #2f7cf6; color: white; border: none; }
+      .card { background: #2a2a2a; padding: 0.8rem; border-radius: 8px; margin-bottom: 0.6rem; }
+      a { color: #7ec8ff; }
+    </style>
+  </head>
+  <body>
+    <h1>Tournament Lobby</h1>
+    <div class="panel">
+      <h3>Create Tournament</h3>
+      <form id="create-form" class="row">
+        <input name="tournament_name" placeholder="Tournament name" />
+        <select name="tournament_type">
+          <option value="standard">Standard</option>
+          <option value="premium">Premium</option>
+          <option value="deluxe">Deluxe</option>
+        </select>
+        <input name="entry_fee" type="number" value="10" min="1" />
+        <input name="max_players" type="number" value="4" min="4" step="4" />
+        <button type="submit">Create</button>
+      </form>
+      <div id="create-message"></div>
+    </div>
+
+    <div class="panel">
+      <h3>Available Tournaments</h3>
+      <div id="tournament-list">Loading…</div>
+    </div>
+
+    <script>
+      async function loadTournaments() {
+        const response = await fetch('/api/tournaments');
+        const data = await response.json();
+        const list = document.getElementById('tournament-list');
+        if (!data.tournaments || data.tournaments.length === 0) {
+          list.innerHTML = '<div class="card">No tournaments yet.</div>';
+          return;
+        }
+        list.innerHTML = data.tournaments.map(t => `
+          <div class="card">
+            <strong>${t.tournament_name}</strong> (${t.tournament_type})<br>
+            Code: ${t.tournament_code}<br>
+            Entry: ${t.entry_fee}<br>
+            Players: ${t.current_player_count}/${t.max_players}<br>
+            Status: ${t.status}<br>
+            <button onclick="joinTournament(${t.id})">Join</button>
+          </div>`).join('');
+      }
+
+      async function joinTournament(id) {
+        const response = await fetch(`/api/tournaments/${id}/join`, { method: 'POST' });
+        const data = await response.json();
+        document.getElementById('create-message').textContent = data.message || data.error || 'Done';
+        loadTournaments();
+      }
+
+      document.getElementById('create-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = new FormData(event.target);
+        const payload = Object.fromEntries(form.entries());
+        payload.entry_fee = Number(payload.entry_fee);
+        payload.max_players = Number(payload.max_players);
+        const response = await fetch('/api/tournaments/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        document.getElementById('create-message').textContent = data.message || data.error || 'Created';
+        loadTournaments();
+      });
+
+      loadTournaments();
+    </script>
+  </body>
+</html>

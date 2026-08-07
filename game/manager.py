@@ -1,3 +1,29 @@
+"""
+*** NOT USED BY THE RUNNING APP -- KEPT FOR REFERENCE ONLY ***
+
+app.py wires up `game.manager_redis.GameManager` as the single, real
+GameManager instance (see `manager = GameManager()` in app.py, importing
+from game.manager_redis). That instance is what's passed everywhere
+(controllers/multiplayer_controller.py, flask routes, etc.) as `game_manager`.
+
+This file's GameManager (in-memory only, no Redis) is never instantiated
+anywhere in the codebase. `manager_redis.py` already contains its own
+in-memory fallback for when Redis is unreachable, so this file is fully
+redundant with it.
+
+`controllers/multiplayer_controller.py` used to have a stray, unused
+`from game.manager import GameManager` import referencing this file -- that
+import did nothing (the real manager is always passed in as a parameter),
+and has been removed there to avoid implying this file is live.
+
+Confirmed via `grep -rn "game.manager import" .` across the whole repo
+(2026-07-27 audit) -- no other importers besides that removed one.
+
+Left in place rather than deleted per project decision -- do not wire this
+back in without also removing/merging manager_redis.py, or the app will have
+two independent, out-of-sync GameManagers again.
+"""
+
 import uuid
 import time
 

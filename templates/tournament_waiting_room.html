@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Tournament Waiting Room</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; background: #111; color: #f5f5f5; }
+      .panel { background: #1f1f1f; padding: 1rem 1.2rem; border-radius: 8px; margin-bottom: 1rem; }
+      button { padding: 0.65rem; border-radius: 6px; border: none; background: #2f7cf6; color: white; cursor: pointer; }
+      .chip { display: inline-block; background: #2a2a2a; padding: 0.35rem 0.6rem; border-radius: 999px; margin-right: 0.4rem; }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <h1 id="tournament-name">Tournament</h1>
+      <p id="tournament-meta"></p>
+      <button onclick="lockTournament()">Lock Tournament</button>
+    </div>
+    <div class="panel">
+      <h3>Registered Players</h3>
+      <div id="participants">Loading…</div>
+    </div>
+    <script>
+      const tournamentId = window.location.pathname.split('/').filter(Boolean).pop();
+
+      async function loadTournament() {
+        const response = await fetch(`/api/tournaments/${tournamentId}`);
+        const data = await response.json();
+        document.getElementById('tournament-name').textContent = data.tournament.tournament_name;
+        document.getElementById('tournament-meta').textContent = `Type: ${data.tournament.tournament_type} • Status: ${data.tournament.status}`;
+      }
+
+      async function lockTournament() {
+        const response = await fetch(`/api/tournaments/${tournamentId}/lock`, { method: 'POST' });
+        const data = await response.json();
+        alert(data.message || data.error || 'Done');
+        loadTournament();
+      }
+
+      loadTournament();
+    </script>
+  </body>
+</html>
