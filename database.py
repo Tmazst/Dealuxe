@@ -589,19 +589,25 @@ class TournamentMatch(db.Model):
 
 
 class TournamentPrizePool(db.Model):
-    """Tracks prize distribution for a tournament."""
+    """Tracks prize distribution for a tournament (one row per placement)."""
     __tablename__ = 'tournament_prize_pools'
     __table_args__ = (
-        db.UniqueConstraint('tournament_id', name='uq_tournament_prize_pool_tournament'),
+        db.UniqueConstraint('tournament_id', 'placement', name='uq_tournament_prize_pool_tournament_placement'),
         db.Index('idx_tournament_prize_pools_tournament_id', 'tournament_id'),
     )
 
     id = db.Column(db.Integer, primary_key=True)
     tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
-    amount = db.Column(db.Float, nullable=False, default=0.0)
-    first_place_amount = db.Column(db.Float, nullable=False, default=0.0)
-    second_place_amount = db.Column(db.Float, nullable=False, default=0.0)
-    third_place_amount = db.Column(db.Float, nullable=False, default=0.0)
+    placement = db.Column(db.Integer, nullable=False)  # 1 = 1st, 2 = 2nd, 3 = 3rd
+    prize_percentage = db.Column(db.Float, nullable=False, default=0.0)  # 50.00 / 12.50 / 6.00
+    prize_amount = db.Column(db.Float, nullable=False, default=0.0)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    status = db.Column(db.String(20), nullable=False, default='pending')  # pending/awarded/withdrawn/failed
+
+    award_date = db.Column(db.DateTime, nullable=True)
+    withdrawal_date = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

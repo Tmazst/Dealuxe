@@ -27,7 +27,7 @@ let isRequestInProgress = false;
 let raisedCardIndex = null;
 
 // Defense selection state (when human defends)
-let defenseSelected = []; // holds up to two indices
+let defenseSelected = []; // holds up to three indices
 let pendingOpponentAttack = null;
 let lastDisplayedAttack = null;
 // track each player's max observed hand size to compute progress
@@ -247,7 +247,7 @@ async function updateAgent(state) {
         }
     } else if (phase === 'DEFENSE') {
         if (defender === localPlayerIndex) {
-            text.innerText = `Defend against ${attackCard}. Choose two cards whose values sum to it, or draw.`;
+text.innerText = `Defend against ${attackCard}. Choose two or three cards whose values sum to it, or draw.`;
         } else {
             text.innerText = `Waiting for opponent to defend against ${attackCard}...`;
         }
@@ -1540,8 +1540,9 @@ function onCardClick(index) {
         console.log('[onCardClick] phase:', currentState.phase, 'attacker:', currentState.attacker, 'defender:', currentState.defender);
     }
 
-    // Defense selection flow: when it's DEFENSE phase and human is defender
+// Defense selection flow: when it's DEFENSE phase and human is defender
     if (currentState && currentState.phase === 'DEFENSE' && currentState.defender === localPlayerIndex) {
+        // Toggle if the card is already selected (checks all selected indices, not just the first)
         const selIndex = defenseSelected.indexOf(index);
         if (selIndex >= 0) {
             cards[index].classList.remove('defense-first', 'defense-second', 'defense-third');
@@ -1550,29 +1551,20 @@ function onCardClick(index) {
             return;
         }
 
+        // Hard cap at 3: ignore further clicks instead of resetting/clearing the selection
         if (defenseSelected.length >= 3) {
-            clearDefenseSelections();
-            defenseSelected.push(index);
-            cards[index].classList.add('defense-first');
             return;
         }
 
-        if (defenseSelected.length === 0) {
-            defenseSelected.push(index);
-            cards[index].classList.add('defense-first');
-            return;
+        // Select the card with the correct visual class (1st/2nd/3rd)
+        defenseSelected.push(index);
+        cards[index].classList.add(defenseSelected.length === 1 ? 'defense-first'
+                                      : defenseSelected.length === 2 ? 'defense-second'
+                                      : 'defense-third');
+        // Show the Defend button once 2 or 3 cards are selected
+        if (defenseSelected.length >= 2) {
+            showDefendButton();
         }
-
-        if (defenseSelected.length === 1 || defenseSelected.length === 2) {
-            if (defenseSelected[0] === index) return;
-            defenseSelected.push(index);
-            cards[index].classList.add(defenseSelected.length === 2 ? 'defense-second' : 'defense-third');
-            if (defenseSelected.length >= 2) {
-                showDefendButton();
-            }
-            return;
-        }
-
         return;
     }
 

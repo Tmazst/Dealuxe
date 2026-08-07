@@ -82,13 +82,25 @@ class SimpleAIController:
         defender = self.engine.players[self.player_id]
         attack_value = self.engine.state.attack_card.value
 
-        # Try to find sum pair
+        # Try to find a 2-card pair whose values sum to the attack value.
         for i, c1 in enumerate(defender.hand):
             for j, c2 in enumerate(defender.hand):
                 if i != j and c1.value + c2.value == attack_value:
                     print(f"[AI] Defends with {c1.value} + {c2.value} = {attack_value}")
-                    defend_results = self.engine.defend(self.player_id, i, j)
+                    defend_results = self.engine.defend(self.player_id, [i, j])
                     return defend_results
+
+        # Try a 3-card combination whose values sum to the attack value.
+        # (v2 rules allow 2 or 3 cards; this gives the AI the full defense toolkit.)
+        hand = defender.hand
+        n = len(hand)
+        for i in range(n):
+            for j in range(i + 1, n):
+                for k in range(j + 1, n):
+                    if hand[i].value + hand[j].value + hand[k].value == attack_value:
+                        print(f"[AI] Defends with {hand[i].value} + {hand[j].value} + {hand[k].value} = {attack_value}")
+                        defend_results = self.engine.defend(self.player_id, [i, j, k])
+                        return defend_results
 
         # No defense → draw
         print("[AI] Cannot defend, drawing")
