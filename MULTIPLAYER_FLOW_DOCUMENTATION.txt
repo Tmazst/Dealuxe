@@ -1,0 +1,1543 @@
+================================================================================
+                    MULTIPLAYER GAME MODE - CODE FLOW STRUCTURE
+                         Socket.IO Event Flow Documentation
+================================================================================
+
+OVERVIEW:
+This document traces the complete flow of the multiplayer game mode from the
+opponent selection dropdown in game.html, through the lobby, to the actual
+multiplayer game interface. It covers Socket.IO events, backend controllers,
+database operations, and frontend UI updates.
+
+================================================================================
+                              FLOW DIAGRAM SUMMARY
+================================================================================
+
+game.html (Opponent Selection)
+    |
+    | [User selects "Live_Game" from dropdown]
+    |
+    v
+lobby.html (Game Lobby)
+    |
+    | [User creates room OR joins existing room]
+    |
+    v
+Socket.IO Events & Backend Processing
+    |
+    | [Room creation/joining, game initialization]
+    |
+    v
+game_multiplayer.html (Active Multiplayer Game)
+    |
+    | [Real-time gameplay with Socket.IO]
+    |
+    v
+Game Completion / Return to Lobby
+
+================================================================================
+                         STAGE 1: OPPONENT SELECTION
+                               (game.html)
+================================================================================
+
+FILE: templates/game.html
+LINES: 298-305
+
+HTML STRUCTURE:
+---------------
+<div class="group">
+    <div class="acc-labels">{{ form.choose_opponent.label(class="labels")}}</div>
+    {{ form.choose_opponent(class="form-control",placeholder="Choose Opponent",id="choose_opponent")}}
+    {% if form.choose_opponent.errors %}
+        {% for error in form.choose_opponent.errors %}
+            <span class="span-error" >* {{error}}</span>
+        {% endfor %}
+    {% endif %}
+</div>
+
+FORM FIELD OPTIONS:
+------------------
+The choose_opponent dropdown contains:
+- AI Opponent (default)
+- Live_Game (Multiplayer option)
+
+JAVASCRIPT HANDLER:
+-------------------
+FILE: static/js/game-start.js
+LINES: 66-76
+
+const opponentSelect = document.getElementById('choose_opponent');
+if (opponentSelect) {
+    const liveOption = opponentSelect.querySelector('option[value="Live_Game"]');
+    if (liveOption) {
+        liveOption.disabled = false;
+        liveOption.textContent = 'Live Multiplayer 🌐';
+        liveOption.style.color = '#27ae60';
+    }
+    
+    // Redirect to lobby when Live Game is selected
+    opponentSelect.addEventListener('change', (e) => {
+        if (e.target.value === 'Live_Game') {
+            window.location.href = '/lobby';
+        }
+    });
+}
+
+TRIGGER:
+--------
+When user selects "Live_Game" from the dropdown → Browser redirects to /lobby
+
+================================================================================
+                         STAGE 2: LOBBY PAGE LOAD
+                            (lobby.html)
+================================================================================
+
+BACKEND ROUTE:
+--------------
+FILE: app.py
+LINES: 60-73
+
+@app.route("/lobby")
+def lobby():
+    """Multiplayer lobby - show user balance and available rooms"""
+    from database import get_player_by_user_id, Player
+    
+    user_id = session.get('user_id')
+    user_balance = 0
+    
+    if user_id:
+        player = get_player_by_user_id(user_id)
+        if player:
+            # Auto-award free cash if needed
+            if not player.is_fake_cash_valid() or player.fake_balance <= 0:
+                player.award_free_cash()
+                db.session.commit()
+            user_balance = player.fake_balance
+    
+    return render_template("lobby.html", user_balance=user_balance)
+
+OPERATIONS:
+-----------
+1. Retrieve user_id from session
+2. Get player profile from database
+3. Auto-award free cash if balance is zero or expired
+4. Pass user_balance to template
+5. Render lobby.html
+
+TEMPLATE STRUCTURE:
+-------------------
+FILE: templates/lobby.html
+
+MAIN SECTIONS:
+1. Header with online player count
+2. Create Room Section (left panel)
+   - Bet amount input
+   - Create Room button
+   - User balance display
+3. Available Rooms Section (right panel)
+   - List of waiting rooms
+   - Join buttons for each room
+
+SOCKET.IO CLIENT INITIALIZATION:
+---------------------------------
+FILE: static/js/multiplayer.js
+LINES: 5-20
+
+const socket = io({
+    transports: ['websocket', 'polling']
+});
+
+socket.on('connect', () => {
+    console.log('✅ Connected to server:', socket.id);
+    // Request lobby data
+    socket.emit('get_lobby');
+});
+
+FLOW:
+-----
+1. Page loads
+2. Socket.IO client connects to server
+3. On successful connection → Emits 'get_lobby' event
+4. Server responds with available rooms
+
+================================================================================
+                   STAGE 3: SOCKET.IO CONNECTION SETUP
+                  (Backend - multiplayer_controller.py)
+================================================================================
+
+FILE: controllers/multiplayer_controller.py
+
+INITIALIZATION:
+---------------
+LINES: 25-32
+
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection"""
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'message': 'Not authenticated'})
+        return False
+    
+    print(f"[MULTIPLAYER] User {user_id} connected - SID: {request.sid}")
+    emit('connected', {'user_id': user_id})
+
+OPERATIONS:
+-----------
+1. Verify user is authenticated
+2. Log connection with user_id and socket ID
+3. Emit 'connected' event back to client
+
+================================================================================
+                     STAGE 4: GET LOBBY DATA
+            (Socket.IO Event: 'get_lobby')
+================================================================================
+
+CLIENT EMITS:
+-------------
+FILE: static/js/multiplayer.js
+LINE: 17
+
+socket.emit('get_lobby');
+
+BACKEND HANDLER:
+----------------
+FILE: controllers/multiplayer_controller.py
+LINES: 81-102
+
+@socketio.on('get_lobby')
+def handle_get_lobby():
+    """Get list of available rooms"""
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'message': 'Not authenticated'})
+        return
+    
+    # Get waiting rooms
+    waiting_rooms = GameRoom.query.filter_by(status='waiting')
+                                  .order_by(GameRoom.created_at.desc())
+                                  .limit(20).all()
+    
+    # Get user's active rooms
+    my_active_rooms = GameRoom.query.filter(
+        db.or_(
+            GameRoom.player1_id == user_id,
+            GameRoom.player2_id == user_id
+        ),
+        GameRoom.status.in_(['in_progress', 'paused'])
+    ).all()
+    
+    emit('lobby_data', {
+        'available_rooms': [r.to_dict() for r in waiting_rooms],
+        'my_active_rooms': [r.to_dict() for r in my_active_rooms]
+    })
+
+DATABASE QUERY:
+---------------
+- Query GameRoom table for rooms with status='waiting'
+- Order by creation time (newest first)
+- Limit to 20 rooms
+- Also query for user's active games (in_progress or paused)
+
+SERVER RESPONSE:
+----------------
+Emits 'lobby_data' event with:
+{
+    'available_rooms': [...],  // Waiting rooms user can join
+    'my_active_rooms': [...]   // User's ongoing games
+}
+
+CLIENT HANDLER:
+---------------
+FILE: static/js/multiplayer.js
+LINES: 34-38
+
+socket.on('lobby_data', (data) => {
+    console.log('📋 Lobby data received:', data);
+    updateAvailableRooms(data.available_rooms);
+    // updateMyGames is not used in current lobby.html layout
+});
+
+UI UPDATE:
+----------
+LINES: 114-144
+
+function updateAvailableRooms(rooms) {
+    const container = document.getElementById('room-list');
+    
+    if (!rooms || rooms.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fa-solid fa-inbox"></i>
+                <p>No rooms available. Create one to start playing!</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = rooms.map(room => `
+        <div class="room-card">
+            <div class="room-info">
+                <div class="room-code">🎴 ${room.room_code}</div>
+                <div class="room-details">
+                    ${room.card_count} cards • ${room.bet_amount} chips • ${room.bet_type}
+                    <span class="room-status ${room.status}">${room.status.toUpperCase()}</span>
+                </div>
+            </div>
+            <button class="btn btn-success" onclick="joinRoom('${room.room_code}')">
+                Join Game
+            </button>
+        </div>
+    `).join('');
+}
+
+================================================================================
+                    STAGE 5A: CREATE NEW ROOM
+              (Socket.IO Event: 'create_room')
+================================================================================
+
+USER ACTION:
+------------
+User clicks "Create Room" button in lobby
+
+CLIENT HANDLER:
+---------------
+FILE: static/js/multiplayer.js
+LINES: 92-108
+
+const createRoomBtn = document.getElementById('create-room-btn');
+if (createRoomBtn) {
+    createRoomBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        
+        const cardCount = 6; // Default card count
+        const betAmount = parseFloat(document.getElementById('bet-amount').value) || 0;
+        const betType = 'fake'; // Default to fake for now
+        
+        console.log('🎲 Creating room:', { cardCount, betAmount, betType });
+        
+        socket.emit('create_room', {
+            card_count: cardCount,
+            bet_amount: betAmount,
+            bet_type: betType
+        });
+    });
+}
+
+EMITTED DATA:
+-------------
+{
+    card_count: 6,
+    bet_amount: <user_input>,
+    bet_type: 'fake'
+}
+
+BACKEND HANDLER:
+----------------
+FILE: controllers/multiplayer_controller.py
+LINES: 105-161
+
+@socketio.on('create_room')
+def handle_create_room(data):
+    """Create a new game room"""
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'message': 'Not authenticated'})
+        return
+    
+    card_count = data.get('card_count', 6)
+    bet_amount = data.get('bet_amount', 0)
+    bet_type = data.get('bet_type', 'fake')
+    
+    # Get or create player profile
+    player = get_player_by_user_id(user_id)
+    if not player:
+        emit('error', {'message': 'Player profile not found'})
+        return
+    
+    # Auto-award free cash if needed for fake bets
+    if bet_type == 'fake' and (not player.is_fake_cash_valid() or player.fake_balance < bet_amount):
+        player.award_free_cash()
+        db.session.commit()
+    
+    if not player.has_sufficient_balance(bet_amount, bet_type):
+        emit('error', {'message': f'Insufficient {bet_type} balance...'})
+        return
+    
+    # Create room
+    room_code = generate_room_code()
+    new_room = GameRoom(
+        room_code=room_code,
+        player1_id=user_id,
+        card_count=card_count,
+        bet_amount=bet_amount,
+        bet_type=bet_type,
+        status='waiting',
+        player1_connected=True,
+        player1_last_seen=datetime.utcnow()
+    )
+    
+    db.session.add(new_room)
+    db.session.commit()
+    
+    # Join SocketIO room
+    join_room(room_code)
+    join_room(f"user_{user_id}")
+    
+    print(f"[MULTIPLAYER] Room {room_code} created by user {user_id}")
+    
+    emit('room_created', {
+        'room': new_room.to_dict(),
+        'message': 'Waiting for opponent...'
+    })
+    
+    # Broadcast to lobby
+    socketio.emit('lobby_updated', {}, to=None)
+
+OPERATIONS:
+-----------
+1. Validate user authentication
+2. Extract room parameters (card_count, bet_amount, bet_type)
+3. Retrieve player profile
+4. Award free cash if needed
+5. Validate player has sufficient balance
+6. Generate unique 6-character room code
+7. Create GameRoom database record with status='waiting'
+8. Join Socket.IO rooms (room code + user-specific room)
+9. Emit 'room_created' to creator
+10. Broadcast 'lobby_updated' to all connected clients
+
+ROOM CODE GENERATION:
+---------------------
+LINES: 15-20
+
+def generate_room_code():
+    """Generate unique 6-character room code"""
+    while True:
+        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        if not GameRoom.query.filter_by(room_code=code).first():
+            return code
+
+DATABASE RECORD (GameRoom):
+---------------------------
+- room_code: Unique 6-char code (e.g., "A7B3K9")
+- player1_id: Creator's user_id
+- player2_id: NULL (waiting for opponent)
+- card_count: Number of cards per player
+- bet_amount: Wager amount
+- bet_type: 'fake' or 'real'
+- status: 'waiting'
+- player1_connected: True
+- player1_last_seen: Current timestamp
+
+CLIENT RESPONSE HANDLER:
+------------------------
+FILE: static/js/multiplayer.js
+LINES: 40-46
+
+socket.on('room_created', (data) => {
+    console.log('🎉 Room created:', data);
+    const roomCode = data.room ? data.room.room_code : data.room_code;
+    alert(`Room ${roomCode} created! Waiting for opponent...`);
+    // Refresh lobby
+    socket.emit('get_lobby');
+});
+
+RESULT:
+-------
+- Alert shown to user with room code
+- Lobby refreshes to show new room in "Available Rooms" list
+- Room appears for other users to join
+
+================================================================================
+                    STAGE 5B: JOIN EXISTING ROOM
+              (Socket.IO Event: 'join_room')
+================================================================================
+
+USER ACTION:
+------------
+User clicks "Join Game" button on a room in the Available Rooms list
+
+CLIENT HANDLER:
+---------------
+FILE: static/js/multiplayer.js
+LINES: 195-198
+
+function joinRoom(roomCode) {
+    console.log('🚪 Joining room:', roomCode);
+    socket.emit('join_room', { room_code: roomCode });
+}
+
+EMITTED DATA:
+-------------
+{
+    room_code: "A7B3K9"  // The room code to join
+}
+
+BACKEND HANDLER:
+----------------
+FILE: controllers/multiplayer_controller.py
+LINES: 164-230
+
+@socketio.on('join_room')
+def handle_join_room(data):
+    """Join an existing room"""
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'message': 'Not authenticated'})
+        return
+    
+    room_code = data.get('room_code')
+    if not room_code:
+        emit('error', {'message': 'Room code required'})
+        return
+    
+    room = GameRoom.query.filter_by(room_code=room_code).first()
+    if not room:
+        emit('error', {'message': 'Room not found'})
+        return
+    
+    if not room.can_join(user_id):
+        emit('error', {'message': 'Cannot join this room'})
+        return
+    
+    # Get or create player profile
+    player = get_player_by_user_id(user_id)
+    if not player:
+        emit('error', {'message': 'Player profile not found'})
+        return
+    
+    # Auto-award free cash if needed
+    if room.bet_type == 'fake' and (...):
+        player.award_free_cash()
+        db.session.commit()
+    
+    if not player.has_sufficient_balance(room.bet_amount, room.bet_type):
+        emit('error', {'message': f'Insufficient balance...'})
+        return
+    
+    # Update room
+    room.player2_id = user_id
+    room.player2_connected = True
+    room.player2_last_seen = datetime.utcnow()
+    db.session.commit()
+    
+    # Join SocketIO room
+    join_room(room_code)
+    join_room(f"user_{user_id}")
+    
+    # Notify player 1
+    player1_user = User.query.get(room.player1_id)
+    player2_user = User.query.get(room.player2_id)
+    
+    socketio.emit('opponent_joined', {
+        'room_code': room_code,
+        'opponent_username': player2_user.username
+    }, room=f"user_{room.player1_id}")
+    
+    emit('room_joined', {
+        'room': room.to_dict(),
+        'opponent_username': player1_user.username
+    })
+    
+    # Start game countdown
+    socketio.emit('game_starting', {'countdown': 3}, room=room_code)
+    socketio.start_background_task(start_game_countdown, room_code, socketio, game_manager, app)
+
+OPERATIONS:
+-----------
+1. Validate user authentication
+2. Validate room_code provided
+3. Query GameRoom from database
+4. Check if room can be joined (not full, status='waiting')
+5. Get player profile and validate balance
+6. Update room with player2_id
+7. Set player2_connected=True
+8. Join Socket.IO rooms
+9. Notify player 1 that opponent has joined
+10. Send room details to player 2
+11. Emit 'game_starting' countdown to both players
+12. Start background task to initialize game
+
+CLIENT RESPONSE HANDLERS:
+-------------------------
+
+1. Opponent Joined (Player 1 receives):
+FILE: static/js/multiplayer.js
+LINES: 48-52
+
+socket.on('opponent_joined', (data) => {
+    console.log('👥 Opponent joined:', data);
+    alert(`Opponent ${data.opponent_username} joined! Game starting soon...`);
+    socket.emit('get_lobby');
+});
+
+2. Room Joined (Player 2 receives):
+LINES: 61-73
+
+socket.on('room_joined', (data) => {
+    console.log('✅ Joined room:', data);
+    currentRoomCode = data.room_code;
+    
+    if (data.status === 'in_progress') {
+        window.location.href = `/game/${data.room_code}`;
+    } else {
+        alert(`Joined room ${data.room_code}! Waiting for game to start...`);
+        socket.emit('get_lobby');
+    }
+});
+
+3. Game Starting (Both players receive):
+LINES: 54-57
+
+socket.on('game_starting', (data) => {
+    console.log('⏳ Game starting in:', data.countdown);
+    // Could show a countdown UI here
+});
+
+================================================================================
+                 STAGE 6: GAME INITIALIZATION
+        (Background Task: start_game_countdown)
+================================================================================
+
+BACKGROUND TASK:
+----------------
+FILE: controllers/multiplayer_controller.py
+LINES: 233-309
+
+def start_game_countdown(room_code, socketio, game_manager, app):
+    """Start game after countdown"""
+    import time
+    time.sleep(3)  # 3-second countdown
+    
+    with app.app_context():
+        room = GameRoom.query.filter_by(room_code=room_code).first()
+        if not room or room.status != 'waiting':
+            return
+        
+        # Deduct bets from both players
+        player1 = get_player_by_user_id(room.player1_id)
+        player2 = get_player_by_user_id(room.player2_id)
+        
+        if player1:
+            player1.deduct_bet(room.bet_amount, room.bet_type)
+        if player2:
+            player2.deduct_bet(room.bet_amount, room.bet_type)
+        
+        # Create game via GameManager
+        game_id, game_details = game_manager.create_game(mode="local", card_count=room.card_count)
+        
+        # Create bet session
+        bet_session = BetSession(
+            game_id=game_id,
+            player_id=room.player1_id,
+            opponent_id=room.player2_id,
+            opponent_type='human',
+            bet_type=room.bet_type,
+            bet_amount=room.bet_amount,
+            prize_pool=room.bet_amount * 2,
+            card_count=room.card_count
+        )
+        db.session.add(bet_session)
+        db.session.flush()
+        
+        # Update room
+        room.game_id = game_id
+        room.bet_session_id = bet_session.id
+        room.status = 'in_progress'
+        room.started_at = datetime.utcnow()
+        room.current_turn_player = room.player1_id
+        room.turn_deadline = datetime.utcnow() + timedelta(seconds=room.turn_duration_seconds)
+        
+        db.session.commit()
+        
+        # Store in memory
+        active_rooms[room_code] = {
+            'game_id': game_id,
+            'manager': game_manager
+        }
+        
+        # Send game state to both players
+        engine = game_manager.get_game(game_id)
+        state = engine.get_state()
+        
+        # Emit to Player 1
+        socketio.emit('game_started', {
+            'game_id': game_id,
+            'room_code': room_code,
+            'your_player_index': 0,
+            'your_turn': state['attacker'] == 0,
+            'state': state,
+            'turn_deadline': room.turn_deadline.isoformat()
+        }, room=f"user_{player1_id}")
+        
+        # Emit to Player 2
+        socketio.emit('game_started', {
+            'game_id': game_id,
+            'room_code': room_code,
+            'your_player_index': 1,
+            'your_turn': state['attacker'] == 1,
+            'state': state,
+            'turn_deadline': room.turn_deadline.isoformat()
+        }, room=f"user_{player2_id}")
+        
+        # Update lobby
+        socketio.emit('lobby_updated', {}, to=None)
+
+OPERATIONS:
+-----------
+1. Wait 3 seconds (countdown)
+2. Query room from database
+3. Deduct bet amounts from both players' balances
+4. Create new game using GameManager (initializes game engine)
+5. Create BetSession record to track wager
+6. Update GameRoom:
+   - Set game_id
+   - Set bet_session_id
+   - Change status to 'in_progress'
+   - Set current_turn_player to player1
+   - Set turn_deadline (turn time limit)
+7. Store game reference in active_rooms memory cache
+8. Get initial game state from engine
+9. Emit 'game_started' to both players with:
+   - game_id
+   - room_code
+   - player_index (0 or 1)
+   - whether it's their turn
+   - initial game state
+   - turn deadline timestamp
+10. Broadcast 'lobby_updated' to remove room from available list
+
+CLIENT RESPONSE:
+----------------
+FILE: static/js/multiplayer.js
+LINES: 59-61
+
+socket.on('game_started', (data) => {
+    console.log('🎮 Game started!', data);
+    window.location.href = `/game/${data.room_code}`;
+});
+
+RESULT:
+-------
+Both players' browsers redirect to: /game/<room_code>
+
+================================================================================
+            STAGE 7: MULTIPLAYER GAME PAGE LOAD
+                  (game_multiplayer.html)
+================================================================================
+
+BACKEND ROUTE:
+--------------
+FILE: app.py
+LINES: 76-78
+
+@app.route("/game/<room_code>")
+def multiplayer_game(room_code):
+    return render_template("game_multiplayer.html", room_code=room_code)
+
+TEMPLATE STRUCTURE:
+-------------------
+FILE: templates/game_multiplayer.html
+
+KEY ELEMENTS:
+- Turn indicator (shows whose turn it is)
+- Game controls (pause/leave buttons)
+- Attack pile/zone
+- Player cards display
+- Opponent info
+- Card count displays
+- Game comments/narrative
+- Timer display
+- Paused overlay (hidden by default)
+
+HIDDEN INPUT FOR ROOM CODE:
+----------------------------
+The room_code is passed to JavaScript via a hidden input or data attribute
+
+SOCKET.IO CLIENT:
+-----------------
+FILE: static/js/game-multiplayer.js
+LINES: 1-24
+
+const socket = io({
+    transports: ['websocket', 'polling']
+});
+
+const roomCode = document.getElementById('roomCode').value;
+let currentGameState = null;
+let myPlayerIndex = null;
+let turnDeadline = null;
+let turnTimer = null;
+
+socket.on('connect', () => {
+    console.log('✅ Connected to game server:', socket.id);
+    // Reconnect to room
+    socket.emit('reconnect_to_room', { room_code: roomCode });
+});
+
+ON PAGE LOAD:
+-------------
+1. Socket.IO client initializes
+2. On connection → Emits 'reconnect_to_room' event
+3. This retrieves current game state
+
+================================================================================
+         STAGE 8: RECONNECT TO ROOM & GET GAME STATE
+          (Socket.IO Event: 'reconnect_to_room')
+================================================================================
+
+CLIENT EMITS:
+-------------
+socket.emit('reconnect_to_room', { room_code: roomCode });
+
+BACKEND HANDLER:
+----------------
+FILE: controllers/multiplayer_controller.py
+LINES: 583-693
+
+@socketio.on('reconnect_to_room')
+def handle_reconnect(data):
+    """Reconnect to an active game"""
+    user_id = session.get('user_id')
+    room_code = data.get('room_code')
+    
+    # Validate authentication
+    if not user_id:
+        emit('error', {'message': 'Not authenticated'})
+        return
+    
+    # Get room from database
+    room = GameRoom.query.filter_by(room_code=room_code).first()
+    if not room:
+        emit('error', {'message': 'Room not found'})
+        return
+    
+    # Verify user is in this room
+    if not room.is_player_in_room(user_id):
+        emit('error', {'message': 'You are not in this room'})
+        return
+    
+    # Update connection status
+    if room.player1_id == user_id:
+        room.player1_connected = True
+        room.player1_last_seen = datetime.utcnow()
+        player_index = 0
+    elif room.player2_id == user_id:
+        room.player2_connected = True
+        room.player2_last_seen = datetime.utcnow()
+        player_index = 1
+    
+    db.session.commit()
+    
+    # Rejoin Socket.IO rooms
+    join_room(room_code)
+    join_room(f"user_{user_id}")
+    
+    # Get game engine and state
+    if room.game_id:
+        engine = game_manager.get_game(room.game_id)
+        state = engine.get_state()
+        
+        # Transform state for frontend
+        transformed_state = {
+            'phase': state.get('phase'),
+            'attacker': state.get('attacker'),
+            'defender': state.get('defender'),
+            'attack_card': state.get('attack_card'),
+            'attack_card_value': state.get('attack_card_value'),
+            'game_over': state.get('game_over'),
+            'winner': state.get('winner'),
+            'ui_log': state.get('ui_log', []),
+            'attack_pile': [],
+            'players': [
+                {'hand': state.get('hands', {}).get(0, [])},
+                {'hand': state.get('hands', {}).get(1, [])}
+            ]
+        }
+        
+        is_my_turn = (transformed_state['attacker'] == player_index or 
+                      transformed_state['defender'] == player_index)
+        
+        # Emit game state to player
+        emit('game_update', {
+            'game_state': transformed_state,
+            'player_index': player_index,
+            'is_my_turn': is_my_turn,
+            'turn_deadline': room.turn_deadline.isoformat() if room.turn_deadline else None,
+            'room_code': room_code,
+            'game_id': room.game_id
+        })
+        
+        # Notify opponent of reconnection
+        opponent_id = room.get_opponent_id(user_id)
+        if opponent_id:
+            socketio.emit('opponent_reconnected', {
+                'room_code': room_code
+            }, room=f"user_{opponent_id}")
+
+OPERATIONS:
+-----------
+1. Authenticate user
+2. Get GameRoom from database
+3. Verify user is participant in this room
+4. Update player's connection status and last_seen timestamp
+5. Join Socket.IO rooms (room code + user-specific)
+6. Retrieve game engine from GameManager
+7. Get current game state
+8. Transform state for frontend compatibility
+9. Emit 'game_update' with:
+   - Complete game state
+   - Player's index (0 or 1)
+   - Whether it's their turn
+   - Turn deadline
+   - Room and game IDs
+10. Notify opponent of reconnection
+
+CLIENT RESPONSE:
+----------------
+FILE: static/js/game-multiplayer.js
+LINES: 36-47
+
+socket.on('game_update', (data) => {
+    console.log('🎮 Game update received:', data);
+    currentGameState = data.game_state;
+    myPlayerIndex = data.player_index;
+    
+    updateGameUI(data);
+    updateTurnIndicator(data);
+    
+    // Start turn timer if it's my turn
+    if (data.is_my_turn && data.turn_deadline) {
+        startTurnTimer(data.turn_deadline);
+    } else {
+        stopTurnTimer();
+    }
+});
+
+UI UPDATE FUNCTIONS:
+--------------------
+LINES: 120-190
+
+function updateGameUI(data) {
+    const gameState = data.game_state;
+    
+    // Update opponent info
+    if (data.opponent_name) {
+        document.getElementById('opponentName').textContent = data.opponent_name;
+    }
+    
+    // Update card counts
+    const myCards = gameState.players[myPlayerIndex].hand.length;
+    const opponentIndex = myPlayerIndex === 0 ? 1 : 0;
+    const opponentCards = gameState.players[opponentIndex].hand.length;
+    
+    document.getElementById('card-count-me').textContent = myCards;
+    document.getElementById('card-count-opponent').textContent = opponentCards;
+    
+    // Render player's hand
+    renderPlayerHand(gameState.players[myPlayerIndex].hand);
+    
+    // Render attack pile
+    renderAttackPile(gameState.attack_pile);
+    
+    // Update progress bars
+    updateProgressBars(gameState);
+}
+
+function renderPlayerHand(hand) {
+    // Creates visual card elements for player's hand
+    // Each card is clickable to select for actions
+}
+
+function renderAttackPile(attackPile) {
+    // Displays cards played in the attack zone
+}
+
+RESULT:
+-------
+Game UI is fully rendered with:
+- Player's cards displayed at bottom
+- Opponent's card count shown
+- Attack zone visible
+- Turn indicator shows whose turn it is
+- Timer starts if it's player's turn
+
+================================================================================
+              STAGE 9: GAMEPLAY - PLAYER ACTIONS
+           (Socket.IO Event: 'game_action')
+================================================================================
+
+PLAYER ACTIONS:
+---------------
+During gameplay, players can perform these actions:
+1. ATTACK - Play a card to attack
+2. DEFEND - Play two cards to defend against attack
+3. DRAW - Defender draws a card (fails to defend)
+4. RULE8_DROP - Drop low cards (A-2-3) to attempt Trail Win
+5. RULE8_CRASH - Defender response to Trail Win attempt
+
+CLIENT EMITTING ACTION:
+-----------------------
+Example: Player attacks with a card
+
+FILE: static/js/game-multiplayer.js (implied structure)
+
+function attackWithCard(cardIndex) {
+    socket.emit('game_action', {
+        room_code: roomCode,
+        action: 'attack',
+        data: {
+            index: cardIndex
+        }
+    });
+}
+
+function defendWithCards(index1, index2) {
+    socket.emit('game_action', {
+        room_code: roomCode,
+        action: 'defend',
+        data: {
+            i1: index1,
+            i2: index2
+        }
+    });
+}
+
+function drawCard() {
+    socket.emit('game_action', {
+        room_code: roomCode,
+        action: 'draw',
+        data: {}
+    });
+}
+
+BACKEND HANDLER:
+----------------
+FILE: controllers/multiplayer_controller.py
+LINES: 312-442
+
+@socketio.on('game_action')
+def handle_game_action(data):
+    """Handle game action from player"""
+    user_id = session.get('user_id')
+    room_code = data.get('room_code')
+    action_type = data.get('action')
+    action_data = data.get('data', {})
+    
+    # Validate request
+    room = GameRoom.query.filter_by(room_code=room_code).first()
+    if not room or room.status != 'in_progress':
+        emit('error', {'message': 'Game is not in progress'})
+        return
+    
+    # Verify it's player's turn
+    if room.current_turn_player != user_id:
+        emit('error', {'message': 'Not your turn'})
+        return
+    
+    # Check turn deadline (auto-play if expired)
+    if room.turn_deadline and datetime.utcnow() > room.turn_deadline:
+        # Auto-play based on phase
+        # ... timeout handling logic ...
+    
+    # Get game engine
+    game_id = room.game_id
+    engine = game_manager.get_game(game_id)
+    controller = FlaskGameController(engine)
+    
+    # Determine player index
+    player_index = 0 if user_id == room.player1_id else 1
+    
+    # Execute action
+    result = None
+    try:
+        if action_type == 'attack':
+            result = controller.attack(action_data.get('index'))
+        elif action_type == 'defend':
+            result = controller.defend(action_data.get('i1'), action_data.get('i2'))
+        elif action_type == 'draw':
+            result = controller.draw()
+        elif action_type == 'rule8_drop':
+            result = controller.rule_8_drop(action_data.get('value'))
+        elif action_type == 'rule8_crash':
+            result = controller.rule_8_crash(action_data.get('crash'))
+        else:
+            emit('error', {'message': 'Invalid action'})
+            return
+    except Exception as e:
+        emit('error', {'message': str(e)})
+        return
+    
+    # Get updated state
+    state = engine.get_state()
+    
+    # Update turn
+    room.current_turn_player = room.player1_id if state['attacker'] == 0 else room.player2_id
+    room.turn_deadline = datetime.utcnow() + timedelta(seconds=room.turn_duration_seconds)
+    db.session.commit()
+    
+    # Check if game over
+    if state.get('game_over'):
+        handle_game_over(room, state, socketio)
+        return
+    
+    # Broadcast state to both players
+    socketio.emit('game_update', {
+        'state': state,
+        'action': action_type,
+        'result': result.get_json() if hasattr(result, 'get_json') else result,
+        'turn_deadline': room.turn_deadline.isoformat()
+    }, room=room_code)
+
+OPERATIONS:
+-----------
+1. Validate user authentication
+2. Validate room exists and is in_progress
+3. Verify it's the player's turn
+4. Check turn deadline (auto-play if expired)
+5. Get game engine from GameManager
+6. Create FlaskGameController wrapper
+7. Execute appropriate game action:
+   - Attack: Play card from hand
+   - Defend: Play two cards that sum to attack card value
+   - Draw: Defender fails to defend, draws card
+   - Rule8_drop: Attacker drops low card (A/2/3)
+   - Rule8_crash: Defender responds to trail win attempt
+8. Get updated game state
+9. Update whose turn it is
+10. Reset turn deadline
+11. Save to database
+12. Check for game over condition
+13. Broadcast updated state to both players
+
+BROADCAST TO BOTH PLAYERS:
+---------------------------
+The 'game_update' event is emitted to the room (not just requesting player)
+Both players receive:
+- Updated game state
+- Action that was performed
+- Result of the action
+- New turn deadline
+
+This ensures both players' UIs stay synchronized
+
+CLIENT RESPONSE (BOTH PLAYERS):
+--------------------------------
+Same handler as before (LINES 36-47) processes the update:
+- Updates currentGameState
+- Refreshes UI
+- Updates turn indicator
+- Starts/stops turn timer
+
+================================================================================
+                  STAGE 10: GAME OVER
+       (Function: handle_game_over)
+================================================================================
+
+TRIGGER:
+--------
+After any game action, if state.get('game_over') is True
+
+BACKEND HANDLER:
+----------------
+FILE: controllers/multiplayer_controller.py
+LINES: 445-489
+
+def handle_game_over(room, state, socketio):
+    """Handle game completion"""
+    winner_index = state.get('winner')
+    winner_id = room.player1_id if winner_index == 0 else room.player2_id
+    loser_id = room.player2_id if winner_index == 0 else room.player1_id
+    
+    # Update room status
+    room.status = 'completed'
+    room.winner_id = winner_id
+    room.completed_at = datetime.utcnow()
+    
+    # Update bet session and award winnings
+    if room.bet_session_id:
+        bet_session = BetSession.query.get(room.bet_session_id)
+        if bet_session:
+            # Award winnings to winner
+            winner_player = get_player(str(winner_id))
+            if winner_player:
+                winner_player.award_winnings(bet_session.prize_pool, bet_session.bet_type)
+                winner_player.record_game_result(won=True)
+            
+            # Record loss for loser
+            loser_player = get_player(str(loser_id))
+            if loser_player:
+                loser_player.record_game_result(won=False)
+            
+            # Update bet session
+            bet_session.status = 'completed'
+            bet_session.winner_id = 'player' if winner_id == room.player1_id else 'opponent'
+            bet_session.completed_at = datetime.utcnow()
+    
+    db.session.commit()
+    
+    # Remove from active rooms cache
+    if room.room_code in active_rooms:
+        del active_rooms[room.room_code]
+    
+    # Notify both players
+    socketio.emit('game_over', {
+        'winner_id': winner_id,
+        'winner_index': winner_index,
+        'state': state,
+        'prize_pool': room.bet_amount * 2 if room.bet_session_id else 0
+    }, room=room.room_code)
+
+OPERATIONS:
+-----------
+1. Determine winner and loser
+2. Update GameRoom:
+   - Set status to 'completed'
+   - Set winner_id
+   - Set completion timestamp
+3. Update BetSession:
+   - Award prize pool to winner
+   - Update winner's stats (games won, balance)
+   - Update loser's stats (games lost)
+   - Mark session as completed
+4. Save all changes to database
+5. Remove room from active_rooms memory cache
+6. Emit 'game_over' event to both players with:
+   - Winner ID and index
+   - Final game state
+   - Prize amount
+
+CLIENT RESPONSE:
+----------------
+FILE: static/js/game-multiplayer.js
+LINES: 82-100
+
+socket.on('game_over', (data) => {
+    console.log('🏁 Game over:', data);
+    stopTurnTimer();
+    
+    let message = '';
+    if (data.winner_index === myPlayerIndex) {
+        message = `🎉 You won! Prize: ${data.prize || 0} chips`;
+    } else if (data.winner_index === null) {
+        message = '🤝 Game ended in a draw!';
+    } else {
+        message = `😔 You lost! Better luck next time.`;
+    }
+    
+    updateAgent(message, 'info');
+    
+    setTimeout(() => {
+        if (confirm(message + '\n\nReturn to lobby?')) {
+            window.location.href = '/lobby';
+        }
+    }, 2000);
+});
+
+RESULT:
+-------
+1. Turn timer stops
+2. Message displayed based on outcome
+3. After 2 seconds, confirmation dialog appears
+4. User can return to lobby to play again
+
+================================================================================
+                    ADDITIONAL SOCKET.IO EVENTS
+================================================================================
+
+1. OPPONENT DISCONNECTED
+-------------------------
+Event: 'opponent_disconnected'
+Trigger: When opponent loses connection
+Purpose: Notify player that opponent has disconnected
+Client can wait for reconnection window (2 minutes)
+
+2. TURN TIMEOUT
+---------------
+Event: 'turn_timeout'
+Trigger: When a player's turn time expires
+Action: Auto-play action is executed for the player
+Notification sent to both players
+
+3. PAUSE/RESUME GAME
+--------------------
+Events: 'request_pause', 'approve_pause', 'game_paused', 'game_resumed'
+Flow:
+- Player requests pause
+- Opponent receives approval request
+- If approved, game pauses
+- Either player can resume when both are ready
+
+4. LOBBY UPDATED
+----------------
+Event: 'lobby_updated'
+Trigger: When room list changes (room created, game started, etc.)
+Purpose: Notify all lobby users to refresh available rooms
+
+================================================================================
+                          DATABASE SCHEMA
+================================================================================
+
+GAMEROOM TABLE:
+---------------
+- id (primary key)
+- room_code (unique, 6 characters)
+- player1_id (foreign key to User)
+- player2_id (foreign key to User, nullable)
+- game_id (foreign key to game engine)
+- bet_session_id (foreign key to BetSession)
+- status (waiting/in_progress/paused/completed)
+- card_count (integer)
+- bet_amount (decimal)
+- bet_type (fake/real)
+- winner_id (foreign key to User, nullable)
+- created_at (timestamp)
+- started_at (timestamp, nullable)
+- completed_at (timestamp, nullable)
+- paused_at (timestamp, nullable)
+- current_turn_player (foreign key to User)
+- turn_duration_seconds (integer, default 60)
+- turn_deadline (timestamp)
+- player1_connected (boolean)
+- player2_connected (boolean)
+- player1_last_seen (timestamp)
+- player2_last_seen (timestamp)
+- pause_requested_by (foreign key to User, nullable)
+- pause_approved_by (foreign key to User, nullable)
+
+BETSESSION TABLE:
+-----------------
+- id (primary key)
+- game_id (string)
+- player_id (foreign key to User)
+- opponent_id (foreign key to User)
+- opponent_type (human/ai)
+- bet_type (fake/real)
+- bet_amount (decimal)
+- prize_pool (decimal)
+- status (active/completed)
+- winner_id (string: 'player'/'opponent')
+- card_count (integer)
+- created_at (timestamp)
+- completed_at (timestamp, nullable)
+
+PLAYER TABLE:
+-------------
+- id (primary key)
+- user_id (foreign key to User, unique)
+- real_balance (decimal, default 0)
+- fake_balance (decimal, default 0)
+- fake_balance_awarded_at (timestamp, nullable)
+- total_games (integer, default 0)
+- games_won (integer, default 0)
+- games_lost (integer, default 0)
+- created_at (timestamp)
+- updated_at (timestamp)
+
+================================================================================
+                        SOCKET.IO ROOM STRUCTURE
+================================================================================
+
+ROOM NAMING CONVENTIONS:
+------------------------
+1. Room Code Rooms: "<room_code>"
+   - Example: "A7B3K9"
+   - All players in a game join this room
+   - Used for broadcasting game updates to both players
+
+2. User-Specific Rooms: "user_<user_id>"
+   - Example: "user_42"
+   - Player joins their own user room
+   - Used for targeted messages to specific player
+
+USAGE:
+------
+- Broadcast to both players in game:
+  socketio.emit('game_update', data, room=room_code)
+
+- Send to specific player:
+  socketio.emit('opponent_joined', data, room=f"user_{player1_id}")
+
+- Broadcast to everyone (lobby):
+  socketio.emit('lobby_updated', {}, to=None)
+
+================================================================================
+                         GAME STATE STRUCTURE
+================================================================================
+
+STATE OBJECT:
+-------------
+{
+    'phase': 'ATTACK' | 'DEFENSE' | 'RULE8',
+    'attacker': 0 | 1,  // Player index
+    'defender': 0 | 1,  // Player index
+    'attack_card': "K♠",  // Current attack card
+    'attack_card_value': 13,  // Numeric value
+    'game_over': false,
+    'winner': null | 0 | 1,
+    'ui_log': [...],  // Array of messages for display
+    'attack_pile': ["K♠", "3♥", "10♦"],  // Cards in play
+    'players': [
+        {
+            'hand': ["A♣", "7♠", "Q♥", ...]  // Player 0's cards
+        },
+        {
+            'hand': ["2♦", "9♣", "J♠", ...]  // Player 1's cards
+        }
+    ],
+    'hands': {
+        0: ["A♣", "7♠", "Q♥", ...],
+        1: ["2♦", "9♣", "J♠", ...]
+    }
+}
+
+================================================================================
+                             FILE STRUCTURE
+================================================================================
+
+BACKEND FILES:
+--------------
+app.py                                  - Flask application & routes
+controllers/multiplayer_controller.py  - Socket.IO event handlers
+controllers/flask_controller.py        - Game action wrapper
+game/manager.py                        - Game lifecycle management
+game/engine.py                         - Core game logic
+database.py                            - Database models & init
+
+FRONTEND FILES:
+---------------
+templates/game.html                    - Single-player game (opponent selection)
+templates/lobby.html                   - Multiplayer lobby
+templates/game_multiplayer.html        - Multiplayer game interface
+
+static/js/game-start.js                - Game start modal logic
+static/js/multiplayer.js               - Lobby Socket.IO client
+static/js/game-multiplayer.js          - Game Socket.IO client
+
+================================================================================
+                          COMPLETE FLOW SUMMARY
+================================================================================
+
+1. USER SELECTS MULTIPLAYER
+   - game.html: User selects "Live_Game" from dropdown
+   - JavaScript redirects to /lobby
+
+2. LOBBY PAGE LOADS
+   - app.py: /lobby route renders lobby.html
+   - Auto-awards free cash if needed
+   - Socket.IO connects and requests lobby data
+
+3. GET LOBBY DATA
+   - Client emits 'get_lobby'
+   - Server queries available rooms from database
+   - Server emits 'lobby_data' with room list
+   - Client updates UI with available rooms
+
+4A. CREATE ROOM PATH
+   - User enters bet and clicks "Create Room"
+   - Client emits 'create_room' with bet details
+   - Server validates balance, creates GameRoom record
+   - Room status set to 'waiting'
+   - Server emits 'room_created' to creator
+   - Lobby refreshes, room appears in available list
+
+4B. JOIN ROOM PATH
+   - User clicks "Join Game" on a room
+   - Client emits 'join_room' with room_code
+   - Server validates room exists and can be joined
+   - Server updates room with player2_id
+   - Server notifies player1: 'opponent_joined'
+   - Server notifies player2: 'room_joined'
+   - Server emits 'game_starting' to both
+   - Background task starts 3-second countdown
+
+5. GAME INITIALIZATION
+   - After 3 seconds, background task runs
+   - Bets deducted from both players
+   - GameManager creates new game engine
+   - BetSession created to track wager
+   - GameRoom updated: status='in_progress', game_id set
+   - Initial game state retrieved
+   - Server emits 'game_started' to both players
+   - Both clients redirect to /game/<room_code>
+
+6. GAME PAGE LOADS
+   - app.py: /game/<room_code> route renders game_multiplayer.html
+   - Socket.IO client connects
+   - Client emits 'reconnect_to_room'
+
+7. RECONNECT & GET STATE
+   - Server validates user is in room
+   - Server updates connection status
+   - Server retrieves current game state
+   - Server emits 'game_update' with full state
+   - Client renders UI: cards, attack zone, turn indicator, timer
+
+8. GAMEPLAY LOOP
+   - Player performs action (attack/defend/draw)
+   - Client emits 'game_action' with action type and data
+   - Server validates it's player's turn
+   - Server executes action through FlaskGameController
+   - Game engine updates state
+   - Server determines new turn player
+   - Server broadcasts 'game_update' to both players
+   - Both UIs update simultaneously
+   - Turn timer resets
+   - Loop continues until game_over
+
+9. GAME OVER
+   - After action results in game_over=true
+   - Server calls handle_game_over()
+   - Winner determined, prizes awarded
+   - Player stats updated
+   - GameRoom marked completed
+   - Server emits 'game_over' to both players
+   - Clients show result message
+   - Players can return to lobby
+
+10. RETURN TO LOBBY
+   - User clicks to return to lobby
+   - Browser redirects to /lobby
+   - Process can start again
+
+================================================================================
+                         SOCKET.IO EVENT REFERENCE
+================================================================================
+
+CLIENT → SERVER EVENTS:
+-----------------------
+get_lobby              - Request list of available rooms
+create_room            - Create new game room
+join_room              - Join existing room
+reconnect_to_room      - Reconnect to active game
+game_action            - Perform game action (attack/defend/draw)
+request_pause          - Request to pause game
+approve_pause          - Approve/reject pause request
+resume_game            - Resume paused game
+
+SERVER → CLIENT EVENTS:
+-----------------------
+connected              - Connection established
+error                  - Error message
+lobby_data             - Available rooms and active games
+room_created           - Room successfully created
+opponent_joined        - Opponent joined your room
+game_starting          - Game countdown started
+game_started           - Game initialized, redirect to game page
+room_joined            - Successfully joined room
+game_update            - Game state update (main gameplay event)
+game_over              - Game completed
+opponent_disconnected  - Opponent lost connection
+opponent_reconnected   - Opponent reconnected
+turn_timeout           - Turn time expired
+game_paused            - Game paused
+pause_requested        - Opponent requesting pause
+pause_approved         - Pause approved
+pause_rejected         - Pause rejected
+game_resumed           - Game resumed
+lobby_updated          - Refresh lobby (broadcast to all)
+
+================================================================================
+                              END OF DOCUMENT
+================================================================================

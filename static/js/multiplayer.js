@@ -9,6 +9,7 @@ const socket = io({
     reconnectionDelay: 1000,
     reconnectionAttempts: 5
 });
+
 // expose socket to page-level scripts so multiplayer-client.js can reuse it
 window.socket = socket;
 

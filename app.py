@@ -87,10 +87,13 @@ def get_player_fake_balance():
             print("[APP] player current balance: ", player.fake_balance)
             return player.fake_balance
 
-    # No logged-in user: fall back to demo/in-memory player
+    # No logged-in user: fall back to a per-browser-session practice player
+    # (NOT the old shared demo player -- that meant every guest saw and spent
+    # the same balance as every other guest on the server).
     try:
         from models.player import get_or_create_demo_player
-        demo = get_or_create_demo_player()
+        from controllers.session_controller import _get_practice_session_key
+        demo = get_or_create_demo_player(_get_practice_session_key())
         # ensure demo has free cash if expired or empty
         if not getattr(demo, 'is_fake_cash_valid', lambda: False)() or getattr(demo, 'fake_balance', 0) <= 0:
             try:

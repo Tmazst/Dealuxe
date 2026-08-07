@@ -46,10 +46,16 @@ class Player:
         return datetime.now() < self.fake_balance_expires_at
     
     def award_free_cash(self):
-        """Award free cash for 24 hours with random amounts"""
+        """Award free cash for 24 hours with random amounts.
+
+        Returns (amount_awarded, target_amount) -- session_controller.py's
+        claim_free_cash route unpacks this return value; previously this method
+        returned None (implicit), so that route raised a TypeError on every call.
+        """
         self.fake_balance = GameConfig.get_random_free_cash()
         self.fake_cash_target = GameConfig.get_random_free_target()
         self.fake_balance_expires_at = datetime.now() + GameConfig.get_free_cash_expiry()
+        return self.fake_balance, self.fake_cash_target
     
     def deduct_bet(self, amount: float, bet_type: str) -> bool:
         """Deduct bet amount from appropriate balance"""
@@ -109,6 +115,10 @@ class Player:
 _players = {}
 _next_player_id = 1
 
+# Maps a per-browser-session key -> practice player id, so each guest/user gets
+# their own isolated practice wallet instead of everyone sharing player id 1.
+_session_to_player_id = {}
+
 
 def create_player(name: str, email: str, phone: str) -> Player:
     """Create a new player"""
@@ -124,13 +134,39 @@ def get_player(player_id: int) -> Optional[Player]:
     return _players.get(player_id)
 
 
-def get_or_create_demo_player() -> Player:
-    """Get or create a demo player for testing"""
-    # For now, return player 1 or create it
+def get_or_create_demo_player(session_key: Optional[str] = None) -> Player:
+    """Get or create a practice-mode (in-memory, fake-currency-only) player.
+
+    IMPORTANT: callers should always pass a stable per-browser-session
+    `session_key` (see session_controller.py's _get_practice_session_key()),
+    so each guest/user gets their own isolated practice wallet.
+
+    Previously this always returned/created a single global player with id 1,
+    which meant every concurrent guest shared the same balance -- one
+    person's win or loss silently affected everyone else's practice money.
+
+    Calling this with no session_key falls back to the old single shared
+    'Demo Player' -- kept only so any caller that hasn't been updated yet
+    doesn't crash; new/updated call sites should always pass session_key.
+    """
+    if session_key:
+        existing_id = _session_to_player_id.get(session_key)
+        if existing_id is not None and existing_id in _players:
+            return _players[existing_id]
+
+        player = create_player("Guest", "", "")
+        # Practice mode is fake-currency only -- keep real_balance at 0 so a
+        # 'real' bet can never accidentally succeed against a practice wallet.
+        player.real_balance = 0.0
+        player.award_free_cash()
+        _session_to_player_id[session_key] = player.id
+        return player
+
+    # Legacy fallback: single shared demo player (id 1). Do not use for new code.
     if 1 in _players:
         return _players[1]
-    
+
     player = create_player("Demo Player", "demo@example.com", "7600000000")
-    player.real_balance = 5000.0  # Demo starting balance
+    player.real_balance = 0.0  # practice mode: no real-money stakes
     player.award_free_cash()  # Also award free cash
     return player

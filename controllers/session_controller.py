@@ -4,6 +4,7 @@ Handles bet session creation, completion, and player balance management
 """
 
 from flask import Blueprint, request, jsonify
+from flask import session as flask_session
 from datetime import datetime
 import uuid
 
@@ -12,6 +13,30 @@ from models.player import get_or_create_demo_player, get_player
 from models.bet_session import create_session, get_session_by_game, get_session
 
 session_bp = Blueprint('session', __name__)
+
+
+def _get_practice_session_key():
+    """Stable key identifying who owns a practice-mode wallet.
+
+    Logged-in users get a key derived from their user_id (so their practice
+    wallet stays consistent across requests); guests get a random id stored
+    in their Flask session cookie the first time they're seen. Either way,
+    two different browsers/users never collide on the same in-memory Player
+    the way the old hardcoded get_or_create_demo_player() did.
+
+    NOTE: imported as `flask_session` (not `session`) because several routes
+    below already use the local variable name `session` for BetSession
+    objects -- importing Flask's session as `session` would shadow it.
+    """
+    user_id = flask_session.get('user_id')
+    if user_id:
+        return f"user:{user_id}"
+
+    key = flask_session.get('practice_guest_key')
+    if not key:
+        key = f"guest:{uuid.uuid4().hex}"
+        flask_session['practice_guest_key'] = key
+    return key
 
 
 @session_bp.route('/api/session/create', methods=['POST'])
@@ -65,7 +90,7 @@ def create_game_session():
         # Get or create player
         player_id = data.get('player_id')
         if not player_id:
-            player = get_or_create_demo_player()
+            player = get_or_create_demo_player(_get_practice_session_key())
             player_id = player.id
         else:
             player = get_player(player_id)
@@ -234,7 +259,7 @@ def get_player_balance():
         
         # Get or create player
         if not player_id:
-            player = get_or_create_demo_player()
+            player = get_or_create_demo_player(_get_practice_session_key())
         else:
             player = get_player(player_id)
             if not player:
@@ -295,7 +320,7 @@ def claim_free_cash():
         
         # Get or create player
         if not player_id:
-            player = get_or_create_demo_player()
+            player = get_or_create_demo_player(_get_practice_session_key())
         else:
             player = get_player(player_id)
             if not player:
