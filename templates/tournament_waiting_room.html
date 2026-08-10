@@ -4,39 +4,103 @@
     <meta charset="utf-8">
     <title>Tournament Waiting Room</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; background: #111; color: #f5f5f5; }
-      .panel { background: #1f1f1f; padding: 1rem 1.2rem; border-radius: 8px; margin-bottom: 1rem; }
-      button { padding: 0.65rem; border-radius: 6px; border: none; background: #2f7cf6; color: white; cursor: pointer; }
-      .chip { display: inline-block; background: #2a2a2a; padding: 0.35rem 0.6rem; border-radius: 999px; margin-right: 0.4rem; }
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #09101f; color: #eef2ff; }
+      .page { max-width: 980px; margin: auto; padding: 2rem; }
+      .hero { display: grid; gap: 1rem; grid-template-columns: minmax(260px, 1fr) 320px; margin-bottom: 1.5rem; }
+      .panel { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 1.5rem; }
+      .panel h1 { margin-top: 0; font-size: 2rem; }
+      .detail-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.65rem; }
+      .detail-list li { display: flex; justify-content: space-between; color: #c7d1eb; }
+      .button-group { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 1.2rem; }
+      .button { border: none; border-radius: 999px; padding: 0.95rem 1.3rem; cursor: pointer; font-weight: 700; }
+      .button.primary { background: #4f8cff; color: white; }
+      .button.secondary { background: rgba(255,255,255,0.08); color: #eef2ff; }
+      .section { margin-bottom: 1.4rem; }
+      .section h2 { margin: 0 0 0.8rem; font-size: 1.1rem; color: #d9e2ff; }
+      .modifier { display: inline-flex; gap: 0.4rem; align-items: center; padding: 0.5rem 0.8rem; border-radius: 999px; background: rgba(79,140,255,0.12); color: #b8d4ff; font-size: 0.95rem; }
+      .match-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 1rem; margin-bottom: 1rem; }
+      .match-card strong { display: block; margin-bottom: 0.4rem; }
+      .meta { color: #9fb1d4; font-size: 0.95rem; }
+      a { color: #7ec8ff; text-decoration: none; }
     </style>
   </head>
   <body>
-    <div class="panel">
-      <h1 id="tournament-name">Tournament</h1>
-      <p id="tournament-meta"></p>
-      <button onclick="lockTournament()">Lock Tournament</button>
-    </div>
-    <div class="panel">
-      <h3>Registered Players</h3>
-      <div id="participants">Loading…</div>
+    <div class="page">
+      <div class="hero">
+        <div class="panel">
+          <h1 id="tournament-name">Tournament Waiting Room</h1>
+          <p id="tournament-description">Join the competition, view your pending fixtures, and follow the bracket ahead of play.</p>
+          <ul class="detail-list">
+            <li><span>Status</span><strong id="status-text">Loading...</strong></li>
+            <li><span>Players</span><strong id="player-count">–</strong></li>
+            <li><span>Prize pool</span><strong id="prize-pool">–</strong></li>
+            <li><span>Entry fee</span><strong id="entry-fee">–</strong></li>
+          </ul>
+          <div class="button-group">
+            <button class="button primary" id="join-button">Join Tournament</button>
+            <button class="button secondary" id="bracket-button">View Bracket</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Your position</h2>
+          <p class="meta" id="position-text">Check-in to see which match is next and who you will face.</p>
+          <div class="match-card" id="next-match-card">
+            <strong>Next match</strong>
+            <div class="meta" id="next-match-detail">Loading upcoming match info…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Upcoming fixtures</h2>
+        <div id="next-fixtures"></div>
+      </div>
     </div>
     <script>
-      const tournamentId = window.location.pathname.split('/').filter(Boolean).pop();
+      const tournamentId = Number(window.location.pathname.split('/').filter(Boolean).pop());
+      const joinButton = document.getElementById('join-button');
+      const bracketButton = document.getElementById('bracket-button');
+      bracketButton.addEventListener('click', () => window.location.href = `/tournaments/${tournamentId}/bracket`);
 
       async function loadTournament() {
-        const response = await fetch(`/api/tournaments/${tournamentId}`);
-        const data = await response.json();
-        document.getElementById('tournament-name').textContent = data.tournament.tournament_name;
-        document.getElementById('tournament-meta').textContent = `Type: ${data.tournament.tournament_type} • Status: ${data.tournament.status}`;
+        const resp = await fetch(`/api/tournaments/${tournamentId}/overview`);
+        const data = await resp.json();
+        const tournament = data.tournament;
+
+        document.getElementById('tournament-name').textContent = tournament.tournament_name;
+        document.getElementById('status-text').textContent = tournament.status.replace('_', ' ');
+        document.getElementById('player-count').textContent = `${data.stats.participant_count}/${tournament.max_players}`;
+        document.getElementById('prize-pool').textContent = tournament.prize_pool_amount;
+        document.getElementById('entry-fee').textContent = tournament.entry_fee;
+        document.getElementById('position-text').textContent = tournament.status === 'open' ? 'Register now to secure your spot.' : 'Tournament underway or closed; watch the bracket for updates.';
+
+        const nextContainer = document.getElementById('next-fixtures');
+        nextContainer.innerHTML = '';
+        if (!data.next_matches.length) {
+          nextContainer.innerHTML = '<div class="match-card">No upcoming fixtures yet.</div>';
+        } else {
+          data.next_matches.forEach(match => {
+            const card = document.createElement('div');
+            card.className = 'match-card';
+            card.innerHTML = `
+              <strong>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</strong>
+              <div class="meta">${match.status} · ${match.scheduled_for ? new Date(match.scheduled_for).toLocaleString() : 'Unscheduled'}</div>
+            `;
+            nextContainer.appendChild(card);
+          });
+        }
+
+        const nextMatchDetail = document.getElementById('next-match-detail');
+        if (data.next_matches[0]) {
+          nextMatchDetail.textContent = `${data.next_matches[0].player1_name || 'TBD'} vs ${data.next_matches[0].player2_name || 'TBD'} at ${data.next_matches[0].scheduled_for ? new Date(data.next_matches[0].scheduled_for).toLocaleString() : 'TBD'}`;
+        } else {
+          nextMatchDetail.textContent = 'No match scheduled yet.';
+        }
       }
 
-      async function lockTournament() {
-        const response = await fetch(`/api/tournaments/${tournamentId}/lock`, { method: 'POST' });
-        const data = await response.json();
-        alert(data.message || data.error || 'Done');
-        loadTournament();
-      }
-
+      joinButton.addEventListener('click', () => {
+        alert('Tournament join flow is not yet implemented in this version.');
+      });
       loadTournament();
     </script>
   </body>

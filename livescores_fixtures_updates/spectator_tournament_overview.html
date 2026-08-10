@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Spectator Tournament Overview</title>
+    <style>
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #070b16; color: #edf2ff; }
+      .page { max-width: 1280px; margin: auto; padding: 2rem; }
+      .hero { display: grid; gap: 1rem; grid-template-columns: minmax(280px, 1fr) minmax(320px, 420px); margin-bottom: 1.5rem; }
+      .panel { background: radial-gradient(circle at top left, rgba(79,140,255,0.14), transparent 40%), #0f162b; border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 1.5rem; box-shadow: 0 28px 80px rgba(0,0,0,0.22); }
+      h1, h2, h3 { margin: 0 0 1rem; }
+      .summary-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; margin-bottom: 1rem; }
+      .stat { background: rgba(255,255,255,0.05); border-radius: 18px; padding: 1rem; }
+      .stat strong { display: block; font-size: 1.35rem; margin-bottom: 0.4rem; }
+      .status-chip { display: inline-flex; align-items: center; padding: 0.5rem 0.85rem; border-radius: 999px; background: rgba(79,140,255,0.14); color: #b8d4ff; font-weight: 600; }
+      .status-open { background: rgba(102,255,184,0.14); color: #8ef1c3; }
+      .status-locked { background: rgba(255,208,117,0.16); color: #ffdc8b; }
+      .status-in_progress { background: rgba(114,177,255,0.16); color: #d7e6ff; }
+      .status-completed { background: rgba(157,158,255,0.16); color: #dbe0ff; }
+      .status-cancelled { background: rgba(255,118,118,0.16); color: #ffb1b1; }
+      .section { margin-bottom: 1.5rem; }
+      .section h2 { font-size: 1.2rem; margin-bottom: 1rem; }
+      .list-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 1rem; margin-bottom: 1rem; }
+      .list-card strong { display: block; margin-bottom: 0.3rem; }
+      .chip { display: inline-flex; gap: 0.3rem; align-items: center; padding: 0.4rem 0.75rem; border-radius: 999px; background: rgba(255,255,255,0.06); font-size: 0.95rem; }
+      .bracket-grid { display: flex; gap: 1.2rem; overflow-x: auto; padding-bottom: 0.6rem; }
+      .round-column { min-width: 260px; display: flex; flex-direction: column; gap: 0.9rem; }
+      .round-column h3 { font-size: 1rem; margin-bottom: 0.75rem; }
+      .match-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(113,138,255,0.12); border-radius: 18px; padding: 1rem; }
+      .match-card .players { display: grid; gap: 0.45rem; }
+      .player-line { display: flex; justify-content: space-between; font-size: 0.95rem; }
+      .match-status { margin-top: 0.8rem; font-size: 0.88rem; color: #9fb2d6; }
+      .match-status span { font-weight: 600; }
+      .table { width: 100%; border-collapse: collapse; }
+      .table th, .table td { padding: 0.85rem 0.9rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .table th { text-align: left; color: #a6b4d9; }
+      .table td { font-size: 0.95rem; }
+      a { color: #7ec8ff; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="hero">
+        <div class="panel">
+          <h1 id="tournament-name">Tournament overview</h1>
+          <p id="tournament-description">Spectate fixtures, results, and the tournament flow to the finals.</p>
+          <div class="summary-grid">
+            <div class="stat">
+              <strong id="status-label">Status</strong>
+              <span id="status-chip" class="status-chip">Loading...</span>
+            </div>
+            <div class="stat">
+              <strong>Players</strong>
+              <span id="player-count">–</span>
+            </div>
+            <div class="stat">
+              <strong>Prize pool</strong>
+              <span id="prize-pool">–</span>
+            </div>
+            <div class="stat">
+              <strong>Matches</strong>
+              <span id="match-summary">–</span>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Quick actions</h2>
+          <div class="list-card"><strong>Tournament</strong><span id="tournament-meta"></span></div>
+          <div class="list-card"><strong>Spectate</strong> Use this page to follow fixtures, explore completed results, and see upcoming matches.</div>
+          <div class="list-card"><a id="bracket-link" href="">Open bracket view</a></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Next fixtures</h2>
+        <div id="next-fixtures"></div>
+      </div>
+
+      <div class="section">
+        <h2>Recent results</h2>
+        <div id="recent-results"></div>
+      </div>
+
+      <div class="section">
+        <h2>Bracket flow</h2>
+        <div id="bracket-grid" class="bracket-grid">Loading bracket…</div>
+      </div>
+
+      <div class="section">
+        <h2>Participants</h2>
+        <div id="participant-list"></div>
+      </div>
+    </div>
+    <script>
+      const tournamentId = Number(window.location.pathname.split('/').filter(Boolean).pop());
+      const bracketLink = document.getElementById('bracket-link');
+      bracketLink.href = `/spectators/tournaments/${tournamentId}/bracket`;
+
+      function renderMatchCard(match) {
+        const card = document.createElement('div');
+        card.className = 'match-card';
+        card.innerHTML = `
+          <div class="players">
+            <div class="player-line"><span>${match.player1_name || 'TBD'}</span></div>
+            <div class="player-line"><span>${match.player2_name || 'TBD'}</span></div>
+          </div>
+          <div class="match-status"><span>${match.status.toUpperCase()}</span> · ${match.win_type || 'No result yet'}</div>
+        `;
+        return card;
+      }
+
+      async function loadOverview() {
+        const resp = await fetch(`/api/tournaments/${tournamentId}/overview`);
+        const data = await resp.json();
+        const tournament = data.tournament;
+
+        document.getElementById('tournament-name').textContent = tournament.tournament_name;
+        document.getElementById('tournament-meta').textContent = `Type: ${tournament.tournament_type} • Created: ${new Date(tournament.created_at).toLocaleDateString()}`;
+        document.getElementById('player-count').textContent = data.stats.participant_count;
+        document.getElementById('prize-pool').textContent = tournament.prize_pool_amount;
+        document.getElementById('match-summary').textContent = `${data.stats.completed_matches}/${data.stats.total_matches} completed`;
+        const statusChip = document.getElementById('status-chip');
+        statusChip.textContent = tournament.status.replace('_', ' ');
+        statusChip.className = `status-chip status-${tournament.status.replace(/\s+/g, '_')}`;
+
+        const nextContainer = document.getElementById('next-fixtures');
+        nextContainer.innerHTML = '';
+        if (data.next_matches.length === 0) {
+          nextContainer.innerHTML = '<div class="list-card">No upcoming fixtures yet.</div>';
+        } else {
+          data.next_matches.forEach(match => {
+            const card = document.createElement('div');
+            card.className = 'list-card';
+            card.innerHTML = `<strong>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</strong><div class="meta">Status: ${match.status} · Scheduled: ${match.scheduled_for ? new Date(match.scheduled_for).toLocaleString() : 'TBD'}</div>`;
+            nextContainer.appendChild(card);
+          });
+        }
+
+        const resultsContainer = document.getElementById('recent-results');
+        resultsContainer.innerHTML = '';
+        if (data.recent_results.length === 0) {
+          resultsContainer.innerHTML = '<div class="list-card">No completed results yet.</div>';
+        } else {
+          data.recent_results.forEach(match => {
+            const card = document.createElement('div');
+            card.className = 'list-card';
+            card.innerHTML = `<strong>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</strong><div class="meta">Winner: ${match.winner_name || 'TBD'} · Completed: ${match.completed_at ? new Date(match.completed_at).toLocaleString() : 'N/A'}</div>`;
+            resultsContainer.appendChild(card);
+          });
+        }
+
+        const bracketGrid = document.getElementById('bracket-grid');
+        bracketGrid.innerHTML = '';
+        if (!data.rounds.length) {
+          bracketGrid.innerHTML = '<div class="list-card">Bracket has not been generated yet.</div>';
+        } else {
+          data.rounds.forEach(round => {
+            const column = document.createElement('div');
+            column.className = 'round-column';
+            column.innerHTML = `<h3>${round.round_name}</h3>`;
+            round.matches.forEach(match => column.appendChild(renderMatchCard(match)));
+            bracketGrid.appendChild(column);
+          });
+        }
+
+        const participantList = document.getElementById('participant-list');
+        participantList.innerHTML = data.participants.length ? data.participants.map(p => `
+          <div class="list-card"><strong>${p.username || 'Unknown'}</strong> · Status: ${p.status} · Paid: ${p.paid_amount || 0}</div>
+        `).join('') : '<div class="list-card">No registered participants yet.</div>';
+      }
+
+      loadOverview();
+    </script>
+  </body>
+</html>

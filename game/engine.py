@@ -37,7 +37,7 @@ But if the defender defended well e.g. with [7,5] the game would proceed normall
 When the attacker is left with winning cards i.e. any of [A,2,3] but they are more 3 lets with 5 cards [A,2,2,3,A].
 The attacker must drop each card until they reach 3. But during trail they attacker should pray that 
 defender must not have any of the cards they at a time, if the defender have the card dropped in their HAND, 
-they are allowed to crash the trail. The will proceed normally after a successful crash.
+they are allowed to crash the trail. The game will proceed normally after a successful crash.
 
 Note: DEALUXE WIN, CRAZY ESCAPE WIN, TRAIL WIN are triggered by defender_draw method and ESCAPE WIN is triggered by defence method.
 '''

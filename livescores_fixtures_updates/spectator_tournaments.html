@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Live Tournament Center</title>
+    <style>
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #070b16; color: #f3f6fb; }
+      .page { max-width: 1200px; margin: auto; padding: 2rem; }
+      h1, h2, h3 { margin: 0 0 1rem; }
+      .toolbar { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-bottom: 1.5rem; }
+      .toolbar input { flex: 1 1 260px; padding: 0.85rem 1rem; border-radius: 999px; border: 1px solid #2f3b56; background: #121826; color: #f3f6fb; }
+      .toolbar button { padding: 0.85rem 1.4rem; border: none; border-radius: 999px; background: #4f8cff; color: white; cursor: pointer; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap: 1rem; }
+      .card { background: linear-gradient(180deg, rgba(18,24,42,0.95), rgba(12,16,30,0.95)); border: 1px solid rgba(79,140,255,0.18); border-radius: 18px; padding: 1.3rem; box-shadow: 0 28px 60px rgba(0,0,0,0.16); }
+      .card h3 { margin-top: 0; color: #b3d2ff; }
+      .chip { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.75rem; border-radius: 999px; background: rgba(79,140,255,0.12); font-size: 0.95rem; }
+      .status-open { color: #7ee787; }
+      .status-locked { color: #ffd56f; }
+      .status-in_progress { color: #73d8ff; }
+      .status-completed { color: #8d9cff; }
+      .status-cancelled { color: #ff7a7a; }
+      .card button { margin-top: 1rem; width: 100%; padding: 0.9rem; border: none; border-radius: 12px; background: #4f8cff; color: white; cursor: pointer; }
+      .card button.secondary { background: #223149; }
+      .meta { color: #a6b5d8; margin-top: 0.6rem; line-height: 1.6; }
+      a { color: #7ec8ff; text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <h1>Live Tournament Center</h1>
+      <p>Browse all active tournaments, follow fixtures, and jump into the bracket flow.</p>
+      <div class="toolbar">
+        <input id="searchInput" placeholder="Search tournament name, code or status" />
+        <button id="reloadButton">Refresh</button>
+      </div>
+      <div class="grid" id="tournament-list"></div>
+      <div id="empty-state" style="margin-top:1rem;color:#9aa7c5"></div>
+    </div>
+    <script>
+      const searchInput = document.getElementById('searchInput');
+      const list = document.getElementById('tournament-list');
+      const empty = document.getElementById('empty-state');
+
+      async function loadTournaments() {
+        const resp = await fetch('/api/tournaments');
+        const data = await resp.json();
+        const tournaments = (data.tournaments || []).filter(t => {
+          const query = searchInput.value.trim().toLowerCase();
+          return !query || [t.tournament_name, t.tournament_code, t.status].some(v => String(v).toLowerCase().includes(query));
+        });
+
+        if (!tournaments.length) {
+          list.innerHTML = '';
+          empty.textContent = 'No tournaments match the selected filters.';
+          return;
+        }
+
+        empty.textContent = '';
+        list.innerHTML = tournaments.map(t => {
+          const statusClass = `status-${t.status.replace(/\s+/g, '_')}`;
+          return `
+            <div class="card">
+              <h3>${t.tournament_name}</h3>
+              <div class="chip ${statusClass}">${t.status.replace('_', ' ').toUpperCase()}</div>
+              <div class="meta">
+                Code: ${t.tournament_code}<br>
+                Type: ${t.tournament_type}<br>
+                Entry fee: ${t.entry_fee}<br>
+                Players: ${t.current_player_count}/${t.max_players}<br>
+                Prize pool: ${t.prize_pool_amount}
+              </div>
+              <button onclick="location.href='/spectators/tournaments/${t.id}'">View Fixtures</button>
+              <button class="secondary" onclick="location.href='/spectators/tournaments/${t.id}/bracket'">View Bracket</button>
+            </div>`;
+        }).join('');
+      }
+
+      document.getElementById('reloadButton').addEventListener('click', loadTournaments);
+      searchInput.addEventListener('input', loadTournaments);
+      loadTournaments();
+    </script>
+  </body>
+</html>

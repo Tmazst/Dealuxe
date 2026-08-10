@@ -9,23 +9,37 @@ except Exception:
     pass
 
 from flask import Flask, render_template, request, jsonify, session
-
 from flask_socketio import SocketIO
 from game.manager_redis import GameManager
 from controllers.flask_controller import FlaskGameController
 from controllers.session_controller import session_bp
-from controllers.auth_controller import auth_bp
+from controllers.auth_controller import auth_bp, admin_required
 from controllers.tournament_controller import tournament_bp
+from admin.routes import admin_bp
 from Forms import  *
 from database import db, init_db
 from database import Player
 from werkzeug.middleware.proxy_fix import ProxyFix
+from jinja2 import ChoiceLoader, FileSystemLoader
+from config import PaymentConfig
 import os
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1,x_proto=1)
 
+# allow Flask to load spectator templates from the livescores_fixtures_updates folder
+app.jinja_loader = ChoiceLoader([
+    app.jinja_loader,
+    FileSystemLoader(os.path.join(app.root_path, 'livescores_fixtures_updates')),
+])
+
 app.config['SECRET_KEY'] = 'fght6hg234g5f6g7h8j9o0p'
+
+# -----------------------------
+# PAYMENT (MojaPOS) CONFIGURATION
+# -----------------------------
+
+app.config.from_object(PaymentConfig)
 
 # -----------------------------
 # SOCKETIO INITIALIZATION
@@ -59,6 +73,7 @@ init_db(app)
 app.register_blueprint(session_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(tournament_bp)
+app.register_blueprint(admin_bp)
 
 # -----------------------------
 # GAME MANAGER (GLOBAL)
@@ -121,6 +136,12 @@ def get_balance():
     fake_bal = get_player_fake_balance()
     return jsonify({"player_fake_bal":fake_bal})
 
+@app.route("/admin")
+@admin_required
+def admin_page():
+    return render_template('admin.html')
+
+
 @app.route("/lobby")
 def lobby():
     """Multiplayer lobby - show user balance and available rooms"""
@@ -159,6 +180,221 @@ def tournament_waiting_room_page(tournament_id):
 @app.route("/tournaments/<int:tournament_id>/bracket")
 def tournament_bracket_page(tournament_id):
     return render_template("tournament_bracket.html")
+
+
+@app.route("/spectators/tournaments")
+def spectator_tournaments_page():
+    return render_template("spectator_tournaments.html")
+
+
+@app.route("/spectators/tournaments/<int:tournament_id>")
+def spectator_tournament_overview_page(tournament_id):
+    return render_template("spectator_tournament_overview.html")
+
+
+@app.route("/spectators/tournaments/<int:tournament_id>/bracket")
+def spectator_tournament_bracket_page(tournament_id):
+    return render_template("spectator_tournament_bracket.html")
+
+
+# -----------------------------
+# PAYMENT CALLBACK (MojaPOS)
+# -----------------------------
+
+from services.payment_service import payment_service
+from database import (
+    Tournament,
+    TournamentParticipant,
+    TournamentPrizePool,
+    Player,
+    WithdrawalRequest,
+    Transaction,
+)
+
+
+@app.route('/api/payment/callback', methods=['POST'])
+def payment_callback():
+    """
+    Receive and verify a callback from MojaPOS.
+
+    Expected payload (from MojaPOS):
+    {
+        'transaction_id': 'mojapos_txn_123',
+        'reference': 'entry_123_timestamp',
+        'status': 'completed'|'failed'|'pending',
+        'amount': 10.00,
+        'phone_number': '+268...',
+        'timestamp': '...',
+        'metadata': {...}
+    }
+
+    Headers: X-Signature (HMAC-SHA256)
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        signature = request.headers.get('X-Signature')
+
+        if not payload or not signature:
+            return jsonify({'error': 'Missing payload or signature'}), 400
+
+        if not payment_service.verify_callback_signature(payload, signature):
+            print("[PAYMENT] Invalid callback signature - rejected")
+            return jsonify({'error': 'Invalid signature'}), 401
+
+        mojapos_txn_id = payload.get('transaction_id')
+        status = payload.get('status')
+        metadata = payload.get('metadata') or {}
+        transaction_type = metadata.get('transaction_type')
+
+        # Idempotency: skip if this external transaction was already processed.
+        if mojapos_txn_id:
+            already = Transaction.query.filter_by(
+                    description=mojapos_txn_id).first()
+            if already:
+                return jsonify({'status': 'received'}), 200
+
+        # Route to the correct handler.
+        if transaction_type == 'tournament_entry':
+            _handle_entry_fee_callback(payload)
+        elif transaction_type == 'prize_payout':
+            _handle_prize_payout_callback(payload)
+        elif transaction_type == 'wallet_topup':
+            _handle_wallet_topup_callback(payload)
+        else:
+            print(f"[PAYMENT] Unknown transaction type: {transaction_type}")
+            return jsonify({'error': 'Unknown transaction type'}), 400
+
+        return jsonify({'status': 'received'}), 200
+
+    except Exception as e:
+        print(f"[PAYMENT] Callback processing error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+def _handle_entry_fee_callback(payload):
+    """Process a completed/failed tournament-entry payment callback."""
+    from datetime import datetime as _dt
+    status = payload.get('status')
+    metadata = payload.get('metadata') or {}
+
+    try:
+        transaction_id = int(metadata.get('transaction_id'))
+        user_id = int(metadata.get('user_id'))
+    except (TypeError, ValueError):
+        print("[PAYMENT] Entry callback missing transaction_id/user_id metadata")
+        return
+
+    tournament_code = metadata.get('tournament_code')
+    transaction = Transaction.query.get(transaction_id)
+
+    if transaction is None:
+        print(f"[PAYMENT] Transaction {transaction_id} not found")
+        return
+
+    # Record the external transaction id for idempotency.
+    transaction.description = payload.get('transaction_id') or transaction.description
+
+    if status == 'completed':
+        tournament = None
+        if tournament_code:
+            tournament = Tournament.query.filter_by(
+                tournament_code=tournament_code).first()
+
+        if tournament:
+            participant = TournamentParticipant.query.filter_by(
+                tournament_id=tournament.id,
+                user_id=user_id,
+            ).first()
+            if participant:
+                participant.payment_status = 'completed'
+                participant.payment_completed_at = _dt.utcnow()
+                participant.transaction_id = payload.get('transaction_id')
+                participant.external_payment_id = metadata.get('reference')
+                participant.status = 'registered'
+
+                tournament.current_player_count += 1
+                tournament.prize_pool_amount += tournament.entry_fee
+
+                if (tournament.is_auto_lock
+                        and tournament.current_player_count >= tournament.max_players):
+                    tournament.status = 'locked'
+                    tournament.locked_at = _dt.utcnow()
+                    tournament.locked_player_count = tournament.current_player_count
+    else:
+        # Refund the prepaid amount on failure.
+        player = Player.query.filter_by(user_id=user_id).first()
+        if player is not None and transaction.amount > 0:
+            player.real_balance += transaction.amount
+        participant = TournamentParticipant.query.filter_by(
+            tournament_id=tournament_id_filter(tournament_code),
+            user_id=user_id,
+        ).first() if tournament_code else None
+        if participant:
+            participant.payment_status = 'failed'
+
+    db.session.commit()
+
+
+def _handle_prize_payout_callback(payload):
+    """Process a prize-payout callback (mark withdrawal complete/failed)."""
+    from datetime import datetime as _dt
+    status = payload.get('status')
+    metadata = payload.get('metadata') or {}
+
+    try:
+        withdrawal_request_id = int(metadata.get('withdrawal_request_id'))
+    except (TypeError, ValueError):
+        print("[PAYMENT] Payout callback missing withdrawal_request_id")
+        return
+
+    withdrawal = WithdrawalRequest.query.get(withdrawal_request_id)
+    if withdrawal is None:
+        print(f"[PAYMENT] Withdrawal {withdrawal_request_id} not found")
+        return
+
+    withdrawal.transaction_id = payload.get('transaction_id')
+    if status == 'completed':
+        withdrawal.status = 'completed'
+
+        prize_pool = TournamentPrizePool.query.filter_by(
+            tournament_id=withdrawal.tournament_id,
+            user_id=withdrawal.user_id,
+        ).first()
+        if prize_pool:
+            prize_pool.status = 'withdrawn'
+            prize_pool.withdrawal_date = _dt.utcnow()
+    else:
+        withdrawal.status = 'failed'
+
+    db.session.commit()
+
+
+def _handle_wallet_topup_callback(payload):
+    """Process a wallet-topup callback (credit the player's wallet)."""
+    status = payload.get('status')
+    amount = payload.get('amount') or 0
+    metadata = payload.get('metadata') or {}
+
+    try:
+        user_id = int(metadata.get('user_id'))
+    except (TypeError, ValueError):
+        print("[PAYMENT] Topup callback missing user_id")
+        return
+
+    if status == 'completed':
+        player = Player.query.filter_by(user_id=user_id).first()
+        if player is not None and amount > 0:
+            player.real_balance += amount
+
+    db.session.commit()
+
+
+def tournament_id_filter(tournament_code):
+    """Return the tournament id for a code, or None."""
+    if not tournament_code:
+        return None
+    t = Tournament.query.filter_by(tournament_code=tournament_code).first()
+    return t.id if t else None
 
 
 # -----------------------------

@@ -2,6 +2,7 @@
 Game Configuration
 Centralized settings for the Dealuxe card game
 """
+import os
 import random
 from datetime import timedelta
 
@@ -52,3 +53,39 @@ class DatabaseConfig:
     """Database configuration"""
     DATABASE_PATH = 'dealuxe_game.db'
     ECHO_SQL = False  # Set to True for debugging
+
+
+class PaymentConfig:
+    """MojaPOS payment gateway configuration.
+
+    Values may come from class defaults or environment variables. The
+    downstream `MojaPOSService` reads these through Flask's app config, so
+    `app.config.from_object(PaymentConfig)` (or an equivalent mapping) is
+    expected at startup.
+    """
+
+    # MojaPOS API base URL. Use the sandbox endpoint in development.
+    MOJAPOS_API_URL = os.environ.get(
+        'MOJAPOS_API_URL',
+        'https://sandbox.mojapos.com/v1'
+    )
+
+    # MojaPOS credentials (keep out of source control in production).
+    MOJAPOS_API_KEY = os.environ.get('MOJAPOS_API_KEY', '')
+    MOJAPOS_MERCHANT_ID = os.environ.get('MOJAPOS_MERCHANT_ID', '')
+    MOJAPOS_SECRET_KEY = os.environ.get('MOJAPOS_SECRET_KEY', '')
+
+    # Publicly reachable callback URL (must be HTTPS in production).
+    MOJAPOS_CALLBACK_URL = os.environ.get(
+        'MOJAPOS_CALLBACK_URL',
+        'https://dealuxe.app/api/payment/callback'
+    )
+
+    # Shared secret used to verify inbound MojaPOS callback signatures.
+    MOJAPOS_WEBHOOK_SECRET = os.environ.get('MOJAPOS_WEBHOOK_SECRET', '')
+
+    # Local-debit mock path toggle. When True, tournament entry is charged
+    # directly from the wallet (sandbox/mock) instead of the real gateway.
+    MOJAPOS_MOCK_MODE = os.environ.get('MOJAPOS_MOCK_MODE', 'true').lower() in (
+        '1', 'true', 'yes', 'on'
+    )

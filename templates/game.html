@@ -146,7 +146,7 @@
                     <span id="final-balance">0.00 SZL</span>
                 </div>
             </div>
-            <button class="btn-glass new-game-btn" onclick="location.reload()">New Game</button>
+            <button class="btn-glass new-game-btn" onclick="safeReload()">New Game</button>
         </div>
     </div>
 </div>
@@ -404,7 +404,7 @@
         <h2><i class="fa-solid fa-lock"></i> Login Required</h2>
         <p>You need to be logged in to play multiplayer games. Please login or create an account to continue.</p>
         <div class="modal-buttons">
-            <a href="{{ url_for('auth.login', next='/') }}" class="modal-btn modal-btn-primary"><i class="fa-solid fa-right-to-bracket"></i> Login</a>
+            <a href="{{ url_for('auth.login', next=request.path) }}" class="modal-btn modal-btn-primary"><i class="fa-solid fa-right-to-bracket"></i> Login</a>
             <button onclick="closeLoginModal()" class="modal-btn modal-btn-secondary">Cancel</button>
         </div>
     </div>

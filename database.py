@@ -143,7 +143,12 @@ class Player(db.Model):
     losses = db.Column(db.Integer, default=0)
     total_wagered = db.Column(db.Float, default=0.0)
     total_winnings = db.Column(db.Float, default=0.0)
-    
+
+    # Daily spending limit (E50 / 24h) — regulatory requirement
+    daily_spending_limit = db.Column(db.Float, default=50.0)
+    daily_spending_amount = db.Column(db.Float, default=0.0)
+    last_spending_reset = db.Column(db.DateTime, nullable=True)
+
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -161,7 +166,7 @@ class Player(db.Model):
                                        backref='player1_user',
                                        lazy='dynamic')
     
-    # Multiplayer rooms as player 2
+# Multiplayer rooms as player 2
     rooms_as_player2 = db.relationship('GameRoom',
                                        primaryjoin='Player.user_id==GameRoom.player2_id',
                                        foreign_keys='GameRoom.player2_id',
@@ -192,7 +197,26 @@ class Player(db.Model):
         self.fake_cash_target = GameConfig.get_random_free_target()
         self.fake_balance_expires_at = datetime.utcnow() + GameConfig.get_free_cash_expiry()
         db.session.commit()
-    
+
+    def _rollover_daily_spending(self):
+        """Reset the daily spending accumulator if the 24-hour window has elapsed."""
+        if self.last_spending_reset:
+            time_since_reset = datetime.utcnow() - self.last_spending_reset
+            if time_since_reset.total_seconds() > 86400:  # 24 hours
+                self.daily_spending_amount = 0.0
+                self.last_spending_reset = datetime.utcnow()
+
+    def can_spend(self, amount):
+        """Check whether the player may spend `amount` within the E50/24h daily limit."""
+        self._rollover_daily_spending()
+        return (self.daily_spending_amount + amount) <= self.daily_spending_limit
+
+    def deduct_spending(self, amount):
+        """Record spending against the daily limit (call after the charge succeeds)."""
+        self._rollover_daily_spending()
+        self.daily_spending_amount += amount
+        self.last_spending_reset = self.last_spending_reset or datetime.utcnow()
+
     def deduct_bet(self, amount, bet_type):
         """Deduct bet amount from appropriate balance"""
         from config import GameConfig

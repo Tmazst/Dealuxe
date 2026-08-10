@@ -2,25 +2,75 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <title>Tournament Bracket</title>
+    <title>Player Bracket</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; background: #111; color: #f5f5f5; }
-      .panel { background: #1f1f1f; padding: 1rem 1.2rem; border-radius: 8px; margin-bottom: 1rem; }
-      .match { background: #2a2a2a; padding: 0.8rem; border-radius: 8px; margin-bottom: 0.6rem; }
-      button { padding: 0.65rem; border-radius: 6px; border: none; background: #2f7cf6; color: white; cursor: pointer; }
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0c1120; color: #eef0ff; }
+      .page { max-width: 1080px; margin: auto; padding: 2rem; }
+      .toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+      .toolbar a { color: #8fc9ff; text-decoration: none; border: 1px solid rgba(143,201,255,0.22); padding: 0.85rem 1rem; border-radius: 999px; }
+      .panel { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 1.5rem; }
+      .header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+      .header h1 { margin: 0; font-size: 2rem; }
+      .subtext { color: #a7b0d7; }
+      .bracket-grid { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
+      .round-column { min-width: 220px; display: grid; gap: 1rem; }
+      .round-column h2 { margin: 0; font-size: 1rem; color: #c8d5ff; }
+      .match-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(84,143,255,0.18); border-radius: 18px; padding: 1rem; }
+      .player-line { display: flex; justify-content: space-between; padding: 0.25rem 0; }
+      .player-line span:first-child { color: #dce3ff; }
+      .match-status { margin-top: 0.75rem; color: #9dacd6; font-size: 0.92rem; }
+      .win-label { font-weight: 700; color: #8bceff; }
     </style>
   </head>
   <body>
-    <div class="panel">
-      <h1>Bracket</h1>
-      <div id="bracket">Loading…</div>
+    <div class="page">
+      <div class="toolbar">
+        <a href="/tournaments">Back to waiting room</a>
+        <a id="overview-link" href="#">Tournament overview</a>
+      </div>
+      <div class="panel">
+        <div class="header">
+          <div>
+            <h1>Player Bracket</h1>
+            <p class="subtext" id="tournament-subtext">Loading bracket details…</p>
+          </div>
+        </div>
+        <div id="bracket-grid" class="bracket-grid">Loading bracket…</div>
+      </div>
     </div>
     <script>
-      const tournamentId = window.location.pathname.split('/').filter(Boolean).pop();
+      const pathSegments = window.location.pathname.split('/').filter(Boolean);
+      const tournamentId = Number(pathSegments[pathSegments.length - 2]);
+      document.getElementById('overview-link').href = `/tournaments/${tournamentId}`;
+
+      function createMatchCard(match) {
+        const card = document.createElement('div');
+        card.className = 'match-card';
+        card.innerHTML = `
+          <div class="player-line"><span>${match.player1_name || 'TBD'}</span><span>${match.winner_name === match.player1_name ? '<span class="win-label">WIN</span>' : ''}</span></div>
+          <div class="player-line"><span>${match.player2_name || 'TBD'}</span><span>${match.winner_name === match.player2_name ? '<span class="win-label">WIN</span>' : ''}</span></div>
+          <div class="match-status">${match.status.toUpperCase()}${match.winner_name ? ` · Winner: ${match.winner_name}` : ''}</div>
+        `;
+        return card;
+      }
+
       async function loadBracket() {
-        const response = await fetch(`/api/tournaments/${tournamentId}/generate-bracket`, { method: 'POST' });
-        const data = await response.json();
-        document.getElementById('bracket').innerHTML = `<p>${data.message}</p><p>Matches generated: ${data.bracket_count}</p>`;
+        const resp = await fetch(`/api/tournaments/${tournamentId}/overview`);
+        const data = await resp.json();
+        document.getElementById('tournament-subtext').textContent = data.tournament.tournament_name;
+        const grid = document.getElementById('bracket-grid');
+        grid.innerHTML = '';
+        if (!data.rounds.length) {
+          grid.innerHTML = '<div style="padding:1rem; color:#9aa7c5;">Bracket has not been generated yet.</div>';
+          return;
+        }
+        data.rounds.forEach(round => {
+          const column = document.createElement('div');
+          column.className = 'round-column';
+          column.innerHTML = `<h2>${round.round_name}</h2>`;
+          round.matches.forEach(match => column.appendChild(createMatchCard(match)));
+          grid.appendChild(column);
+        });
       }
       loadBracket();
     </script>

@@ -2,15 +2,10 @@ from flask import jsonify
 from controllers.ai_controller import SimpleAIController
 
 class FlaskGameController:
-    def __init__(self, engine):
-        self.engine = engine
-        # By default run AI (used for human_vs_ai mode). Callers can disable AI by
-        # passing run_ai=False when constructing this controller (e.g. multiplayer).
-        self._run_ai_enabled = True
-        self.ai = SimpleAIController(engine, player_id=1)
-
     def __init__(self, engine, run_ai=True, ai_player_id=1):
         self.engine = engine
+        # AI is enabled by default (used for human_vs_ai mode). Callers can disable
+        # AI by passing run_ai=False when constructing this controller (e.g. multiplayer).
         self._run_ai_enabled = bool(run_ai)
         self.ai = SimpleAIController(engine, player_id=ai_player_id) if self._run_ai_enabled else None
 

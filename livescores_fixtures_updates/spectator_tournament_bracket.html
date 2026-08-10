@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Spectator Bracket View</title>
+    <style>
+      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #050815; color: #eef2ff; }
+      .page { max-width: 1280px; margin: auto; padding: 2rem; }
+      .header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+      .header h1 { margin: 0; font-size: 2rem; }
+      .status { color: #99a7d4; }
+      .bracket { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
+      .round { min-width: 260px; display: grid; gap: 1rem; }
+      .round h2 { margin: 0; font-size: 1rem; color: #cad4ff; }
+      .match { background: rgba(255,255,255,0.05); border: 1px solid rgba(106,139,255,0.18); border-radius: 18px; padding: 1rem; box-shadow: 0 18px 40px rgba(0,0,0,0.18); }
+      .match span { display: block; font-size: 0.95rem; margin-bottom: 0.55rem; }
+      .match strong { font-size: 1.05rem; display: block; margin-bottom: 0.65rem; }
+      .match .result { color: #a7b3da; font-size: 0.92rem; }
+      .aside { display: grid; gap: 1rem; min-width: 320px; }
+      .panel { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 1.3rem; }
+      .panel h3 { margin-top: 0; color: #d7e5ff; }
+      .panel p { margin: 0.65rem 0 0; line-height: 1.6; color: #b3c3dc; }
+      .table { width: 100%; border-collapse: collapse; }
+      .table th, .table td { padding: 0.8rem 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .table th { text-align: left; color: #9eb6e3; font-size: 0.95rem; }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="header">
+        <div>
+          <h1>Bracket Flow</h1>
+          <div class="status" id="tournament-status">Loading tournament data…</div>
+        </div>
+        <a href="/spectators/tournaments">Back to center</a>
+      </div>
+      <div class="bracket" id="bracket-container"></div>
+      <div class="aside">
+        <div class="panel">
+          <h3>Current overview</h3>
+          <div id="overview-details"><p>Loading bracket details…</p></div>
+        </div>
+        <div class="panel">
+          <h3>Match winners</h3>
+          <table class="table" id="winner-table"><thead><tr><th>Match</th><th>Winner</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+    <script>
+      const tournamentId = Number(window.location.pathname.split('/').filter(Boolean).pop());
+      async function loadBracket() {
+        const res = await fetch(`/api/tournaments/${tournamentId}/overview`);
+        const data = await res.json();
+        const overview = data.tournament;
+        document.getElementById('tournament-status').textContent = `${overview.tournament_name} · ${overview.status.replace('_', ' ')}`;
+
+        const bracketContainer = document.getElementById('bracket-container');
+        bracketContainer.innerHTML = '';
+        const rounds = data.rounds || [];
+        if (!rounds.length) {
+          bracketContainer.innerHTML = '<div style="color:#9aa7c5">Bracket is not ready yet.</div>';
+          return;
+        }
+
+        rounds.forEach(round => {
+          const roundEl = document.createElement('div');
+          roundEl.className = 'round';
+          roundEl.innerHTML = `<h2>${round.round_name}</h2>`;
+          round.matches.forEach(match => {
+            const matchEl = document.createElement('div');
+            matchEl.className = 'match';
+            matchEl.innerHTML = `
+              <strong>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</strong>
+              <span>Status: ${match.status}</span>
+              <span class="result">${match.winner_name ? `Winner: ${match.winner_name}` : 'Winner: pending'}</span>
+            `;
+            roundEl.appendChild(matchEl);
+          });
+          bracketContainer.appendChild(roundEl);
+        });
+
+        const details = document.getElementById('overview-details');
+        details.innerHTML = `
+          <p><strong>Type:</strong> ${overview.tournament_type}</p>
+          <p><strong>Matches:</strong> ${data.stats.completed_matches}/${data.stats.total_matches} completed</p>
+          <p><strong>Players:</strong> ${data.stats.participant_count}</p>
+        `;
+
+        const winnerTable = document.getElementById('winner-table').querySelector('tbody');
+        winnerTable.innerHTML = '';
+        data.rounds.flatMap(r => r.matches).filter(m => m.winner_name).forEach(match => {
+          const row = document.createElement('tr');
+          row.innerHTML = `<td>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</td><td>${match.winner_name}</td>`;
+          winnerTable.appendChild(row);
+        });
+      }
+      loadBracket();
+    </script>
+  </body>
+</html>

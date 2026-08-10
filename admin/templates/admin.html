@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 24px; background: #f7f8fb; color: #222; }
+        .panel { background: white; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        h1, h2 { margin-top: 0; }
+        table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+        th, td { border: 1px solid #e0e5ee; padding: 8px; text-align: left; }
+        th { background: #f3f6fb; }
+        button { margin-right: 8px; margin-top: 4px; }
+        .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+        .status { font-size: 0.95em; color: #555; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+        .summary-card { background: #f3f6fb; border-radius: 10px; padding: 14px; }
+        .summary-card strong { display: block; font-size: 1.2rem; margin-top: 6px; }
+        .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #e3eeff; color: #2953bb; font-size: 0.82rem; }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <h1>Admin Dashboard</h1>
+        <p class="status" id="status">Loading...</p>
+        <div class="summary-grid" id="summaryGrid"></div>
+    </div>
+
+    <div class="panel">
+        <div class="controls">
+            <label>
+                Search users:
+                <input type="text" id="searchInput" placeholder="username or email">
+            </label>
+            <button id="searchButton">Search</button>
+            <button id="reloadButton">Reload</button>
+        </div>
+        <h2>Users</h2>
+        <table id="usersTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Active</th>
+                    <th>Admin</th>
+                    <th>Real Balance</th>
+                    <th>Fake Balance</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Tournaments</h2>
+        <table id="tournamentsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Code</th>
+                    <th>Status</th>
+                    <th>Players</th>
+                    <th>Entry Fee</th>
+                    <th>Prize Pool</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const usersTableBody = document.querySelector('#usersTable tbody');
+        const tournamentsTableBody = document.querySelector('#tournamentsTable tbody');
+        const searchInput = document.getElementById('searchInput');
+        const summaryGrid = document.getElementById('summaryGrid');
+
+        async function fetchDashboard() {
+            const response = await fetch('/api/admin/dashboard', { credentials: 'same-origin' });
+            if (!response.ok) {
+                return;
+            }
+            const data = await response.json();
+            summaryGrid.innerHTML = `
+                <div class="summary-card"><span class="pill">Users</span><strong>${data.total_users}</strong></div>
+                <div class="summary-card"><span class="pill">Active</span><strong>${data.active_users}</strong></div>
+                <div class="summary-card"><span class="pill">Tournaments</span><strong>${data.total_tournaments}</strong></div>
+                <div class="summary-card"><span class="pill">Open</span><strong>${data.open_tournaments}</strong></div>
+            `;
+        }
+
+        async function fetchUsers(search = '') {
+            statusEl.textContent = 'Loading users...';
+            const url = '/api/admin/users' + (search ? `?search=${encodeURIComponent(search)}` : '');
+            const response = await fetch(url, { credentials: 'same-origin' });
+            if (!response.ok) {
+                const error = await response.json();
+                statusEl.textContent = 'Error: ' + (error.error || response.statusText);
+                return;
+            }
+            const data = await response.json();
+            renderUsers(data.users || []);
+            statusEl.textContent = `Loaded ${data.users.length} users.`;
+        }
+
+        async function fetchTournaments() {
+            const response = await fetch('/api/admin/tournaments', { credentials: 'same-origin' });
+            if (!response.ok) {
+                return;
+            }
+            const data = await response.json();
+            renderTournaments(data.tournaments || []);
+        }
+
+        function renderUsers(users) {
+            usersTableBody.innerHTML = '';
+            users.forEach(user => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${user.id}</td>
+                    <td>${user.username}</td>
+                    <td>${user.email}</td>
+                    <td>${user.is_active ? 'Yes' : 'No'}</td>
+                    <td>${user.is_admin ? 'Yes' : 'No'}</td>
+                    <td><input type="number" step="0.01" value="${user.real_balance ?? 0}" data-field="real_balance"></td>
+                    <td><input type="number" step="0.01" value="${user.fake_balance ?? 0}" data-field="fake_balance"></td>
+                    <td>
+                        <button data-action="toggleActive" data-id="${user.id}">${user.is_active ? 'Disable' : 'Enable'}</button>
+                        <button data-action="toggleAdmin" data-id="${user.id}">${user.is_admin ? 'Revoke Admin' : 'Make Admin'}</button>
+                        <button data-action="saveBalances" data-id="${user.id}">Save</button>
+                    </td>
+                `;
+                usersTableBody.appendChild(row);
+            });
+        }
+
+        function renderTournaments(tournaments) {
+            tournamentsTableBody.innerHTML = '';
+            tournaments.forEach(tournament => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${tournament.id}</td>
+                    <td>${tournament.tournament_name}</td>
+                    <td>${tournament.tournament_code}</td>
+                    <td>${tournament.status}</td>
+                    <td>${tournament.current_player_count}/${tournament.max_players}</td>
+                    <td>${tournament.entry_fee}</td>
+                    <td>${tournament.prize_pool_amount}</td>
+                    <td>
+                        <button data-action="lockTournament" data-id="${tournament.id}">Lock</button>
+                        <button data-action="startTournament" data-id="${tournament.id}">Start</button>
+                        <button data-action="cancelTournament" data-id="${tournament.id}">Cancel</button>
+                    </td>
+                `;
+                tournamentsTableBody.appendChild(row);
+            });
+        }
+
+        async function sendUserUpdate(userId, payload) {
+            const response = await fetch(`/api/admin/users/${userId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Request failed');
+            }
+            return response.json();
+        }
+
+        async function sendTournamentAction(tournamentId, action) {
+            const response = await fetch(`/api/admin/tournaments/${tournamentId}/${action}`, {
+                method: 'POST',
+                credentials: 'same-origin',
+            });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Request failed');
+            }
+            return response.json();
+        }
+
+        document.addEventListener('click', async event => {
+            const button = event.target.closest('button');
+            if (!button) return;
+
+            const action = button.dataset.action;
+            const userId = button.dataset.id;
+            const row = button.closest('tr');
+
+            try {
+                if (action === 'toggleActive') {
+                    const currentActive = button.textContent.includes('Disable');
+                    await sendUserUpdate(userId, { is_active: !currentActive });
+                }
+                if (action === 'toggleAdmin') {
+                    const currentAdmin = button.textContent.includes('Revoke Admin');
+                    await sendUserUpdate(userId, { is_admin: !currentAdmin });
+                }
+                if (action === 'saveBalances') {
+                    const realBalance = parseFloat(row.querySelector('input[data-field="real_balance"]').value || 0);
+                    const fakeBalance = parseFloat(row.querySelector('input[data-field="fake_balance"]').value || 0);
+                    await sendUserUpdate(userId, { real_balance: realBalance, fake_balance: fakeBalance });
+                }
+                if (action === 'lockTournament') {
+                    await sendTournamentAction(userId, 'lock');
+                }
+                if (action === 'startTournament') {
+                    await sendTournamentAction(userId, 'start');
+                }
+                if (action === 'cancelTournament') {
+                    await sendTournamentAction(userId, 'cancel');
+                }
+                await fetchDashboard();
+                await fetchUsers(searchInput.value.trim());
+                await fetchTournaments();
+            } catch (err) {
+                statusEl.textContent = 'Update failed: ' + err.message;
+            }
+        });
+
+        document.getElementById('searchButton').addEventListener('click', () => {
+            fetchUsers(searchInput.value.trim());
+        });
+        document.getElementById('reloadButton').addEventListener('click', () => {
+            searchInput.value = '';
+            fetchUsers();
+        });
+
+        fetchDashboard();
+        fetchUsers();
+        fetchTournaments();
+    </script>
+</body>
+</html>

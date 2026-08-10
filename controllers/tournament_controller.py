@@ -10,6 +10,7 @@ from database import (
     TournamentBracket,
     TournamentMatch,
     TournamentPrizePool,
+    Transaction,
     User,
     Player,
     create_tournament_record,
@@ -28,18 +29,28 @@ def _get_current_user_id():
     return session.get('user_id')
 
 
-def _charge_tournament_entry(user_id, amount, tournament_id):
-    """Charge a user for tournament entry when wallet balance is available."""
-    player = Player.query.filter_by(user_id=user_id).first()
-    if player is None:
-        return True, None
+# Official entry fee (scope mandates E10 per player, server-enforced).
+ENTRY_FEE = 10.00
 
-    if player.real_balance < amount:
-        return False, 'Insufficient balance'
+# Allowed tournament sizes per type (scope mandates these exact sizes).
+MAX_PLAYERS_BY_TYPE = {'standard': 4, 'premium': 8, 'deluxe': 16}
 
+
+def _is_payment_mock_mode():
+    """Return True when the local-debit (sandbox/mock) path should be used."""
+    try:
+        from flask import current_app
+        return bool(current_app.config.get('MOJAPOS_MOCK_MODE', True))
+    except Exception:
+        return True
+
+
+def _local_debit_entry(player, amount, tournament_id):
+    """Sandbox/mock: debit the wallet directly and record the transaction."""
     balance_before = player.real_balance
     player.real_balance -= amount
     player.total_wagered += amount
+    player.deduct_spending(amount)
     log_transaction(
         player_id=player.id,
         transaction_type='tournament_entry',
@@ -51,6 +62,91 @@ def _charge_tournament_entry(user_id, amount, tournament_id):
         tournament_id=tournament_id,
     )
     return True, None
+
+
+def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=None):
+    """Charge a user for tournament entry.
+
+    Enforces the E50/24h daily-spend limit (regulatory requirement) before any
+    debit. In **mock mode** (default) the wallet is debited directly. When the
+    real MojaPOS gateway is enabled, a pending transaction is created and a
+    payment is initiated with MojaPOS; the wallet debit + final join happens
+    only after the gateway confirms via callback.
+
+    Returns a tuple ``(ok, payload)`` where ``payload`` is either an error
+    message (when ``ok`` is False) or a result dict (when ``ok`` is True). The
+    result dict includes ``payment_required`` (bool) and, when a real gateway
+    call is made, ``payment_url`` / ``transaction_id`` for the client to
+    complete the payment.
+    """
+    player = Player.query.filter_by(user_id=user_id).first()
+    if player is None:
+        return True, {'payment_required': False}
+
+    if not player.can_spend(amount):
+        return False, 'Daily spending limit reached (E50/day)'
+
+    if _is_payment_mock_mode():
+        if player.real_balance < amount:
+            return False, 'Insufficient balance'
+        ok, err = _local_debit_entry(player, amount, tournament_id)
+        return ok, {'payment_required': False, 'error': err}
+
+    # ---- Real MojaPOS path: create a pending transaction and initiate ----
+    if player.real_balance < amount:
+        return False, 'Insufficient balance'
+
+    from services.payment_service import payment_service
+
+    # Reserve the funds (hold) as a pending transaction; full debit happens on
+    # callback confirmation.
+    transaction = Transaction(
+        player_id=player.id,
+        transaction_type='tournament_entry',
+        amount=amount,
+        balance_type='real',
+        balance_before=player.real_balance,
+        balance_after=player.real_balance,
+        tournament_id=tournament_id,
+        description=f'Tournament entry #{tournament_id} (pending)',
+    )
+    db.session.add(transaction)
+    db.session.flush()
+
+    phone_number = _get_user_phone(user_id)
+
+    result = payment_service.initiate_tournament_entry_payment(
+        transaction_id=transaction.id,
+        user_id=user_id,
+        amount=amount,
+        phone_number=phone_number,
+        tournament_code=tournament_code or '',
+    )
+
+    if not result.get('success'):
+        transaction.status = 'failed'
+        db.session.commit()
+        return False, result.get('error', 'Payment initiation failed')
+
+    transaction.description = result.get('external_transaction_id') or transaction.description
+    db.session.commit()
+
+    return True, {
+        'payment_required': True,
+        'payment_url': result.get('payment_url'),
+        'transaction_id': transaction.id,
+        'external_transaction_id': result.get('external_transaction_id'),
+        'amount': amount,
+    }
+
+
+def _get_user_phone(user_id):
+    """Return a user's phone/mobile-money number if set, else an empty string."""
+    user = User.query.get(user_id)
+    if user and user.phone:
+        return user.phone
+    player = Player.query.filter_by(user_id=user_id).first()
+    return getattr(player, 'phone', '') or ''
 
 
 def _ensure_prize_pool(tournament):
@@ -215,6 +311,92 @@ def _build_bracket(tournament):
     return TournamentBracket.query.filter_by(tournament_id=tournament.id).all()
 
 
+def _get_username(user_id):
+    if not user_id:
+        return None
+    user = User.query.get(user_id)
+    return user.username if user else None
+
+
+def _serialize_participant(participant):
+    return {
+        'user_id': participant.user_id,
+        'username': _get_username(participant.user_id),
+        'status': participant.status,
+        'payment_status': participant.payment_status,
+        'paid_amount': participant.paid_amount,
+        'registered_at': participant.registered_at.isoformat() if participant.registered_at else None,
+    }
+
+
+def _serialize_bracket(bracket):
+    return {
+        'id': bracket.id,
+        'round_number': bracket.round_number,
+        'round_name': bracket.round_name,
+        'match_number': bracket.match_number,
+        'player1_id': bracket.player1_id,
+        'player2_id': bracket.player2_id,
+        'player1_name': _get_username(bracket.player1_id),
+        'player2_name': _get_username(bracket.player2_id),
+        'status': bracket.status,
+        'winner_id': bracket.winner_id,
+        'winner_name': _get_username(bracket.winner_id),
+        'match_id': bracket.match_id,
+        'started_at': bracket.started_at.isoformat() if bracket.started_at else None,
+        'completed_at': bracket.completed_at.isoformat() if bracket.completed_at else None,
+    }
+
+
+def _serialize_match(match):
+    return {
+        'id': match.id,
+        'bracket_id': match.bracket_id,
+        'player1_id': match.player1_id,
+        'player2_id': match.player2_id,
+        'player1_name': _get_username(match.player1_id),
+        'player2_name': _get_username(match.player2_id),
+        'status': match.status,
+        'winner_id': match.winner_id,
+        'loser_id': match.loser_id,
+        'winner_name': _get_username(match.winner_id),
+        'bet_amount': match.bet_amount,
+        'card_count': match.card_count,
+        'scheduled_for': match.scheduled_for.isoformat() if match.scheduled_for else None,
+        'started_at': match.started_at.isoformat() if match.started_at else None,
+        'completed_at': match.completed_at.isoformat() if match.completed_at else None,
+        'win_type': match.win_type,
+    }
+
+
+def _build_rounds(tournament):
+    brackets = TournamentBracket.query.filter_by(tournament_id=tournament.id).order_by(
+        TournamentBracket.round_number, TournamentBracket.match_number
+    ).all()
+    rounds = {}
+    for bracket in brackets:
+        entry = _serialize_bracket(bracket)
+        rounds.setdefault(bracket.round_number, {
+            'round_number': bracket.round_number,
+            'round_name': bracket.round_name,
+            'matches': []
+        })['matches'].append(entry)
+    return [rounds[key] for key in sorted(rounds.keys())]
+
+
+def _tournament_stats(tournament, matches, participants):
+    completed = sum(1 for m in matches if m.status == 'completed')
+    scheduled = sum(1 for m in matches if m.status in {'scheduled', 'pending'})
+    return {
+        'participant_count': len(participants),
+        'total_matches': len(matches),
+        'completed_matches': completed,
+        'scheduled_matches': scheduled,
+        'current_status': tournament.status,
+        'prize_pool_amount': tournament.prize_pool_amount,
+    }
+
+
 def _finalize_tournament(tournament):
     """Award prizes to 1st/2nd/3rd, credit wallets, and finalize the tournament."""
     placements = {
@@ -295,15 +477,20 @@ def create_tournament():
     data = request.get_json(silent=True) or {}
     tournament_type = data.get('tournament_type', 'standard')
     tournament_name = data.get('tournament_name') or f"{tournament_type.title()} Tournament"
-    entry_fee = float(data.get('entry_fee', 10.0))
-    max_players = int(data.get('max_players') or {'standard': 4, 'premium': 8, 'deluxe': 16}.get(tournament_type, 4))
 
     if tournament_type not in {'standard', 'premium', 'deluxe'}:
         return jsonify({'error': 'Invalid tournament type'}), 400
 
-    paid, error_message = _charge_tournament_entry(user_id, entry_fee, None)
+    # Server-enforced business rules (C3): E10 entry fee + fixed size per type.
+    entry_fee = ENTRY_FEE
+    max_players = MAX_PLAYERS_BY_TYPE.get(tournament_type, 4)
+
+    paid, charge_result = _charge_tournament_entry(
+        user_id, entry_fee, None, tournament_code=None
+    )
     if not paid:
-        return jsonify({'error': error_message}), 402
+        error_msg = charge_result if isinstance(charge_result, str) else (charge_result or {}).get('error')
+        return jsonify({'error': error_msg}), 402
 
     tournament = create_tournament_record(
         creator_id=user_id,
@@ -394,6 +581,26 @@ def generate_bracket(tournament_id):
 
     brackets = _build_bracket(tournament)
     return jsonify({'message': 'Bracket generated', 'bracket_count': len(brackets)})
+
+
+@tournament_bp.route('/<int:tournament_id>/overview', methods=['GET'])
+def tournament_overview(tournament_id):
+    tournament = Tournament.query.get_or_404(tournament_id)
+    participants = TournamentParticipant.query.filter_by(tournament_id=tournament.id).all()
+    matches = TournamentMatch.query.filter_by(tournament_id=tournament.id).order_by(TournamentMatch.id.asc()).all()
+
+    next_matches = [m for m in matches if m.status in {'scheduled', 'pending'}]
+    recent_results = [m for m in matches if m.status == 'completed']
+
+    return jsonify({
+        'tournament': tournament.to_dict(),
+        'participants': [_serialize_participant(p) for p in participants],
+        'rounds': _build_rounds(tournament),
+        'matches': [_serialize_match(m) for m in matches],
+        'next_matches': [_serialize_match(m) for m in next_matches[:5]],
+        'recent_results': [_serialize_match(m) for m in recent_results[-5:]][::-1],
+        'stats': _tournament_stats(tournament, matches, participants),
+    })
 
 
 @tournament_bp.route('/<int:tournament_id>/matches/<int:match_id>/complete', methods=['POST'])
@@ -498,5 +705,9 @@ def complete_match(tournament_id, match_id):
 @tournament_bp.route('/<int:tournament_id>', methods=['GET'])
 def get_tournament(tournament_id):
     tournament = Tournament.query.get_or_404(tournament_id)
-    return jsonify({'tournament': tournament.to_dict()})
+    participants = TournamentParticipant.query.filter_by(tournament_id=tournament.id).all()
+    return jsonify({
+        'tournament': tournament.to_dict(),
+        'participants': [_serialize_participant(p) for p in participants],
+    })
 

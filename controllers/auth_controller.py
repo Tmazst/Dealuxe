@@ -23,6 +23,21 @@ def login_required(f):
     return decorated_function
 
 
+def admin_required(f):
+    """Decorator to require admin privileges for routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+
+        user = User.query.get(session['user_id'])
+        if not user or not user.is_admin:
+            return jsonify({'error': 'Admin privileges required'}), 403
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 @auth_bp.route('/register', methods=['GET', 'POST'])
 def register():
     """Register a new user (handles both form and API requests)"""
@@ -161,7 +176,7 @@ def login():
         flash('Login successful!', 'success')
         
         # Redirect to 'next' parameter or default to index
-        next_page = request.args.get('next')
+        next_page = request.form.get('next') or request.args.get('next')
         if next_page:
             return redirect(next_page)
         return redirect(url_for('index'))
