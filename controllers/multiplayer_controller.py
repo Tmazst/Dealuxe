@@ -28,6 +28,110 @@ def generate_room_code():
             return code
 
 
+def handle_game_over(room, state, socketio):
+    """Handle game completion: finalize session, award DB balances, and notify clients"""
+    winner_index = state.get('winner')
+    winner_id = room.player1_id if winner_index == 0 else room.player2_id
+    loser_id = room.player2_id if winner_index == 0 else room.player1_id
+
+    room.status = 'completed'
+    room.winner_id = winner_id
+    room.completed_at = datetime.utcnow()
+
+    winnings_awarded = 0.0
+    new_balances = {}
+
+    # Update bet session and award winnings using DB-backed Player
+    if room.bet_session_id:
+        bet_session = BetSession.query.get(room.bet_session_id)
+        if bet_session:
+            from database import get_player_by_user_id
+            # Award prize pool to winner
+            winner_player_db = get_player_by_user_id(winner_id)
+            loser_player_db = get_player_by_user_id(loser_id)
+            if winner_player_db:
+                winnings_awarded = float(bet_session.prize_pool or 0)
+                winner_player_db.award_winnings(winnings_awarded, bet_session.bet_type)
+                winner_player_db.record_game_result(won=True)
+                new_balances[winner_id] = {
+                    'real': winner_player_db.real_balance,
+                    'fake': winner_player_db.fake_balance,
+                    'fake_expires_at': winner_player_db.fake_balance_expires_at.isoformat() if winner_player_db.fake_balance_expires_at else None
+                }
+            if loser_player_db:
+                loser_player_db.record_game_result(won=False)
+                new_balances[loser_id] = {
+                    'real': loser_player_db.real_balance,
+                    'fake': loser_player_db.fake_balance,
+                    'fake_expires_at': loser_player_db.fake_balance_expires_at.isoformat() if loser_player_db.fake_balance_expires_at else None
+                }
+
+            bet_session.status = 'completed'
+            # Same FK mismatch as above: bet_session.winner_id -> players.id,
+            # so it must be winner_player_db.id, not the raw user_id.
+            bet_session.winner_id = winner_player_db.id if winner_player_db else None
+            bet_session.completed_at = datetime.utcnow()
+
+    db.session.commit()
+
+    # Check if this room is associated with a tournament match
+    tournament_info = None
+    from database import TournamentMatch
+    tournament_match = TournamentMatch.query.filter_by(game_room_id=room.id).first()
+    if tournament_match:
+        from controllers.tournament_controller import record_tournament_match_result
+        match, err = record_tournament_match_result(
+            match_id=tournament_match.id,
+            winner_id=winner_id,
+            loser_id=loser_id,
+            win_type=state.get('win_type', 'normal'),
+            started_at=tournament_match.started_at,
+        )
+        if match:
+            tournament_info = {
+                'is_tournament': True,
+                'tournament_id': match.tournament_id,
+                'match_id': match.id,
+                'bracket_url': f"/tournaments/{match.tournament_id}/bracket",
+                'status': match.status,
+            }
+
+    # Remove from active rooms
+    if room.room_code in active_rooms:
+        del active_rooms[room.room_code]
+
+    print(f"[MULTIPLAYER] Game completed in room {room.room_code}, winner: {winner_id}")
+
+    # Broadcast general game_over info to room
+    game_over_payload = {
+        'winner_id': winner_id,
+        'winner_index': winner_index,
+        'state': state,
+        'prize_pool': room.bet_amount * 2 if room.bet_session_id else 0
+    }
+    if tournament_info:
+        game_over_payload['tournament_info'] = tournament_info
+
+    socketio.emit('game_over', game_over_payload, room=room.room_code)
+
+    # Send personal balance updates to each user privately
+    try:
+        if winner_id in new_balances:
+            socketio.emit('game_over_personal', {
+                'your_user_id': winner_id,
+                'your_new_balance': new_balances[winner_id],
+                'winnings_awarded': winnings_awarded
+            }, room=f"user_{winner_id}")
+        if loser_id in new_balances:
+            socketio.emit('game_over_personal', {
+                'your_user_id': loser_id,
+                'your_new_balance': new_balances[loser_id],
+                'winnings_awarded': 0
+            }, room=f"user_{loser_id}")
+    except Exception as e:
+        print(f"[MULTIPLAYER] Failed to emit personal balances: {e}")
+
+
 def init_multiplayer_events(socketio, game_manager, app=None):
     """Initialize all SocketIO event handlers"""
     
@@ -652,83 +756,6 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             }, room=f"user_{pid}")
             print(f"[MULTIPLAYER] Emitted game_update to user_{pid}")
     
-    
-    def handle_game_over(room, state, socketio):
-        """Handle game completion: finalize session, award DB balances, and notify clients"""
-        winner_index = state.get('winner')
-        winner_id = room.player1_id if winner_index == 0 else room.player2_id
-        loser_id = room.player2_id if winner_index == 0 else room.player1_id
-
-        room.status = 'completed'
-        room.winner_id = winner_id
-        room.completed_at = datetime.utcnow()
-
-        winnings_awarded = 0.0
-        new_balances = {}
-
-        # Update bet session and award winnings using DB-backed Player
-        if room.bet_session_id:
-            bet_session = BetSession.query.get(room.bet_session_id)
-            if bet_session:
-                from database import get_player_by_user_id
-                # Award prize pool to winner
-                winner_player_db = get_player_by_user_id(winner_id)
-                loser_player_db = get_player_by_user_id(loser_id)
-                if winner_player_db:
-                    winnings_awarded = float(bet_session.prize_pool or 0)
-                    winner_player_db.award_winnings(winnings_awarded, bet_session.bet_type)
-                    winner_player_db.record_game_result(won=True)
-                    new_balances[winner_id] = {
-                        'real': winner_player_db.real_balance,
-                        'fake': winner_player_db.fake_balance,
-                        'fake_expires_at': winner_player_db.fake_balance_expires_at.isoformat() if winner_player_db.fake_balance_expires_at else None
-                    }
-                if loser_player_db:
-                    loser_player_db.record_game_result(won=False)
-                    new_balances[loser_id] = {
-                        'real': loser_player_db.real_balance,
-                        'fake': loser_player_db.fake_balance,
-                        'fake_expires_at': loser_player_db.fake_balance_expires_at.isoformat() if loser_player_db.fake_balance_expires_at else None
-                    }
-
-                bet_session.status = 'completed'
-                # Same FK mismatch as above: bet_session.winner_id -> players.id,
-                # so it must be winner_player_db.id, not the raw user_id.
-                bet_session.winner_id = winner_player_db.id if winner_player_db else None
-                bet_session.completed_at = datetime.utcnow()
-
-        db.session.commit()
-
-        # Remove from active rooms
-        if room.room_code in active_rooms:
-            del active_rooms[room.room_code]
-
-        print(f"[MULTIPLAYER] Game completed in room {room.room_code}, winner: {winner_id}")
-
-        # Broadcast general game_over info to room
-        socketio.emit('game_over', {
-            'winner_id': winner_id,
-            'winner_index': winner_index,
-            'state': state,
-            'prize_pool': room.bet_amount * 2 if room.bet_session_id else 0
-        }, room=room.room_code)
-
-        # Send personal balance updates to each user privately
-        try:
-            if winner_id in new_balances:
-                socketio.emit('game_over_personal', {
-                    'your_user_id': winner_id,
-                    'your_new_balance': new_balances[winner_id],
-                    'winnings_awarded': winnings_awarded
-                }, room=f"user_{winner_id}")
-            if loser_id in new_balances:
-                socketio.emit('game_over_personal', {
-                    'your_user_id': loser_id,
-                    'your_new_balance': new_balances[loser_id],
-                    'winnings_awarded': 0
-                }, room=f"user_{loser_id}")
-        except Exception as e:
-            print(f"[MULTIPLAYER] Failed to emit personal balances: {e}")
     
     
     @socketio.on('request_pause')

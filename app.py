@@ -14,10 +14,10 @@ from game.manager_redis import GameManager
 from controllers.flask_controller import FlaskGameController
 from controllers.session_controller import session_bp
 from controllers.auth_controller import auth_bp, admin_required
-from controllers.tournament_controller import tournament_bp
+from controllers.tournament_controller import tournament_bp, init_tournament_events
 from admin.routes import admin_bp
 from Forms import  *
-from database import db, init_db
+from database import db, init_db, Tournament, User
 from database import Player
 from werkzeug.middleware.proxy_fix import ProxyFix
 from jinja2 import ChoiceLoader, FileSystemLoader
@@ -87,6 +87,7 @@ manager = GameManager()
 
 from controllers.multiplayer_controller import init_multiplayer_events
 init_multiplayer_events(socketio, manager, app)
+init_tournament_events(socketio, app)
 
 #-------------------
 # Routes Methods
@@ -174,12 +175,26 @@ def tournaments_page():
 
 @app.route("/tournaments/<int:tournament_id>")
 def tournament_waiting_room_page(tournament_id):
-    return render_template("tournament_waiting_room.html")
+    tournament = Tournament.query.get_or_404(tournament_id)
+    user_id = session.get('user_id')
+    user = User.query.get(user_id) if user_id else None
+    is_admin = bool(user and (user.is_admin or tournament.creator_id == user_id))
+    return render_template(
+        "tournament_waiting_room.html",
+        tournament_code=tournament.tournament_code,
+        tournament_id=tournament.id,
+        is_admin=is_admin,
+    )
 
 
 @app.route("/tournaments/<int:tournament_id>/bracket")
 def tournament_bracket_page(tournament_id):
-    return render_template("tournament_bracket.html")
+    tournament = Tournament.query.get_or_404(tournament_id)
+    return render_template(
+        "tournament_bracket.html",
+        tournament_id=tournament.id,
+        tournament_code=tournament.tournament_code,
+    )
 
 
 @app.route("/spectators/tournaments")

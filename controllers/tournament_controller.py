@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 
 from flask import Blueprint, request, jsonify, session
+from flask_socketio import emit, join_room, leave_room
 
 from database import (
     db,
@@ -21,12 +22,74 @@ from database import (
 
 tournament_bp = Blueprint('tournament', __name__, url_prefix='/api/tournaments')
 
+# Set by ``init_tournament_events`` during application startup.  Keeping the
+# Socket.IO instance here lets the REST and callback-driven flows notify the
+# same clients as the WebSocket handlers.
+_socketio = None
+
 # Official prize split: 1st = 50%, 2nd = 12.5%, 3rd = 6%  (scope + schema doc)
 PRIZE_PERCENTAGES = {1: 0.50, 2: 0.125, 3: 0.06}
 
 
 def _get_current_user_id():
     return session.get('user_id')
+
+
+def _tournament_room(tournament_id):
+    return f'tournament_{tournament_id}'
+
+
+def _serialize_tournament(tournament):
+    """Return the stable, UI-facing tournament contract."""
+    current_players = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, status='registered'
+    ).count()
+    return {
+        'id': tournament.id,
+        'code': tournament.tournament_code,
+        'name': tournament.tournament_name,
+        'type': tournament.tournament_type,
+        'max_players': tournament.max_players,
+        'current_players': current_players,
+        'entry_fee': tournament.entry_fee,
+        'prize_pool': tournament.prize_pool_amount,
+        'creator': _get_username(tournament.creator_id),
+        'creator_id': tournament.creator_id,
+        'status': tournament.status,
+        'players_needed': max(tournament.max_players - current_players, 0),
+        'created_at': tournament.created_at.isoformat() if tournament.created_at else None,
+    }
+
+
+def _emit_tournament_updated(tournament):
+    """Broadcast a public tournament summary when the real-time layer exists."""
+    if _socketio is not None:
+        _socketio.emit('tournament_updated', _serialize_tournament(tournament),
+                       room=_tournament_room(tournament.id))
+        _socketio.emit('tournament_updated', _serialize_tournament(tournament), to=None)
+
+
+def _emit_match_complete(tournament, match):
+    if _socketio is not None:
+        _socketio.emit('match_complete', _serialize_match(match),
+                       room=_tournament_room(tournament.id))
+
+
+def _can_manage_tournament(tournament, user_id):
+    if not user_id:
+        return False
+    if tournament.creator_id == user_id:
+        return True
+    user = User.query.get(user_id)
+    return bool(user and user.is_admin)
+
+
+def _can_view_tournament_members(tournament, user_id):
+    if _can_manage_tournament(tournament, user_id):
+        return True
+    return TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, user_id=user_id, status='registered'
+    ).first() is not None
 
 
 # Official entry fee (scope mandates E10 per player, server-enforced).
@@ -285,8 +348,10 @@ def _build_bracket(tournament):
            and bracket.status != 'completed':
             _create_match_for_bracket(bracket, tournament)
 
-    # Third-place playoff fed by the two semi-final losers.
-    if total_rounds >= 2:
+    # A third-place game requires two real semi-final losers.  A tournament
+    # locked with only three players has a bye, so creating this row would
+    # leave it permanently unplayable and prevent finalization.
+    if total_rounds >= 2 and len(players) >= 4:
         third_bracket = TournamentBracket(
             tournament_id=tournament.id,
             round_number=total_rounds + 1,
@@ -322,11 +387,52 @@ def _serialize_participant(participant):
     return {
         'user_id': participant.user_id,
         'username': _get_username(participant.user_id),
+        'is_creator': participant.user_id == participant.tournament.creator_id,
         'status': participant.status,
         'payment_status': participant.payment_status,
         'paid_amount': participant.paid_amount,
         'registered_at': participant.registered_at.isoformat() if participant.registered_at else None,
     }
+
+
+def _withdraw_participant(tournament, participant):
+    """Withdraw a registered player before lock and refund a mock-wallet entry."""
+    if tournament.status != 'open':
+        return False, 'Tournament has already been locked'
+    if participant.status != 'registered':
+        return False, 'You are not an active tournament participant'
+    if participant.payment_status != 'completed':
+        participant.status = 'withdrawn'
+        participant.withdrew_at = datetime.utcnow()
+        return True, None
+    if not _is_payment_mock_mode():
+        return False, 'Completed mobile-money payments cannot be refunded from the waiting room'
+
+    player = Player.query.filter_by(user_id=participant.user_id).first()
+    amount = participant.paid_amount or tournament.entry_fee
+    if player is not None and amount > 0:
+        balance_before = player.real_balance
+        player.real_balance += amount
+        player.total_wagered = max(0.0, player.total_wagered - amount)
+        player.daily_spending_amount = max(0.0, player.daily_spending_amount - amount)
+        log_transaction(
+            player_id=player.id,
+            transaction_type='tournament_refund',
+            amount=amount,
+            balance_type='real',
+            balance_before=balance_before,
+            balance_after=player.real_balance,
+            description=f'Tournament entry refund #{tournament.id}',
+            tournament_id=tournament.id,
+        )
+
+    participant.status = 'withdrawn'
+    participant.payment_status = 'refunded'
+    participant.withdrew_at = datetime.utcnow()
+    tournament.current_player_count = max(0, tournament.current_player_count - 1)
+    tournament.prize_pool_amount = max(0.0, tournament.prize_pool_amount - amount)
+    _ensure_prize_pool(tournament)
+    return True, None
 
 
 def _serialize_bracket(bracket):
@@ -349,9 +455,18 @@ def _serialize_bracket(bracket):
 
 
 def _serialize_match(match):
+    room_code = None
+    if match.game_room_id:
+        from database import GameRoom
+        room = GameRoom.query.get(match.game_room_id)
+        if room:
+            room_code = room.room_code
+
     return {
         'id': match.id,
         'bracket_id': match.bracket_id,
+        'game_room_id': match.game_room_id,
+        'room_code': room_code,
         'player1_id': match.player1_id,
         'player2_id': match.player2_id,
         'player1_name': _get_username(match.player1_id),
@@ -462,10 +577,172 @@ def _maybe_finalize(tournament):
         _finalize_tournament(tournament)
 
 
+def init_tournament_events(socketio, app=None):
+    """Register the authenticated real-time tournament UI events."""
+    global _socketio
+    _socketio = socketio
+
+    def get_tournament_from_payload(data):
+        code = (data or {}).get('tournament_code')
+        if not code or not isinstance(code, str):
+            emit('tournament_error', {'message': 'Tournament code is required'})
+            return None
+        tournament = Tournament.query.filter_by(tournament_code=code.strip()).first()
+        if tournament is None:
+            emit('tournament_error', {'message': 'Tournament not found'})
+        return tournament
+
+    @socketio.on('get_tournaments')
+    def handle_get_tournaments(data=None):
+        data = data or {}
+        filter_name = data.get('filter', 'all')
+        valid_filters = {'all', 'open', 'locked', 'in_progress', 'completed'}
+        if filter_name not in valid_filters:
+            emit('tournament_error', {'message': 'Invalid tournament filter'})
+            return
+        try:
+            limit = max(1, min(int(data.get('limit', 50)), 100))
+        except (TypeError, ValueError):
+            limit = 50
+
+        query = Tournament.query.order_by(Tournament.created_at.desc())
+        if filter_name != 'all':
+            query = query.filter_by(status=filter_name)
+        tournaments = query.limit(limit).all()
+        emit('tournaments_list', {
+            'tournaments': [_serialize_tournament(t) for t in tournaments],
+            'count': len(tournaments),
+        })
+
+    @socketio.on('join_tournament_room')
+    def handle_join_tournament_room(data=None):
+        user_id = _get_current_user_id()
+        if not user_id:
+            emit('tournament_error', {'message': 'Authentication required'})
+            return
+        tournament = get_tournament_from_payload(data)
+        if tournament is None:
+            return
+        if not _can_view_tournament_members(tournament, user_id):
+            emit('tournament_error', {'message': 'Join the tournament before entering its waiting room'})
+            return
+
+        join_room(_tournament_room(tournament.id))
+        summary = _serialize_tournament(tournament)
+        emit('joined_tournament', {
+            'tournament': summary,
+            'is_creator': _can_manage_tournament(tournament, user_id),
+        })
+        emit('tournament_updated', summary)
+        emit('tournament_participants', {
+            'participants': [_serialize_participant(p) for p in TournamentParticipant.query.filter_by(
+                tournament_id=tournament.id, status='registered'
+            ).order_by(TournamentParticipant.registered_at.asc()).all()]
+        })
+
+    @socketio.on('get_tournament_participants')
+    def handle_get_tournament_participants(data=None):
+        user_id = _get_current_user_id()
+        if not user_id:
+            emit('tournament_error', {'message': 'Authentication required'})
+            return
+        tournament = get_tournament_from_payload(data)
+        if tournament is None:
+            return
+        if not _can_view_tournament_members(tournament, user_id):
+            emit('tournament_error', {'message': 'You cannot view these participants'})
+            return
+        participants = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id, status='registered'
+        ).order_by(TournamentParticipant.registered_at.asc()).all()
+        emit('tournament_participants', {
+            'participants': [_serialize_participant(p) for p in participants]
+        })
+
+    @socketio.on('request_tournament_lock')
+    def handle_request_tournament_lock(data=None):
+        user_id = _get_current_user_id()
+        tournament = get_tournament_from_payload(data)
+        if tournament is None:
+            return
+        if not _can_manage_tournament(tournament, user_id):
+            emit('tournament_error', {'message': 'Only the creator can lock this tournament'})
+            return
+        if tournament.status != 'open':
+            emit('tournament_error', {'message': 'Tournament is already locked or completed'})
+            return
+        participant_count = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id, status='registered'
+        ).count()
+        if participant_count < 2:
+            emit('tournament_error', {'message': 'At least two paid players are required'})
+            return
+
+        tournament.current_player_count = participant_count
+        tournament.status = 'locked'
+        tournament.locked_at = datetime.utcnow()
+        tournament.locked_player_count = participant_count
+        _build_bracket(tournament)
+        db.session.commit()
+
+        summary = _serialize_tournament(tournament)
+        socketio.emit('tournament_locked', {'tournament': summary}, room=_tournament_room(tournament.id))
+        _emit_tournament_updated(tournament)
+
+    @socketio.on('leave_tournament')
+    def handle_leave_tournament(data=None):
+        user_id = _get_current_user_id()
+        if not user_id:
+            emit('tournament_error', {'message': 'Authentication required'})
+            return
+        tournament = get_tournament_from_payload(data)
+        if tournament is None:
+            return
+        participant = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id, user_id=user_id
+        ).first()
+        if participant is None:
+            emit('tournament_error', {'message': 'You are not a tournament participant'})
+            return
+
+        ok, error = _withdraw_participant(tournament, participant)
+        if not ok:
+            emit('tournament_error', {'message': error})
+            return
+        db.session.commit()
+        leave_room(_tournament_room(tournament.id))
+        socketio.emit('participant_left', {
+            'user_id': user_id,
+            'username': _get_username(user_id),
+            'current_players': _serialize_tournament(tournament)['current_players'],
+        }, room=_tournament_room(tournament.id))
+        _emit_tournament_updated(tournament)
+
+    @socketio.on('start_tournament_match')
+    def handle_start_tournament_match(data=None):
+        data = data or {}
+        user_id = _get_current_user_id()
+        if not user_id:
+            emit('tournament_error', {'message': 'Authentication required'})
+            return
+        tournament_id = data.get('tournament_id')
+        match_id = data.get('match_id')
+        if not tournament_id or not match_id:
+            emit('tournament_error', {'message': 'tournament_id and match_id are required'})
+            return
+        match, response, code = start_tournament_match_helper(tournament_id, match_id, user_id=user_id)
+        if code != 200:
+            emit('tournament_error', response)
+        else:
+            emit('tournament_match_started_response', response)
+
+    return socketio
+
+
 @tournament_bp.route('', methods=['GET'])
 def list_tournaments():
     tournaments = Tournament.query.order_by(Tournament.created_at.desc()).all()
-    return jsonify({'tournaments': [t.to_dict() for t in tournaments]})
+    return jsonify({'tournaments': [_serialize_tournament(t) for t in tournaments]})
 
 
 @tournament_bp.route('/create', methods=['POST'])
@@ -485,13 +762,6 @@ def create_tournament():
     entry_fee = ENTRY_FEE
     max_players = MAX_PLAYERS_BY_TYPE.get(tournament_type, 4)
 
-    paid, charge_result = _charge_tournament_entry(
-        user_id, entry_fee, None, tournament_code=None
-    )
-    if not paid:
-        error_msg = charge_result if isinstance(charge_result, str) else (charge_result or {}).get('error')
-        return jsonify({'error': error_msg}), 402
-
     tournament = create_tournament_record(
         creator_id=user_id,
         tournament_type=tournament_type,
@@ -501,13 +771,41 @@ def create_tournament():
         is_auto_lock=data.get('is_auto_lock', False),
         locked_player_count=data.get('locked_player_count'),
     )
-    add_tournament_participant(tournament.id, user_id, payment_status='completed', paid_amount=entry_fee, payment_method='wallet')
+    participant = add_tournament_participant(
+        tournament.id, user_id, payment_status='pending', payment_method='wallet'
+    )
+    participant.status = 'pending'
+
+    paid, charge_result = _charge_tournament_entry(
+        user_id, entry_fee, tournament.id, tournament.tournament_code
+    )
+    if not paid:
+        db.session.rollback()
+        error_msg = charge_result if isinstance(charge_result, str) else (charge_result or {}).get('error')
+        return jsonify({'error': error_msg}), 402
+
+    if charge_result.get('payment_required'):
+        participant.transaction_id = str(charge_result.get('transaction_id') or '')
+        tournament.current_player_count = 0
+        tournament.prize_pool_amount = 0.0
+        db.session.commit()
+        return jsonify({
+            'tournament': _serialize_tournament(tournament),
+            'payment': charge_result,
+            'message': 'Complete payment to create the tournament',
+        }), 202
+
+    participant.payment_status = 'completed'
+    participant.status = 'registered'
+    participant.payment_completed_at = datetime.utcnow()
+    participant.paid_amount = entry_fee
     tournament.current_player_count = 1
     tournament.prize_pool_amount = entry_fee
     _ensure_prize_pool(tournament)
     db.session.commit()
+    _emit_tournament_updated(tournament)
 
-    return jsonify({'tournament': tournament.to_dict(), 'message': 'Tournament created'})
+    return jsonify({'tournament': _serialize_tournament(tournament), 'message': 'Tournament created'})
 
 
 @tournament_bp.route('/<int:tournament_id>/join', methods=['POST'])
@@ -527,11 +825,29 @@ def join_tournament(tournament_id):
     if tournament.current_player_count >= tournament.max_players:
         return jsonify({'error': 'Tournament is full'}), 400
 
-    paid, error_message = _charge_tournament_entry(user_id, tournament.entry_fee, tournament.id)
+    participant = add_tournament_participant(
+        tournament.id, user_id, payment_status='pending', payment_method='wallet'
+    )
+    participant.status = 'pending'
+    paid, charge_result = _charge_tournament_entry(
+        user_id, tournament.entry_fee, tournament.id, tournament.tournament_code
+    )
     if not paid:
-        return jsonify({'error': error_message}), 402
+        db.session.rollback()
+        return jsonify({'error': charge_result}), 402
+    if charge_result.get('payment_required'):
+        participant.transaction_id = str(charge_result.get('transaction_id') or '')
+        db.session.commit()
+        return jsonify({
+            'message': 'Complete payment to join the tournament',
+            'participant': {'id': participant.id, 'user_id': user_id},
+            'payment': charge_result,
+        }), 202
 
-    participant = add_tournament_participant(tournament.id, user_id, payment_status='completed', paid_amount=tournament.entry_fee, payment_method='wallet')
+    participant.payment_status = 'completed'
+    participant.status = 'registered'
+    participant.payment_completed_at = datetime.utcnow()
+    participant.paid_amount = tournament.entry_fee
     tournament.current_player_count += 1
     tournament.prize_pool_amount += tournament.entry_fee
     _ensure_prize_pool(tournament)
@@ -542,6 +858,7 @@ def join_tournament(tournament_id):
         tournament.locked_player_count = tournament.current_player_count
         _build_bracket(tournament)
     db.session.commit()
+    _emit_tournament_updated(tournament)
 
     return jsonify({'message': 'Joined tournament', 'participant': {'id': participant.id, 'user_id': user_id}})
 
@@ -554,10 +871,8 @@ def lock_tournament(tournament_id):
     # Restrict manual locking to the creator (or an admin).
     if not user_id:
         return jsonify({'error': 'Authentication required'}), 401
-    if tournament.creator_id != user_id:
-        user = User.query.get(user_id)
-        if not (user and user.is_admin):
-            return jsonify({'error': 'Only the creator can lock this tournament'}), 403
+    if not _can_manage_tournament(tournament, user_id):
+        return jsonify({'error': 'Only the creator can lock this tournament'}), 403
 
     if tournament.status in {'locked', 'in_progress', 'completed', 'cancelled'}:
         return jsonify({'error': 'Tournament already locked or completed'}), 400
@@ -569,6 +884,7 @@ def lock_tournament(tournament_id):
     tournament.locked_at = datetime.utcnow()
     tournament.locked_player_count = tournament.current_player_count
     _build_bracket(tournament)
+    _emit_tournament_updated(tournament)
 
     return jsonify({'message': 'Tournament locked', 'tournament': tournament.to_dict()})
 
@@ -603,34 +919,36 @@ def tournament_overview(tournament_id):
     })
 
 
-@tournament_bp.route('/<int:tournament_id>/matches/<int:match_id>/complete', methods=['POST'])
-def complete_match(tournament_id, match_id):
-    tournament = Tournament.query.get_or_404(tournament_id)
-    match = TournamentMatch.query.filter_by(id=match_id, tournament_id=tournament.id).first_or_404()
-    data = request.get_json(silent=True) or {}
-    winner_id = data.get('winner_id') or data.get('winner_user_id')
-    loser_id = data.get('loser_id') or data.get('loser_user_id')
-    win_type = data.get('win_type')
+def record_tournament_match_result(match_id, winner_id, loser_id, win_type='normal', started_at=None, duration_seconds=None):
+    """
+    Server-authoritative recording of a tournament match result.
+    Updates TournamentMatch, TournamentBracket, advances bracket seats, routes semi-final losers to 3rd place,
+    triggers tournament finalization checks, and broadcasts real-time socket events.
+    """
+    match = TournamentMatch.query.get(match_id)
+    if not match:
+        return None, "Match not found"
 
-    if not winner_id or not loser_id:
-        return jsonify({'error': 'winner_id and loser_id are required'}), 400
-
-    if winner_id not in {match.player1_id, match.player2_id} or loser_id not in {match.player1_id, match.player2_id}:
-        return jsonify({'error': 'Winner and loser must belong to this match'}), 400
+    tournament = Tournament.query.get(match.tournament_id)
+    if not tournament:
+        return None, "Tournament not found"
 
     if match.status == 'completed':
-        return jsonify({'message': 'Match already completed', 'match': {'id': match.id, 'status': match.status}})
+        return match, "Match already completed"
 
     now = datetime.utcnow()
     if match.started_at is None:
-        match.started_at = now
+        match.started_at = started_at or now
 
     match.status = 'completed'
     match.winner_id = winner_id
     match.loser_id = loser_id
-    match.win_type = win_type
+    match.win_type = win_type or 'normal'
     match.completed_at = now
-    match.duration_seconds = int((now - match.started_at).total_seconds())
+    if duration_seconds is not None:
+        match.duration_seconds = duration_seconds
+    elif match.started_at:
+        match.duration_seconds = int((now - match.started_at).total_seconds())
 
     bracket = TournamentBracket.query.get(match.bracket_id)
     if bracket is not None:
@@ -699,6 +1017,158 @@ def complete_match(tournament_id, match_id):
     _maybe_finalize(tournament)
 
     db.session.commit()
+    _emit_match_complete(tournament, match)
+    _emit_tournament_updated(tournament)
+
+    return match, None
+
+
+def start_tournament_match_helper(tournament_id, match_id, user_id=None):
+    """
+    Start a scheduled tournament match by creating or linking a real GameRoom,
+    initializing the GameEngine, and setting room status.
+    """
+    from database import GameRoom
+    from controllers.multiplayer_controller import active_rooms, generate_room_code
+    from game.engine import CardGameEngine
+    from game.models import Player as GamePlayer
+
+    tournament = Tournament.query.get(tournament_id)
+    if not tournament:
+        return None, {'error': 'Tournament not found'}, 404
+
+    match = TournamentMatch.query.filter_by(id=match_id, tournament_id=tournament.id).first()
+    if not match:
+        return None, {'error': 'Match not found'}, 404
+
+    if user_id:
+        is_participant = user_id in {match.player1_id, match.player2_id}
+        is_creator_or_admin = _can_manage_tournament(tournament, user_id)
+        if not (is_participant or is_creator_or_admin):
+            return None, {'error': 'Not authorized to start this match'}, 403
+
+    if match.status == 'completed':
+        return None, {'error': 'Match is already completed'}, 400
+
+    # If GameRoom already exists for this match
+    if match.game_room_id:
+        room = GameRoom.query.get(match.game_room_id)
+        if room:
+            if room.room_code not in active_rooms and room.status in {'in_progress', 'waiting'}:
+                engine = CardGameEngine([GamePlayer("Player 1"), GamePlayer("Player 2")], cards_per_player=match.card_count)
+                active_rooms[room.room_code] = {
+                    'engine': engine,
+                    'room_id': room.id,
+                    'turn_deadline': datetime.utcnow() + timedelta(seconds=60)
+                }
+            return match, {
+                'message': 'Match room ready',
+                'match_id': match.id,
+                'game_room_id': room.id,
+                'room_code': room.room_code,
+                'status': match.status,
+            }, 200
+
+    # Generate a unique room code
+    room_code = generate_room_code()
+
+    # Create new GameRoom
+    room = GameRoom(
+        room_code=room_code,
+        player1_id=match.player1_id,
+        player2_id=match.player2_id,
+        bet_amount=match.bet_amount,
+        status='in_progress',
+        created_at=datetime.utcnow()
+    )
+    db.session.add(room)
+    db.session.flush()
+
+    match.game_room_id = room.id
+    match.status = 'in_progress'
+    if not match.started_at:
+        match.started_at = datetime.utcnow()
+
+    # Initialize game engine in memory
+    engine = CardGameEngine([GamePlayer("Player 1"), GamePlayer("Player 2")], cards_per_player=match.card_count)
+    deadline = datetime.utcnow() + timedelta(seconds=60)
+    room.turn_deadline = deadline
+
+    active_rooms[room_code] = {
+        'engine': engine,
+        'room_id': room.id,
+        'turn_deadline': deadline
+    }
+
+    if tournament.status != 'in_progress':
+        tournament.status = 'in_progress'
+
+    db.session.commit()
+
+    # Emit socket events to notify players and update tournament UI
+    if _socketio:
+        _socketio.emit('tournament_match_started', {
+            'tournament_id': tournament.id,
+            'match_id': match.id,
+            'room_code': room_code,
+            'player1_id': match.player1_id,
+            'player2_id': match.player2_id,
+        }, room=_tournament_room(tournament.id))
+
+    _emit_match_complete(tournament, match)
+    _emit_tournament_updated(tournament)
+
+    return match, {
+        'message': 'Tournament match started successfully',
+        'match_id': match.id,
+        'game_room_id': room.id,
+        'room_code': room_code,
+        'status': match.status,
+    }, 200
+
+
+@tournament_bp.route('/<int:tournament_id>/matches/<int:match_id>/start', methods=['POST'])
+def start_match_endpoint(tournament_id, match_id):
+    user_id = _get_current_user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication required'}), 401
+    match, response, status_code = start_tournament_match_helper(tournament_id, match_id, user_id=user_id)
+    return jsonify(response), status_code
+
+
+@tournament_bp.route('/<int:tournament_id>/matches/<int:match_id>/complete', methods=['POST'])
+def complete_match(tournament_id, match_id):
+    user_id = _get_current_user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication required'}), 401
+    user = User.query.get(user_id)
+    if not (user and user.is_admin):
+        return jsonify({'error': 'Match results are server-authoritative'}), 403
+
+    tournament = Tournament.query.get_or_404(tournament_id)
+    match = TournamentMatch.query.filter_by(id=match_id, tournament_id=tournament.id).first_or_404()
+    data = request.get_json(silent=True) or {}
+    winner_id = data.get('winner_id') or data.get('winner_user_id')
+    loser_id = data.get('loser_id') or data.get('loser_user_id')
+    win_type = data.get('win_type')
+
+    if not winner_id or not loser_id:
+        return jsonify({'error': 'winner_id and loser_id are required'}), 400
+
+    if winner_id not in {match.player1_id, match.player2_id} or loser_id not in {match.player1_id, match.player2_id}:
+        return jsonify({'error': 'Winner and loser must belong to this match'}), 400
+
+    match, err = record_tournament_match_result(
+        match_id=match.id,
+        winner_id=winner_id,
+        loser_id=loser_id,
+        win_type=win_type,
+    )
+    if err == "Match already completed":
+        return jsonify({'message': err, 'match': {'id': match.id, 'status': match.status}})
+    elif err:
+        return jsonify({'error': err}), 400
+
     return jsonify({'message': 'Match completed', 'match': {'id': match.id, 'status': match.status}})
 
 
@@ -710,4 +1180,3 @@ def get_tournament(tournament_id):
         'tournament': tournament.to_dict(),
         'participants': [_serialize_participant(p) for p in participants],
     })
-

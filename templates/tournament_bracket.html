@@ -1,78 +1,794 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <title>Player Bracket</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tournament Bracket</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
-      body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #0c1120; color: #eef0ff; }
-      .page { max-width: 1080px; margin: auto; padding: 2rem; }
-      .toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
-      .toolbar a { color: #8fc9ff; text-decoration: none; border: 1px solid rgba(143,201,255,0.22); padding: 0.85rem 1rem; border-radius: 999px; }
-      .panel { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 24px; padding: 1.5rem; }
-      .header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-      .header h1 { margin: 0; font-size: 2rem; }
-      .subtext { color: #a7b0d7; }
-      .bracket-grid { display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem; }
-      .round-column { min-width: 220px; display: grid; gap: 1rem; }
-      .round-column h2 { margin: 0; font-size: 1rem; color: #c8d5ff; }
-      .match-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(84,143,255,0.18); border-radius: 18px; padding: 1rem; }
-      .player-line { display: flex; justify-content: space-between; padding: 0.25rem 0; }
-      .player-line span:first-child { color: #dce3ff; }
-      .match-status { margin-top: 0.75rem; color: #9dacd6; font-size: 0.92rem; }
-      .win-label { font-weight: 700; color: #8bceff; }
-    </style>
-  </head>
-  <body>
-    <div class="page">
-      <div class="toolbar">
-        <a href="/tournaments">Back to waiting room</a>
-        <a id="overview-link" href="#">Tournament overview</a>
-      </div>
-      <div class="panel">
-        <div class="header">
-          <div>
-            <h1>Player Bracket</h1>
-            <p class="subtext" id="tournament-subtext">Loading bracket details…</p>
-          </div>
-        </div>
-        <div id="bracket-grid" class="bracket-grid">Loading bracket…</div>
-      </div>
-    </div>
-    <script>
-      const pathSegments = window.location.pathname.split('/').filter(Boolean);
-      const tournamentId = Number(pathSegments[pathSegments.length - 2]);
-      document.getElementById('overview-link').href = `/tournaments/${tournamentId}`;
-
-      function createMatchCard(match) {
-        const card = document.createElement('div');
-        card.className = 'match-card';
-        card.innerHTML = `
-          <div class="player-line"><span>${match.player1_name || 'TBD'}</span><span>${match.winner_name === match.player1_name ? '<span class="win-label">WIN</span>' : ''}</span></div>
-          <div class="player-line"><span>${match.player2_name || 'TBD'}</span><span>${match.winner_name === match.player2_name ? '<span class="win-label">WIN</span>' : ''}</span></div>
-          <div class="match-status">${match.status.toUpperCase()}${match.winner_name ? ` · Winner: ${match.winner_name}` : ''}</div>
-        `;
-        return card;
-      }
-
-      async function loadBracket() {
-        const resp = await fetch(`/api/tournaments/${tournamentId}/overview`);
-        const data = await resp.json();
-        document.getElementById('tournament-subtext').textContent = data.tournament.tournament_name;
-        const grid = document.getElementById('bracket-grid');
-        grid.innerHTML = '';
-        if (!data.rounds.length) {
-          grid.innerHTML = '<div style="padding:1rem; color:#9aa7c5;">Bracket has not been generated yet.</div>';
-          return;
+        .bracket-container {
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
+            padding: 40px 20px;
+            overflow-x: auto;
         }
-        data.rounds.forEach(round => {
-          const column = document.createElement('div');
-          column.className = 'round-column';
-          column.innerHTML = `<h2>${round.round_name}</h2>`;
-          round.matches.forEach(match => column.appendChild(createMatchCard(match)));
-          grid.appendChild(column);
+
+        .bracket-header {
+            text-align: center;
+            margin-bottom: 40px;
+            max-width: 100%;
+        }
+
+        .bracket-header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0 0 15px 0;
+        }
+
+        .bracket-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            max-width: 900px;
+            margin: 20px auto 30px;
+        }
+
+        .info-card {
+            background: var(--glass-strong);
+            border: 1px solid var(--accent-1);
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .info-label {
+            color: var(--muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            color: var(--accent-2);
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+
+        /* Main Bracket Visualization */
+        .bracket-wrapper {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            padding: 40px;
+            max-width: 100%;
+            margin: 0 auto;
+            overflow-x: auto;
+        }
+
+        .bracket-column {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            min-width: 250px;
+            gap: 20px;
+        }
+
+        .bracket-title {
+            text-align: center;
+            color: var(--accent-1);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--accent-1);
+        }
+
+        /* Match Box */
+        .match-box {
+            background: var(--card-bg);
+            border: 2px solid var(--glass-strong);
+            border-radius: 10px;
+            padding: 0;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            animation: matchAppear 0.4s ease;
+        }
+
+        @keyframes matchAppear {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .match-box:hover {
+            border-color: var(--accent-1);
+            box-shadow: 0 15px 40px rgba(139, 92, 246, 0.3);
+            transform: translateY(-5px);
+        }
+
+        .match-box.completed {
+            border-color: var(--success);
+            background: linear-gradient(135deg, rgba(62, 230, 181, 0.1), rgba(62, 230, 181, 0.05));
+        }
+
+        .match-header {
+            background: var(--glass);
+            padding: 10px 15px;
+            border-bottom: 1px solid var(--glass-strong);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .match-round {
+            font-size: 0.75rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .match-time {
+            font-size: 0.75rem;
+            color: var(--accent-2);
+            font-weight: 600;
+        }
+
+        .match-players {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            padding: 10px;
+        }
+
+        .player-slot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            border-radius: 5px;
+            transition: all 0.2s ease;
+        }
+
+        .player-slot:first-child {
+            margin-bottom: 5px;
+        }
+
+        .player-slot.winner {
+            background: rgba(62, 230, 181, 0.2);
+            border: 1px solid var(--success);
+        }
+
+        .player-slot.empty {
+            background: var(--glass-strong);
+            color: var(--muted);
+            opacity: 0.5;
+        }
+
+        .player-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .player-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+
+        .player-name {
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .player-score {
+            color: var(--accent-2);
+            font-weight: 700;
+            font-size: 1.1rem;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        .match-status {
+            padding: 8px;
+            background: var(--glass-strong);
+            border-top: 1px solid var(--glass-strong);
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--accent-1);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .status-live {
+            color: #ef4444;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .status-pending {
+            color: var(--muted);
+        }
+
+        .status-completed {
+            color: var(--success);
+        }
+
+        /* Bracket Connector Lines (optional SVG) */
+        .bracket-connector {
+            position: absolute;
+            pointer-events: none;
+        }
+
+        /* Medal Section - Finals Results */
+        .finals-section {
+            margin-top: 60px;
+            padding: 40px;
+            background: var(--glass);
+            border: 2px solid var(--accent-1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            max-width: 1000px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .finals-title {
+            text-align: center;
+            font-size: 1.5rem;
+            color: var(--accent-1);
+            margin: 0 0 40px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .medals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 25px;
+        }
+
+        .medal-card {
+            background: var(--card-bg);
+            border: 2px solid var(--accent-1);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            transition: all 0.3s ease;
+            animation: medalAppear 0.5s ease;
+        }
+
+        @keyframes medalAppear {
+            from {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .medal-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 20px 50px rgba(139, 92, 246, 0.3);
+        }
+
+        .medal-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+        }
+
+        .medal-placement {
+            font-size: 1.2rem;
+            color: var(--accent-1);
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 1px;
+        }
+
+        .medal-player {
+            font-size: 1.2rem;
+            color: white;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+
+        .medal-prize {
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            color: var(--bg-1);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        /* Controls */
+        .bracket-controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin: 40px 0;
+            flex-wrap: wrap;
+        }
+
+        .btn-bracket {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-back {
+            background: var(--glass-strong);
+            border: 2px solid var(--accent-1);
+            color: var(--accent-1);
+        }
+
+        .btn-back:hover {
+            background: var(--accent-1);
+            color: white;
+            transform: translateY(-3px);
+        }
+
+        .btn-share {
+            background: linear-gradient(135deg, var(--accent-1), #7c3aed);
+            color: white;
+            box-shadow: 0 10px 30px rgba(139, 92, 246, 0.3);
+        }
+
+        .btn-share:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(139, 92, 246, 0.5);
+        }
+
+        /* Live Match Indicator */
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            color: #ef4444;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: #ef4444;
+            border-radius: 50%;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .bracket-wrapper {
+                gap: 20px;
+                padding: 20px;
+            }
+
+            .bracket-column {
+                min-width: 200px;
+                gap: 15px;
+            }
+
+            .match-box {
+                min-height: 120px;
+            }
+
+            .player-name {
+                font-size: 0.8rem;
+            }
+
+            .medals-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .bracket-header h1 {
+                font-size: 1.5rem;
+            }
+
+            .finals-section {
+                padding: 20px;
+            }
+
+            .bracket-info {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: var(--accent-1);
+            color: white;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.8rem;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="bracket-container">
+        <!-- Header -->
+        <div class="bracket-header">
+            <h1>🏆 TOURNAMENT BRACKET</h1>
+            <p id="tournament-name" style="color: var(--muted); margin: 10px 0;">Tournament Name</p>
+        </div>
+
+        <!-- Info Cards -->
+        <div class="bracket-info">
+            <div class="info-card">
+                <div class="info-label">Round</div>
+                <div class="info-value" id="current-round">QUARTER FINALS</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">Matches Today</div>
+                <div class="info-value" id="today-matches">4</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">Live Now</div>
+                <div class="info-value" id="live-count">1</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">Completed</div>
+                <div class="info-value" id="completed-count">2</div>
+            </div>
+        </div>
+
+        <!-- Bracket Visualization -->
+        <div class="bracket-wrapper" id="bracket-wrapper">
+            <!-- Bracket will be generated by JavaScript -->
+        </div>
+
+        <!-- Finals Results (shown when tournament complete) -->
+        <div class="finals-section" id="finals-section" style="display: none;">
+            <div class="finals-title">🎊 Tournament Results</div>
+            <div class="medals-grid">
+                <div class="medal-card">
+                    <div class="medal-icon">🥇</div>
+                    <div class="medal-placement">1st Place</div>
+                    <div class="medal-player" id="winner-name">---</div>
+                    <div class="medal-prize" id="winner-prize">E0</div>
+                </div>
+                <div class="medal-card">
+                    <div class="medal-icon">🥈</div>
+                    <div class="medal-placement">2nd Place</div>
+                    <div class="medal-player" id="runner-up-name">---</div>
+                    <div class="medal-prize" id="runner-up-prize">E0</div>
+                </div>
+                <div class="medal-card">
+                    <div class="medal-icon">🥉</div>
+                    <div class="medal-placement">3rd Place</div>
+                    <div class="medal-player" id="third-place-name">---</div>
+                    <div class="medal-prize" id="third-place-prize">E0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="bracket-controls">
+            <button class="btn-bracket btn-back" onclick="goBack()">
+                ← Back to Tournaments
+            </button>
+            <button class="btn-bracket btn-share" onclick="shareResults()">
+                📤 Share Results
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io({
+            transports: ['websocket', 'polling']
         });
-      }
-      loadBracket();
+
+        let tournamentData = {};
+
+        socket.on('connect', () => {
+            console.log('✅ Connected to bracket viewer');
+            loadBracketData();
+        });
+
+        socket.on('tournament_updated', (data) => {
+            console.log('🔄 Bracket updated:', data);
+            loadBracketData();
+        });
+
+        socket.on('match_complete', (data) => {
+            console.log('✅ Match completed:', data);
+            loadBracketData();
+            showNotification(`${data.winner_name || 'Match'} completed! 🎉`);
+        });
+
+        socket.on('tournament_match_started', (data) => {
+            console.log('🎮 Tournament match started:', data);
+            loadBracketData();
+            if (data.room_code) {
+                showNotification('Your match is starting! Redirecting...');
+                setTimeout(() => {
+                    window.location.href = `/multiplayer?room_code=${data.room_code}`;
+                }, 1000);
+            }
+        });
+
+        function startMatch(matchId) {
+            const tId = '{{ tournament_id }}';
+            fetch(`/api/tournaments/${tId}/matches/${matchId}/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.room_code) {
+                    window.location.href = `/multiplayer?room_code=${data.room_code}`;
+                } else if (data.error) {
+                    showNotification(data.error);
+                }
+            })
+            .catch(err => {
+                showNotification('Failed to start match');
+            });
+        }
+
+        function loadBracketData() {
+            const tId = '{{ tournament_id }}';
+            if (tId && tId !== 'None' && tId !== '{{ tournament_id }}') {
+                fetch(`/api/tournaments/${tId}/overview`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && data.tournament) {
+                            tournamentData = data;
+                            renderBracket();
+                        }
+                    })
+                    .catch(() => renderBracket());
+            } else {
+                renderBracket();
+            }
+        }
+
+        function renderBracket() {
+            const wrapper = document.getElementById('bracket-wrapper');
+            
+            // Example 4-player bracket structure
+            wrapper.innerHTML = `
+                <div class="bracket-column">
+                    <div class="bracket-title">SEMI-FINALS</div>
+                    
+                    <div class="match-box completed">
+                        <div class="match-header">
+                            <span class="match-round">SF - Match 1</span>
+                            <span class="match-time">Completed</span>
+                        </div>
+                        <div class="match-players">
+                            <div class='win-type'>Escape Win</div>
+                            <div class="player-slot winner">
+                                <div class="player-info">
+                                    <div class="player-avatar">A</div>
+                                    <div class="player-name">Alice</div>
+                                </div>
+                                <div class="player-score">2</div>
+                            </div>
+                            <div class="player-slot">
+                                <div class="player-info">
+                                    <div class="player-avatar">B</div>
+                                    <div class="player-name">Bob</div>
+                                </div>
+                                <div class="player-score">0</div>
+                            </div>
+                        </div>
+                        <div class="match-status status-completed">✅ Completed</div>
+                    </div>
+
+                    <div class="match-box completed">
+                        <div class="match-header">
+                            <span class="match-round">SF - Match 2</span>
+                            <span class="match-time">Completed</span>
+                        </div>
+                        <div class="match-players">
+                            <div class="player-slot winner">
+                                <div class='win-type'>Crazy Escape Win</div>
+                                <div class="player-info">
+                                    <div class="player-avatar">C</div>
+                                    <div class="player-name">Charlie</div>
+                                </div>
+                                <div class="player-score">2</div>
+                            </div>
+                            <div class="player-slot">
+                                <div class="player-info">
+                                    <div class="player-avatar">D</div>
+                                    <div class="player-name">Diana</div>
+                                </div>
+                                <div class="player-score">1</div>
+                            </div>
+                        </div>
+                        <div class="match-status status-completed">✅ Completed</div>
+                    </div>
+                </div>
+
+                <div class="bracket-column">
+                    <div class="bracket-title">FINALS</div>
+                    
+                    <div class="match-box">
+                        <div class="match-header">
+                            <span class="match-round">FINAL</span>
+                            <span class="live-indicator">
+                                <span class="live-dot"></span>
+                                LIVE
+                            </span>
+                        </div>
+                        <div class="match-players">
+                            <div class="player-slot">
+                                <div class="player-info">
+                                    <div class="player-avatar">A</div>
+                                    <div class="player-name">Alice</div>
+                                </div>
+                                <div class="player-score">1</div>
+                            </div>
+                            <div class="player-slot">
+                                <div class="player-info">
+                                    <div class="player-avatar">C</div>
+                                    <div class="player-name">Charlie</div>
+                                </div>
+                                <div class="player-score">1</div>
+                            </div>
+                        </div>
+                        <div class="match-status status-live">🔴 LIVE NOW</div>
+                    </div>
+                </div>
+
+                <div class="bracket-column">
+                    <div class="bracket-title">3RD PLACE</div>
+                    
+                    <div class="match-box">
+                        <div class="match-header">
+                            <span class="match-round">3RD PLACE</span>
+                            <span class="match-time">Pending</span>
+                        </div>
+                        <div class="match-players">
+                            <div class="player-slot winner">
+                                <div class='win-type'>Dealuxe Win</div>
+                                <div class="player-info">
+                                    <div class="player-avatar">B</div>
+                                    <div class="player-name">Bob</div>
+                                </div>
+                                <div class="player-score">2</div>
+                            </div>
+                            <div class="player-slot">
+                                <div class="player-info">
+                                    <div class="player-avatar">D</div>
+                                    <div class="player-name">Diana</div>
+                                </div>
+                                <div class="player-score">1</div>
+                            </div>
+                        </div>
+                        <div class="match-status status-completed">✅ Completed</div>
+                    </div>
+                </div>
+            `;
+
+            // Update stats
+            document.getElementById('current-round').textContent = 'FINALS';
+            document.getElementById('today-matches').textContent = '3';
+            document.getElementById('live-count').textContent = '1';
+            document.getElementById('completed-count').textContent = '3';
+        }
+
+        function goBack() {
+            window.location.href = '/tournaments';
+        }
+
+        function shareResults() {
+            const text = 'Watch the epic tournament bracket on uMshova Deluxe! 🏆';
+            if (navigator.share) {
+                navigator.share({
+                    title: 'uMshova Deluxe Tournament',
+                    text: text,
+                    url: window.location.href
+                });
+            } else {
+                navigator.clipboard.writeText(window.location.href);
+                showNotification('Link copied to clipboard! 📋');
+            }
+        }
+
+        function showNotification(message) {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: var(--accent-1);
+                color: white;
+                padding: 15px 25px;
+                border-radius: 10px;
+                box-shadow: 0 10px 30px rgba(139, 92, 246, 0.3);
+                z-index: 1000;
+                animation: slideIn 0.3s ease;
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateX(100%)';
+                notification.style.transition = 'all 0.3s ease';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // Initialize
+        loadBracketData();
+
+        // Polling for updates
+        setInterval(() => {
+            loadBracketData();
+        }, 5000);
     </script>
-  </body>
+</body>
 </html>

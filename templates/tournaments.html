@@ -1,85 +1,1143 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <title>Tournaments</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>uMshova Deluxe - Tournaments</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; background: #111; color: #f5f5f5; }
-      .panel { background: #1f1f1f; padding: 1rem 1.2rem; border-radius: 8px; margin-bottom: 1rem; }
-      .row { display: flex; gap: 1rem; flex-wrap: wrap; }
-      input, select, button { padding: 0.65rem; border-radius: 6px; border: 1px solid #444; }
-      button { cursor: pointer; background: #2f7cf6; color: white; border: none; }
-      .card { background: #2a2a2a; padding: 0.8rem; border-radius: 8px; margin-bottom: 0.6rem; }
-      a { color: #7ec8ff; }
-    </style>
-  </head>
-  <body>
-    <h1>Tournament Lobby</h1>
-    <div class="panel">
-      <h3>Create Tournament</h3>
-      <form id="create-form" class="row">
-        <input name="tournament_name" placeholder="Tournament name" />
-        <select name="tournament_type">
-          <option value="standard">Standard</option>
-          <option value="premium">Premium</option>
-          <option value="deluxe">Deluxe</option>
-        </select>
-        <input name="entry_fee" type="number" value="10" min="1" />
-        <input name="max_players" type="number" value="4" min="4" step="4" />
-        <button type="submit">Create</button>
-      </form>
-      <div id="create-message"></div>
-    </div>
-
-    <div class="panel">
-      <h3>Available Tournaments</h3>
-      <div id="tournament-list">Loading…</div>
-    </div>
-
-    <script>
-      async function loadTournaments() {
-        const response = await fetch('/api/tournaments');
-        const data = await response.json();
-        const list = document.getElementById('tournament-list');
-        if (!data.tournaments || data.tournaments.length === 0) {
-          list.innerHTML = '<div class="card">No tournaments yet.</div>';
-          return;
+        /* Tournament-specific styles */
+        .tournaments-container {
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 100%);
+            padding: 40px 20px;
         }
-        list.innerHTML = data.tournaments.map(t => `
-          <div class="card">
-            <strong>${t.tournament_name}</strong> (${t.tournament_type})<br>
-            Code: ${t.tournament_code}<br>
-            Entry: ${t.entry_fee}<br>
-            Players: ${t.current_player_count}/${t.max_players}<br>
-            Status: ${t.status}<br>
-            <button onclick="joinTournament(${t.id})">Join</button>
-          </div>`).join('');
-      }
 
-      async function joinTournament(id) {
-        const response = await fetch(`/api/tournaments/${id}/join`, { method: 'POST' });
-        const data = await response.json();
-        document.getElementById('create-message').textContent = data.message || data.error || 'Done';
-        loadTournaments();
-      }
+        .tournaments-header {
+            max-width: 1400px;
+            margin: 0 auto 40px;
+            text-align: center;
+        }
 
-      document.getElementById('create-form').addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const form = new FormData(event.target);
-        const payload = Object.fromEntries(form.entries());
-        payload.entry_fee = Number(payload.entry_fee);
-        payload.max_players = Number(payload.max_players);
-        const response = await fetch('/api/tournaments/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+        .tournaments-header h1 {
+            font-size: 3.5rem;
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0 0 10px 0;
+            font-weight: 900;
+            letter-spacing: -1px;
+        }
+
+        .tournaments-header p {
+            color: var(--muted);
+            font-size: 1.1rem;
+            margin: 0;
+        }
+
+        .tournament-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 40px auto 50px;
+        }
+
+        .stat-card {
+            background: var(--glass-strong);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--accent-1);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            background: var(--glass);
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(139, 92, 246, 0.2);
+        }
+
+        .stat-card .stat-value {
+            font-size: 2.5rem;
+            font-weight: 900;
+            color: var(--accent-2);
+            margin: 10px 0;
+        }
+
+        .stat-card .stat-label {
+            color: var(--muted);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .controls-section {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            max-width: 1400px;
+            margin: 0 auto 50px;
+            flex-wrap: wrap;
+        }
+
+        .btn-tournament {
+            padding: 15px 35px;
+            font-size: 1rem;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 10px 30px rgba(139, 92, 246, 0.3);
+        }
+
+        .btn-create {
+            background: linear-gradient(135deg, var(--accent-1), #7c3aed);
+            color: white;
+        }
+
+        .btn-create:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(139, 92, 246, 0.5);
+        }
+
+        .btn-filter {
+            background: var(--glass-strong);
+            border: 2px solid var(--accent-1);
+            color: var(--accent-1);
+        }
+
+        .btn-filter:hover, .btn-filter.active {
+            background: var(--accent-1);
+            color: white;
+            transform: scale(1.05);
+        }
+
+        .tournaments-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 25px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .tournament-card {
+            background: var(--card-bg);
+            border: 1px solid var(--glass-strong);
+            border-radius: 15px;
+            padding: 25px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tournament-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .tournament-card:hover {
+            border-color: var(--accent-1);
+            transform: translateY(-10px);
+            box-shadow: 0 30px 60px rgba(139, 92, 246, 0.25);
+        }
+
+        .tournament-card:hover::before {
+            left: 100%;
+        }
+
+        .tournament-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 15px;
+        }
+
+        .badge-standard {
+            background: rgba(139, 92, 246, 0.3);
+            color: var(--accent-1);
+        }
+
+        .badge-premium {
+            background: rgba(255, 228, 107, 0.3);
+            color: var(--accent-2);
+        }
+
+        .badge-deluxe {
+            background: rgba(62, 230, 181, 0.3);
+            color: var(--success);
+        }
+
+        .tournament-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .tournament-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 20px 0;
+            padding: 20px 0;
+            border-top: 1px solid var(--glass-strong);
+            border-bottom: 1px solid var(--glass-strong);
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-label {
+            color: var(--muted);
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+
+        .info-value {
+            color: var(--accent-2);
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+
+        .progress-bar {
+            background: var(--glass-strong);
+            height: 8px;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+
+        .tournament-footer {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn-join {
+            flex: 1;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, var(--success), #2dd4bf);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-join:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(62, 230, 181, 0.3);
+        }
+
+        .btn-view {
+            flex: 1;
+            padding: 12px 20px;
+            background: var(--glass-strong);
+            color: var(--accent-1);
+            border: 2px solid var(--accent-1);
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-view:hover {
+            background: var(--accent-1);
+            color: white;
+        }
+
+        .status-badge {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .status-open {
+            background: rgba(62, 230, 181, 0.3);
+            color: var(--success);
+        }
+
+        .status-locked {
+            background: rgba(255, 228, 107, 0.3);
+            color: var(--accent-2);
+        }
+
+        .status-progress {
+            background: rgba(139, 92, 246, 0.3);
+            color: var(--accent-1);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            color: var(--muted);
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5rem;
+            color: white;
+            margin-bottom: 10px;
+        }
+
+        .prize-breakdown {
+            background: var(--glass-strong);
+            border: 1px solid var(--accent-1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+            font-size: 0.85rem;
+        }
+
+        .prize-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            color: var(--muted);
+        }
+
+        .prize-row strong {
+            color: var(--accent-2);
+        }
+
+        @media (max-width: 768px) {
+            .tournaments-header h1 {
+                font-size: 2rem;
+            }
+
+            .tournaments-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tournament-info {
+                grid-template-columns: 1fr;
+            }
+
+            .controls-section {
+                flex-direction: column;
+            }
+
+            .btn-tournament {
+                width: 100%;
+            }
+        }
+
+        /* Loading animation */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Floating animation */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .stat-card {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        .stat-card:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .stat-card:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        .stat-card:nth-child(4) {
+            animation-delay: 0.6s;
+        }
+    </style>
+
+    <style>
+        /* * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        } */
+        
+        /* .lobby-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        } */
+        
+        .lobby-header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        .lobby-header h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            font-family: Oswald, sans-serif;
+        }
+        
+        .lobby-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .lobby-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .lobby-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .lobby-card h2 {
+            color: white;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        .create-room-section {
+            text-align: center;
+        }
+        
+        .bet-input-group {
+            margin: 20px 0;
+        }
+        
+        .bet-input-group label {
+            display: block;
+            color: white;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .bet-input-group input {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+        }
+        
+        .bet-input-group input:focus {
+            outline: none;
+            border-color: #8b5cf6;
+        }
+        
+        .create-room-btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+            font-family: Oswald, sans-serif;
+        }
+        
+        .create-room-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .create-room-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .room-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .room-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .room-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #8b5cf6;
+            transform: translateY(-2px);
+        }
+        
+        .room-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            position: relative;
+            flex-shrink: 0;
+        }
+        
+        .online-indicator {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid #1a1a2e;
+        }
+        
+        .online-indicator.online {
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+        
+        .online-indicator.offline {
+            background: #6b7280;
+        }
+        
+        .room-details-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .room-id {
+            color: #8b5cf6;
+            font-weight: bold;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .room-code-badge {
+            background: rgba(139, 92, 246, 0.2);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .creator-name {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .room-stats {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+        }
+        
+        .stat-icon {
+            color: #8b5cf6;
+            font-size: 14px;
+        }
+        
+        .room-status {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-waiting {
+            background: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border: 1px solid #fbbf24;
+        }
+        
+        .status-ready {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border: 1px solid #10b981;
+        }
+        
+        .room-age {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 12px;
+        }
+        
+        .room-info {
+            color: white;
+            margin-bottom: 15px;
+        }
+        
+        .room-info p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        
+        .join-room-btn {
+            padding: 12px 24px;
+            background: #10b981;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .join-room-btn:hover {
+            background: #059669;
+        }
+        
+        .join-room-btn:disabled {
+            background: #6b7280;
+            cursor: not-allowed;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-online {
+            background: #10b981;
+            box-shadow: 0 0 10px #10b981;
+        }
+        
+        .status-offline {
+            background: #6b7280;
+        }
+        
+        .player-count {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        
+        .back-link {
+            display: inline-block;
+            color: white;
+            text-decoration: none;
+            margin-bottom: 20px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        
+        .back-link:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .header-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .login-btn {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.2s;
+            font-family: Oswald, sans-serif;
+        }
+        
+        .login-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .username-display {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .logout-btn {
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+        
+        .logout-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        /* Login Modal */
+        .login-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .login-modal-overlay.active {
+            display: flex;
+        }
+        
+        .login-modal {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 40px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+        }
+        
+        .login-modal h2 {
+            color: white;
+            margin-bottom: 20px;
+            font-family: Oswald, sans-serif;
+        }
+        
+        .login-modal p {
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 30px;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+        
+        .modal-btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .modal-btn-primary {
+            background: linear-gradient(135deg, #8b5cf6, #3b82f6);
+            color: white;
+        }
+        
+        .modal-btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+        
+        .modal-btn:hover {
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="tournaments-container">
+        <!-- Header Section -->
+        <div class="tournaments-header">
+            <h1>UMSHOVA DELUXE</h1>
+            <p>Compete in professional tournaments and win real prizes</p>
+        </div>
+
+        <!-- Statistics Section -->
+        <div class="tournament-stats">
+            <div class="stat-card">
+                <div class="stat-label">Active Tournaments</div>
+                <div class="stat-value" id="stat-active">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Players</div>
+                <div class="stat-value" id="stat-players">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Your Balance</div>
+                <div class="stat-value" id="stat-balance">E0</div>
+            </div>
+        </div>
+
+
+        <div style="margin:0 auto;max-width:700px" class="lobby-grid"> <!--My prefered styling-->
+            <!-- Create Room Section -->
+            <div class="lobby-card create-room-section">
+                <h2><i class="fa-solid fa-plus-circle"></i> Create New Room</h2>
+                
+                <div class="bet-input-group">
+                    <label for="bet-amount">
+                        <i class="fa-solid fa-coins"></i> Joining Fee (SZL)
+                    </label>
+                    <input type="number" id="bet-amount" placeholder="Enter bet amount" min="0" step="0.01" value="10">
+                </div>
+                
+                <button class="btn-tournament btn-create" onclick="openCreateForm()">
+                    <i class="fa-solid fa-door-open"></i> Create Tournament
+                </button>
+                
+                <div class="player-count" style="margin-top: 20px;">
+                    Your balance: <strong id="user-balance">0</strong> SZL 
+                </div>
+            </div>
+            
+            <!-- Available Rooms Section -->
+             <!-- Available Rooms Section -->
+            <div class="lobby-card">
+                <h2><i class="fa-solid fa-list"></i> Available Tournaments</h2>
+                <div id="room-list" class="room-list">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-inbox"></i>
+                        <p>No tournaments available. Create one to start playing!</p>
+                    </div>
+                </div>
+            </div>
+            
+        </div><br>
+
+        
+        <!-- Controls Section -->
+        <div class="controls-section">
+           
+            <button class="btn-tournament btn-filter active" onclick="filterTournaments('all')">
+                All Tournaments
+            </button>
+            <button class="btn-tournament btn-filter" onclick="filterTournaments('open')">
+                Open Tournaments
+            </button><!-- 
+            <button class="btn-tournament btn-filter" onclick="filterTournaments('progress')">
+                🔄 Live Scores
+            </button>
+            <button class="btn-tournament btn-filter" onclick="filterTournaments('completed')">
+                ✅ Results
+            </button> -->
+        </div>
+
+        <!-- Tournaments Grid -->
+        <div class="tournaments-grid" id="tournaments-grid">
+            <h2><i class="fa-solid fa-list"></i> Available Rooms</h2>
+            <!-- Placeholder, should be hidden when tournaments populate -->
+            <div id="room-list" class="room-list">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-inbox"></i>
+                        <p>No rooms available. Create one to start playing!</p>
+                    </div>
+            </div>
+            <!-- Tournaments will be populated here by JavaScript -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="empty-state" style="display: none;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
+            </svg>
+            <h3>No tournaments found</h3>
+            <p>Create one or come back later to join exciting tournaments!</p>
+        </div>
+    </div>
+
+    <!-- JavaScript for interactivity -->
+    <script>
+        const socket = io({
+            transports: ['websocket', 'polling']
         });
-        const data = await response.json();
-        document.getElementById('create-message').textContent = data.message || data.error || 'Created';
-        loadTournaments();
-      });
 
-      loadTournaments();
+        let currentFilter = 'all';
+        let tournamentsData = [];
+
+        socket.on('connect', () => {
+            console.log('✅ Connected to tournament server');
+            fetchTournaments();
+            updateStats();
+        });
+
+        socket.on('tournaments_list', (data) => {
+            tournamentsData = data.tournaments || [];
+            renderTournaments();
+            updateStats();
+        });
+
+        socket.on('tournament_updated', (data) => {
+            console.log('🔄 Tournament updated:', data);
+            fetchTournaments();
+        });
+
+        socket.on('tournament_error', (data) => {
+            console.error('Tournament error:', data.message);
+        });
+
+        function fetchTournaments() {
+            socket.emit('get_tournaments', {
+                filter: currentFilter,
+                limit: 50
+            });
+        }
+
+        function filterTournaments(filter) {
+            currentFilter = filter;
+            
+            // Update button states
+            document.querySelectorAll('.btn-filter').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Fetch new data
+            socket.emit('get_tournaments', {
+                filter: filter === 'all' ? 'all' : filter,
+                limit: 50
+            });
+        }
+
+        function renderTournaments() {
+            const container = document.getElementById('tournaments-grid');
+            const emptyState = document.getElementById('empty-state');
+
+            if (!tournamentsData || tournamentsData.length === 0) {
+                container.style.display = 'none';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            container.style.display = 'grid';
+            emptyState.style.display = 'none';
+
+            container.innerHTML = tournamentsData.map((tournament, index) => `
+                <div class="tournament-card" style="animation-delay: ${index * 0.1}s;">
+                    <div class="status-badge status-${tournament.status}">
+                        ${getStatusLabel(tournament.status)}
+                    </div>
+                    
+                    <div class="tournament-badge badge-${tournament.type}">
+                        ${getTournamentTypeLabel(tournament.type)}
+                    </div>
+
+                    <h3>${tournament.name}</h3>
+                    <p style="color: var(--muted); margin: 10px 0; font-size: 0.9rem;">
+                        By <strong>${tournament.creator}</strong>
+                    </p>
+
+                    <div class="tournament-info">
+                        <div class="info-item">
+                            <div class="info-label">Players</div>
+                            <div class="info-value">${tournament.current_players}/${tournament.max_players}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Entry Fee</div>
+                            <div class="info-value">E${tournament.entry_fee}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Prize Pool</div>
+                            <div class="info-value">E${tournament.prize_pool.toFixed(2)}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Needed</div>
+                            <div class="info-value">${tournament.players_needed}</div>
+                        </div>
+                    </div>
+
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${(tournament.current_players / tournament.max_players) * 100}%"></div>
+                    </div>
+
+                    <div class="prize-breakdown">
+                        <div class="prize-row">
+                            <span>🥇 1st Place (50%)</span>
+                            <strong>E${(tournament.prize_pool * 0.5).toFixed(2)}</strong>
+                        </div>
+                        <div class="prize-row">
+                            <span>🥈 2nd Place (12.5%)</span>
+                            <strong>E${(tournament.prize_pool * 0.125).toFixed(2)}</strong>
+                        </div>
+                        <div class="prize-row">
+                            <span>🥉 3rd Place (6%)</span>
+                            <strong>E${(tournament.prize_pool * 0.06).toFixed(2)}</strong>
+                        </div>
+                    </div>
+
+                    <div class="tournament-footer">
+                        ${tournament.status === 'open' ? `
+                            <button class="btn-join" onclick="joinTournament(${tournament.id})">
+                                Join Now
+                            </button>
+                        ` : `
+                            <button class="btn-join" style="opacity: 0.5; cursor: not-allowed;">
+                                ${tournament.status.toUpperCase()}
+                            </button>
+                        `}
+                        <button class="btn-view" onclick="viewTournament(${tournament.id})">
+                            View Details
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateStats() {
+            // This would typically fetch from server
+            document.getElementById('stat-active').textContent = tournamentsData.length;
+            document.getElementById('stat-players').textContent = tournamentsData.reduce((sum, t) => sum + t.current_players, 0);
+            document.getElementById('stat-prizes').textContent = 'E' + tournamentsData.reduce((sum, t) => sum + t.prize_pool, 0).toFixed(0);
+        }
+
+        function getTournamentTypeLabel(type) {
+            const labels = {
+                'standard': '⚔️ Standard (4 Players)',
+                'premium': '👑 Premium (8 Players)',
+                'deluxe': '💎 Deluxe (16 Players)'
+            };
+            return labels[type] || type;
+        }
+
+        function getStatusLabel(status) {
+            const labels = {
+                'open': '🟢 Open',
+                'locked': '🔒 Locked',
+                'in_progress': '🔄 Live',
+                'completed': '✅ Complete'
+            };
+            return labels[status] || status;
+        }
+
+        function openCreateForm() {
+            alert('Tournament creation form would open here');
+            // Navigate to create form: window.location.href = '/tournaments/create';
+        }
+
+        async function joinTournament(tournamentId) {
+            const response = await fetch(`/api/tournaments/${tournamentId}/join`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                alert(result.error || 'Unable to join tournament');
+                return;
+            }
+            if (result.payment && result.payment.payment_url) {
+                window.location.href = result.payment.payment_url;
+                return;
+            }
+            window.location.href = `/tournaments/${tournamentId}`;
+        }
+
+        function viewTournament(tournamentId) {
+            window.location.href = `/tournaments/${tournamentId}`;
+        }
+
+        // Polling for updates
+        setInterval(() => {
+            fetchTournaments();
+        }, 30000);
     </script>
-  </body>
+</body>
 </html>
