@@ -401,6 +401,11 @@ if (socket) {
             }
         } catch (e) {}
 
+        // Stash tournament_info so showGameModal() can apply tournament-specific CTAs
+        try {
+            window.tournamentInfo = (data && data.tournament_info) ? data.tournament_info : null;
+        } catch (e) {}
+
         try {
             // Update global state and render final frame
             var finalState = data && data.state ? data.state : null;

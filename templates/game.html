@@ -146,7 +146,35 @@
                     <span id="final-balance">0.00 SZL</span>
                 </div>
             </div>
-            <button class="btn-glass new-game-btn" onclick="safeReload()">New Game</button>
+
+            <!-- Tournament-mode result section — hidden for normal games -->
+            <div id="tournament-result-section" style="display:none;" class="tournament-result-section">
+                <!-- Winner actions -->
+                <div id="tournament-winner-actions" style="display:none;" class="tournament-actions">
+                    <p class="tournament-result-msg" id="tournament-winner-msg">🏆 You're through to the next round!</p>
+                    <a id="btn-view-bracket" href="#" class="btn-glass tournament-cta-btn">
+                        <i class="fa-solid fa-sitemap"></i> View Bracket
+                    </a>
+                    <a id="btn-next-fixture" href="#" class="btn-glass tournament-cta-btn tournament-cta-primary" style="display:none;">
+                        <i class="fa-solid fa-forward-step"></i> <span id="next-fixture-label">Next Fixture</span>
+                    </a>
+                </div>
+                <!-- Loser actions -->
+                <div id="tournament-loser-actions" style="display:none;" class="tournament-actions">
+                    <p class="tournament-result-msg" id="tournament-loser-msg">You've been eliminated.</p>
+                    <a id="btn-go-playoffs" href="#" class="btn-glass tournament-cta-btn tournament-cta-primary" style="display:none;">
+                        <i class="fa-solid fa-medal"></i> Go to Playoffs
+                    </a>
+                    <a id="btn-view-bracket-loser" href="#" class="btn-glass tournament-cta-btn">
+                        <i class="fa-solid fa-sitemap"></i> View Bracket
+                    </a>
+                    <a href="/tournaments" class="btn-glass tournament-cta-btn">
+                        <i class="fa-solid fa-trophy"></i> Try Next Tournament
+                    </a>
+                </div>
+            </div>
+
+            <button class="btn-glass new-game-btn" id="game-over-new-game-btn" onclick="safeReload()">New Game</button>
         </div>
     </div>
 </div>

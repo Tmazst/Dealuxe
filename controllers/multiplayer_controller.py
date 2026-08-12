@@ -76,7 +76,7 @@ def handle_game_over(room, state, socketio):
 
     # Check if this room is associated with a tournament match
     tournament_info = None
-    from database import TournamentMatch
+    from database import TournamentMatch, TournamentBracket
     tournament_match = TournamentMatch.query.filter_by(game_room_id=room.id).first()
     if tournament_match:
         from controllers.tournament_controller import record_tournament_match_result
@@ -88,12 +88,45 @@ def handle_game_over(room, state, socketio):
             started_at=tournament_match.started_at,
         )
         if match:
+            bracket_url = f"/tournaments/{match.tournament_id}/bracket"
+            round_name = None
+            next_round_name = None
+            third_place_url = None
+
+            bracket = TournamentBracket.query.get(match.bracket_id) if match.bracket_id else None
+            if bracket:
+                round_name = bracket.round_name
+
+                # For semi-final losers: find the third-place bracket
+                if bracket.round_name == 'Semi-Final':
+                    third_bracket = TournamentBracket.query.filter_by(
+                        tournament_id=match.tournament_id, round_name='Third-Place'
+                    ).first()
+                    if third_bracket:
+                        third_place_url = f"/tournaments/{match.tournament_id}/bracket"
+
+                # For winners advancing: find the next bracket slot
+                if bracket.round_name not in ('Final', 'Third-Place'):
+                    next_round_num = bracket.round_number + 1
+                    next_match_num = (bracket.match_number + 1) // 2
+                    next_bracket = TournamentBracket.query.filter_by(
+                        tournament_id=match.tournament_id,
+                        round_number=next_round_num,
+                        match_number=next_match_num,
+                    ).first()
+                    if next_bracket:
+                        next_round_name = next_bracket.round_name
+
             tournament_info = {
                 'is_tournament': True,
                 'tournament_id': match.tournament_id,
                 'match_id': match.id,
-                'bracket_url': f"/tournaments/{match.tournament_id}/bracket",
+                'bracket_url': bracket_url,
                 'status': match.status,
+                'round_name': round_name,
+                'next_round_name': next_round_name,
+                'third_place_url': third_place_url,
+                'tournaments_url': '/tournaments',
             }
 
     # Remove from active rooms

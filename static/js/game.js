@@ -952,7 +952,14 @@ function showGameModal(){
             displayGameOverFinancials(isPlayerWinner);
         }
     } catch (e) { /* non-fatal */ }
-    
+
+    // Tournament-mode override: replace balance/prize display with bracket CTAs
+    try {
+        if (window.tournamentInfo && window.tournamentInfo.is_tournament) {
+            applyTournamentModal(window.tournamentInfo, isPlayerWinner);
+        }
+    } catch (e) { console.warn('[FRONTEND] applyTournamentModal failed', e); }
+
     // Play game over sound
     playGameOverSound(isPlayerWinner);
     
@@ -960,6 +967,102 @@ function showGameModal(){
     gameOverCont.classList.add("show-game-over");
     gameOverModal.classList.add("show-game-over");
     console.log("[FRONTEND] Modal should now be visible");
+}
+
+/**
+ * Apply tournament-specific result UI to the game-over modal.
+ * Hides fake-balance / prize-pool rows and shows bracket-redirect CTAs
+ * tailored to winner vs loser, and round type (Semi-Final, Final, Third-Place).
+ *
+ * @param {Object} info  - tournament_info from game_over socket payload
+ * @param {boolean} isWinner - whether the local player won
+ */
+function applyTournamentModal(info, isWinner) {
+    // Hide standard financial elements — tournament mode uses real-credit flow server-side
+    const balanceSummary = document.getElementById('balance-summary');
+    const prizeDisplay = document.getElementById('prize-display');
+    const newGameBtn = document.getElementById('game-over-new-game-btn');
+    if (balanceSummary) balanceSummary.style.display = 'none';
+    if (prizeDisplay) prizeDisplay.style.display = 'none';
+    if (newGameBtn) newGameBtn.style.display = 'none';
+
+    // Show the tournament-specific section
+    const section = document.getElementById('tournament-result-section');
+    if (!section) return;
+    section.style.display = 'block';
+
+    const bracketUrl = info.bracket_url || '/tournaments';
+
+    if (isWinner) {
+        // --- Winner path ---
+        const winnerActions = document.getElementById('tournament-winner-actions');
+        if (!winnerActions) return;
+        winnerActions.style.display = 'flex';
+
+        // Contextual winner message
+        const winnerMsg = document.getElementById('tournament-winner-msg');
+        if (winnerMsg) {
+            if (info.round_name === 'Final') {
+                winnerMsg.textContent = '🥇 Champion! You won the tournament!';
+            } else if (info.round_name === 'Third-Place') {
+                winnerMsg.textContent = '🥉 Third Place! Well played!';
+            } else if (info.next_round_name) {
+                winnerMsg.textContent = `🏆 You're through to the ${info.next_round_name}!`;
+            } else {
+                winnerMsg.textContent = '🏆 You advanced! Check the bracket for your next match.';
+            }
+        }
+
+        // View Bracket button
+        const btnBracket = document.getElementById('btn-view-bracket');
+        if (btnBracket) btnBracket.href = bracketUrl;
+
+        // Next Fixture button — only shown when there's a named next round
+        if (info.next_round_name) {
+            const btnNext = document.getElementById('btn-next-fixture');
+            const nextLabel = document.getElementById('next-fixture-label');
+            if (btnNext) {
+                btnNext.href = bracketUrl;
+                btnNext.style.display = 'inline-flex';
+            }
+            if (nextLabel) nextLabel.textContent = `${info.next_round_name} →`;
+        }
+
+    } else {
+        // --- Loser path ---
+        const loserActions = document.getElementById('tournament-loser-actions');
+        if (!loserActions) return;
+        loserActions.style.display = 'flex';
+
+        // Contextual loser message
+        const loserMsg = document.getElementById('tournament-loser-msg');
+        if (loserMsg) {
+            if (info.round_name === 'Semi-Final') {
+                loserMsg.textContent = '💪 You\'re not done yet — you\'re in the 3rd-Place Playoff!';
+            } else if (info.round_name === 'Final') {
+                loserMsg.textContent = '🥈 Runner-up! Great run in the tournament.';
+            } else if (info.round_name === 'Third-Place') {
+                loserMsg.textContent = '4th place — great effort! Try again in the next tournament.';
+            } else {
+                loserMsg.textContent = 'You\'ve been eliminated. Better luck next time!';
+            }
+        }
+
+        // "Go to Playoffs" — shown only for semi-final losers
+        if (info.round_name === 'Semi-Final' && info.third_place_url) {
+            const btnPlayoffs = document.getElementById('btn-go-playoffs');
+            if (btnPlayoffs) {
+                btnPlayoffs.href = info.third_place_url;
+                btnPlayoffs.style.display = 'inline-flex';
+            }
+        }
+
+        // View Bracket button for loser
+        const btnBracketLoser = document.getElementById('btn-view-bracket-loser');
+        if (btnBracketLoser) btnBracketLoser.href = bracketUrl;
+    }
+
+    console.log('[FRONTEND] Tournament modal applied:', info.round_name, isWinner ? 'winner' : 'loser');
 }
 
 // Toggle hand glow based on current user action
