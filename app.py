@@ -130,7 +130,7 @@ def get_player_fake_balance():
 @app.route("/")
 def index():
     form = GameStartForm()
-    return render_template("game.html",form=form)
+    return render_template("tournaments.html",form=form)
 
 @app.route("/get_player_fake_balance")
 def get_balance():
