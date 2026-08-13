@@ -34,6 +34,9 @@ app.jinja_loader = ChoiceLoader([
 ])
 
 app.config['SECRET_KEY'] = 'fght6hg234g5f6g7h8j9o0p'
+app.config['TOURNAMENT_TEST_BOTS_ENABLED'] = os.environ.get(
+    'TOURNAMENT_TEST_BOTS_ENABLED', 'false'
+).lower() in {'1', 'true', 'yes'}
 
 # -----------------------------
 # PAYMENT (MojaPOS) CONFIGURATION
@@ -80,6 +83,7 @@ app.register_blueprint(admin_bp)
 # -----------------------------
 
 manager = GameManager()
+app.extensions['game_manager'] = manager
 
 # -----------------------------
 # MULTIPLAYER SETUP
@@ -165,7 +169,12 @@ def lobby():
 
 @app.route("/game/<room_code>")
 def multiplayer_game(room_code):
-    return render_template("game_multiplayer.html", room_code=room_code)
+    return render_template(
+        "game.html",
+        form=GameStartForm(),
+        room_code=room_code,
+        tournament_room_code=room_code,
+    )
 
 
 @app.route("/tournaments")

@@ -68,7 +68,7 @@
 <body>
     <main class="arena">
         <nav class="nav" aria-label="Main navigation">
-            <a class="brand" href="/"><i class="fa-solid fa-crown"></i>UMSHOVA DELUXE</a>
+            <a class="brand" href="/"><i class="fa-solid fa-crown"></i>uMSHOVA DELUXE</a>
             <div class="nav-links">
                 <a href="#tournaments">Tournaments</a>
                 <a href="#how-to-play">How to play</a>
@@ -162,7 +162,7 @@
                 return;
             }
             grid.innerHTML = tournamentsData.map((tournament) => {
-                const prizePool = amount(tournament.prize_pool);
+                const prizePool = amount(tournament.prize_pool) * 0.5;
                 const current = amount(tournament.current_players);
                 const maximum = Math.max(amount(tournament.max_players), 1);
                 const progress = Math.min((current / maximum) * 100, 100);
@@ -170,8 +170,8 @@
                 return `<article class="tournament-card">
                     <div class="card-meta"><span class="type-badge ${escapeHtml(tournament.type)}">${escapeHtml(labelForType(tournament.type))}</span><span class="status ${escapeHtml(tournament.status)}">${escapeHtml(labelForStatus(tournament.status))}</span></div>
                     <h3>${escapeHtml(tournament.name)}</h3><p class="creator"><i class="fa-solid fa-user"></i>Hosted by ${escapeHtml(tournament.creator || 'uMshova')}</p>
-                    <div class="card-prize"><span>Current prize pool</span><strong>E${prizePool.toFixed(2)}</strong></div>
-                    <div class="slots"><span><i class="fa-solid fa-users"></i> <strong>${current}/${maximum}</strong> seats filled</span><span>${Math.max(maximum - current, 0)} left</span></div>
+                    <div class="card-prize"><span>Win</span><strong>E${prizePool.toFixed(2)}</strong></div>
+                    <div class="slots"><span><i class="fa-solid fa-users"></i> <strong>${current}</strong> Currently joined</span><span>${Math.max(maximum - current, 0)} left</span></div>
                     <div class="progress"><span style="width:${progress}%"></span></div>
                     <div class="card-actions">${canJoin ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})"><i class="fa-solid fa-bolt"></i> Join for E${amount(tournament.entry_fee).toFixed(2)}</button>` : `<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-chart-simple"></i> View bracket</button>`}<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-arrow-right"></i> Details</button></div>
                 </article>`;

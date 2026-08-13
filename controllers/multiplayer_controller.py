@@ -167,6 +167,31 @@ def handle_game_over(room, state, socketio):
 
 def init_multiplayer_events(socketio, game_manager, app=None):
     """Initialize all SocketIO event handlers"""
+
+    def run_tournament_test_bot_if_needed(room, engine):
+        """Let reserved local-test bot accounts take their turn.
+
+        This is deliberately opt-in (``TOURNAMENT_TEST_BOTS_ENABLED``) and
+        only recognises accounts created by the local demo seed tool. Normal
+        multiplayer and production tournament players never enter this path.
+        """
+        if not app or not app.config.get('TOURNAMENT_TEST_BOTS_ENABLED'):
+            return False
+
+        from controllers.ai_controller import SimpleAIController
+        for _ in range(4):
+            state = engine.get_state()
+            if state.get('game_over'):
+                break
+            actor_index = state.get('defender') if state.get('phase') == 'DEFENSE' else state.get('attacker')
+            actor_user_id = room.player1_id if actor_index == 0 else room.player2_id
+            actor = User.query.get(actor_user_id)
+            if not actor or not actor.username.startswith('tournament_bot_'):
+                break
+            SimpleAIController(engine, player_id=actor_index, think_delay=0, jitter=0).play_if_needed()
+
+        game_manager.update_game(room.game_id, engine)
+        return engine.get_state().get('game_over', False)
     
     @socketio.on('connect')
     def handle_connect():
@@ -174,6 +199,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         user_id = session.get('user_id')
         if user_id:
             print(f"[MULTIPLAYER] User {user_id} connected - SID: {request.sid}")
+            join_room(f"user_{user_id}")
             emit('connected', {'user_id': user_id, 'authenticated': True})
         else:
             print(f"[MULTIPLAYER] Guest user connected - SID: {request.sid}")
@@ -713,6 +739,10 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         except Exception as e:
             print(f"[MULTIPLAYER] Warning: failed to persist game state: {e}")
 
+        # In the optional local tournament demo, an automated opponent responds
+        # after the human's move through the same engine used by real rooms.
+        run_tournament_test_bot_if_needed(room, engine)
+
         # Get updated state
         state = engine.get_state()
         
@@ -950,7 +980,11 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                         emit('error', {'message': 'Failed to recreate game'})
                         return
                 
+                run_tournament_test_bot_if_needed(room, engine)
                 state = engine.get_state()
+
+                if state.get('game_over') and room.status != 'completed':
+                    handle_game_over(room, state, socketio)
 
                 # Build a masked state for the reconnecting user:
                 # - Show full hand only for the reconnecting player's index

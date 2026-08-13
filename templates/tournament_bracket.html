@@ -571,7 +571,7 @@
             if (data.room_code) {
                 showNotification('Your match is starting! Redirecting...');
                 setTimeout(() => {
-                    window.location.href = `/multiplayer?room_code=${data.room_code}`;
+                    window.location.href = `/game/${data.room_code}`;
                 }, 1000);
             }
         });
@@ -585,7 +585,7 @@
             .then(res => res.json())
             .then(data => {
                 if (data.room_code) {
-                    window.location.href = `/multiplayer?room_code=${data.room_code}`;
+                    window.location.href = `/game/${data.room_code}`;
                 } else if (data.error) {
                     showNotification(data.error);
                 }
@@ -613,6 +613,10 @@
         }
 
         function renderBracket() {
+            if (tournamentData && tournamentData.tournament && Array.isArray(tournamentData.rounds)) {
+                renderLiveBracket();
+                return;
+            }
             const wrapper = document.getElementById('bracket-wrapper');
             
             // Example 4-player bracket structure
@@ -737,6 +741,49 @@
             document.getElementById('today-matches').textContent = '3';
             document.getElementById('live-count').textContent = '1';
             document.getElementById('completed-count').textContent = '3';
+        }
+
+        function renderLiveBracket() {
+            const tournament = tournamentData.tournament;
+            const rounds = tournamentData.rounds || [];
+            const matches = tournamentData.matches || [];
+            const escapeHtml = (value) => String(value || 'TBD').replace(/[&<>'"]/g, (char) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[char]));
+            const matchByBracket = new Map(matches.map((match) => [match.bracket_id, match]));
+            const statusLabel = (status) => ({
+                scheduled: 'Ready to play', in_progress: 'Live now', completed: 'Completed', pending: 'Waiting'
+            }[status] || status);
+            const wrapper = document.getElementById('bracket-wrapper');
+
+            document.getElementById('tournament-name').textContent = tournament.tournament_name || 'Tournament';
+            const live = matches.filter((match) => match.status === 'in_progress').length;
+            const complete = matches.filter((match) => match.status === 'completed').length;
+            const nextRound = rounds.find((round) => round.matches.some((slot) => slot.status === 'scheduled' || slot.status === 'in_progress'));
+            document.getElementById('current-round').textContent = nextRound ? nextRound.round_name.toUpperCase() : (tournament.status || 'Complete').toUpperCase();
+            document.getElementById('today-matches').textContent = matches.length;
+            document.getElementById('live-count').textContent = live;
+            document.getElementById('completed-count').textContent = complete;
+
+            wrapper.innerHTML = rounds.map((round) => `
+                <div class="bracket-column">
+                    <div class="bracket-title">${escapeHtml(round.round_name).toUpperCase()}</div>
+                    ${round.matches.map((slot) => {
+                        const match = matchByBracket.get(slot.id);
+                        const status = match ? match.status : slot.status;
+                        const canStart = match && status === 'scheduled';
+                        const firstWinner = slot.winner_id === slot.player1_id ? ' winner' : '';
+                        const secondWinner = slot.winner_id === slot.player2_id ? ' winner' : '';
+                        return `<div class="match-box ${escapeHtml(status)}">
+                            <div class="match-header"><span class="match-round">Match ${slot.match_number}</span><span class="match-time">${escapeHtml(statusLabel(status))}</span></div>
+                            <div class="match-players">
+                                <div class="player-slot${firstWinner}"><div class="player-info"><div class="player-avatar">${escapeHtml((slot.player1_name || '?').charAt(0).toUpperCase())}</div><div class="player-name">${escapeHtml(slot.player1_name)}</div></div></div>
+                                <div class="player-slot${secondWinner}"><div class="player-info"><div class="player-avatar">${escapeHtml((slot.player2_name || '?').charAt(0).toUpperCase())}</div><div class="player-name">${escapeHtml(slot.player2_name)}</div></div></div>
+                            </div>
+                            ${canStart ? `<button class="btn-bracket btn-share" onclick="startMatch(${Number(match.id)})">Start match</button>` : `<div class="match-status status-${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</div>`}
+                        </div>`;
+                    }).join('')}
+                </div>`).join('');
         }
 
         function goBack() {

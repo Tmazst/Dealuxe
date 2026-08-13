@@ -190,6 +190,12 @@ function renderMultiplayerCommentFromPayload(payload) {
 
 // Handle game_started: if on game page, initialize without redirect
 if (socket) {
+    socket.on('connect', function() {
+        if (window.tournamentRoomCode) {
+            socket.emit('reconnect_to_room', { room_code: window.tournamentRoomCode });
+        }
+    });
+
     socket.on('game_started', function(data) {
         console.debug('[multiplayer-client] game_started', data);
         // If the server intends to redirect to /game/<room_code> we will instead initialize in-page

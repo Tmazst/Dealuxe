@@ -445,6 +445,7 @@ function showGameStartModal() {
 
 // Ensure modal is visible on page load
 function ensureModalVisible() {
+    if (window.tournamentRoomCode) return;
     const modal = document.querySelector('.game-start-modal-cont');
     if (modal && !modal.style.display) {
         modal.style.display = 'flex';

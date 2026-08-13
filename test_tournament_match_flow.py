@@ -21,7 +21,7 @@ from controllers.tournament_controller import (
     start_tournament_match_helper,
     record_tournament_match_result,
 )
-from controllers.multiplayer_controller import active_rooms, handle_game_over
+from controllers.multiplayer_controller import handle_game_over
 
 
 class SocketIOMock:
@@ -100,7 +100,7 @@ class TestTournamentMatchFlow(unittest.TestCase):
         room = GameRoom.query.get(match.game_room_id)
         self.assertIsNotNone(room)
         self.assertEqual(room.status, 'in_progress')
-        self.assertIn(room.room_code, active_rooms)
+        self.assertIsNotNone(room.game_id)
 
         # 5. Simulate Game Over for SF Match 1 (authoritative engine result reporting)
         mock_socket = SocketIOMock()

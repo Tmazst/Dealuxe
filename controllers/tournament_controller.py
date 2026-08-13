@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import random
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, current_app
 from flask_socketio import emit, join_room, leave_room
 
 from database import (
@@ -1029,9 +1029,7 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
     initializing the GameEngine, and setting room status.
     """
     from database import GameRoom
-    from controllers.multiplayer_controller import active_rooms, generate_room_code
-    from game.engine import CardGameEngine
-    from game.models import Player as GamePlayer
+    from controllers.multiplayer_controller import generate_room_code
 
     tournament = Tournament.query.get(tournament_id)
     if not tournament:
@@ -1054,13 +1052,6 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
     if match.game_room_id:
         room = GameRoom.query.get(match.game_room_id)
         if room:
-            if room.room_code not in active_rooms and room.status in {'in_progress', 'waiting'}:
-                engine = CardGameEngine([GamePlayer("Player 1"), GamePlayer("Player 2")], cards_per_player=match.card_count)
-                active_rooms[room.room_code] = {
-                    'engine': engine,
-                    'room_id': room.id,
-                    'turn_deadline': datetime.utcnow() + timedelta(seconds=60)
-                }
             return match, {
                 'message': 'Match room ready',
                 'match_id': match.id,
@@ -1072,13 +1063,25 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
     # Generate a unique room code
     room_code = generate_room_code()
 
+    game_manager = current_app.extensions.get('game_manager')
+    if game_manager is None:
+        return None, {'error': 'Game service is unavailable'}, 503
+
+    # Tournament entry has already been paid.  This creates a real game room
+    # without creating a second wager or BetSession.
+    game_id, _ = game_manager.create_game(mode='local', card_count=match.card_count)
+
     # Create new GameRoom
     room = GameRoom(
         room_code=room_code,
         player1_id=match.player1_id,
         player2_id=match.player2_id,
+        game_id=game_id,
+        card_count=match.card_count,
         bet_amount=match.bet_amount,
+        bet_type='tournament',
         status='in_progress',
+        started_at=datetime.utcnow(),
         created_at=datetime.utcnow()
     )
     db.session.add(room)
@@ -1089,16 +1092,8 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
     if not match.started_at:
         match.started_at = datetime.utcnow()
 
-    # Initialize game engine in memory
-    engine = CardGameEngine([GamePlayer("Player 1"), GamePlayer("Player 2")], cards_per_player=match.card_count)
     deadline = datetime.utcnow() + timedelta(seconds=60)
     room.turn_deadline = deadline
-
-    active_rooms[room_code] = {
-        'engine': engine,
-        'room_id': room.id,
-        'turn_deadline': deadline
-    }
 
     if tournament.status != 'in_progress':
         tournament.status = 'in_progress'
@@ -1107,15 +1102,20 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
 
     # Emit socket events to notify players and update tournament UI
     if _socketio:
-        _socketio.emit('tournament_match_started', {
+        match_started_payload = {
             'tournament_id': tournament.id,
             'match_id': match.id,
             'room_code': room_code,
             'player1_id': match.player1_id,
             'player2_id': match.player2_id,
-        }, room=_tournament_room(tournament.id))
+        }
+        # Only the two players should be redirected into a playable room.
+        # The tournament room still receives a generic refresh below.
+        _socketio.emit('tournament_match_started', match_started_payload,
+                       room=f'user_{match.player1_id}')
+        _socketio.emit('tournament_match_started', match_started_payload,
+                       room=f'user_{match.player2_id}')
 
-    _emit_match_complete(tournament, match)
     _emit_tournament_updated(tournament)
 
     return match, {
