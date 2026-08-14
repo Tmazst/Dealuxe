@@ -356,6 +356,47 @@
             flex-wrap: wrap;
         }
 
+        .next-match-panel {
+            display: none;
+            align-items: center;
+            gap: 18px;
+            width: 100%;
+            max-width: 760px;
+            margin: 0 auto 28px;
+            padding: 16px 20px;
+            background: linear-gradient(135deg, rgba(139,92,246,.18), rgba(59,130,246,.12));
+            border: 1px solid rgba(139,92,246,.45);
+            border-radius: 14px;
+        }
+
+        .next-match-icon {
+            font-size: 2rem;
+        }
+
+        .next-match-body {
+            flex: 1;
+        }
+
+        .next-match-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--accent-2);
+            margin-bottom: 4px;
+        }
+
+        .next-match-detail {
+            font-size: 1rem;
+            color: white;
+            font-weight: 600;
+        }
+
+        .next-match-actions a,
+        .next-match-actions button {
+            white-space: nowrap;
+        }
+
         .btn-bracket {
             padding: 12px 25px;
             border: none;
@@ -509,6 +550,16 @@
                 <div class="info-label">Completed</div>
                 <div class="info-value" id="completed-count">2</div>
             </div>
+        </div>
+
+        <!-- Your next match callout (direct link into the multiplayer game UI) -->
+        <div class="next-match-panel" id="next-match-panel" style="display:none;">
+            <div class="next-match-icon">🎯</div>
+            <div class="next-match-body">
+                <div class="next-match-label">Your next match</div>
+                <div class="next-match-detail" id="next-match-detail">Loading...</div>
+            </div>
+            <div class="next-match-actions" id="next-match-actions"></div>
         </div>
 
         <!-- Bracket Visualization -->
@@ -838,6 +889,11 @@
                         let actionsHtml = '';
                         if (activeRoll) {
                             actionsHtml = `<div class="match-status status-rolling" data-roll-deadline="${escapeHtml(match.roll.deadline || '')}">🎲 Rolling... <span class="roll-countdown">10:00</span></div>`;
+                        } else if (status === 'in_progress' && match && match.room_code) {
+                            // Direct link into the multiplayer game UI
+                            actionsHtml = isParticipant
+                                ? `<a class="btn-bracket btn-share" href="/game/${escapeHtml(match.room_code)}">▶ Join game</a>`
+                                : `<div class="match-status status-live">🔴 LIVE NOW</div>`;
                         } else if (canStart) {
                             actionsHtml = `<button class="btn-bracket btn-share" onclick="startMatch(${Number(match.id)})">Start match</button>`;
                         } else if (canRoll) {
@@ -858,6 +914,42 @@
                         </div>`;
                     }).join('')}
                 </div>`).join('');
+
+            renderNextMatchCallout();
+        }
+
+        function renderNextMatchCallout() {
+            const panel = document.getElementById('next-match-panel');
+            const detail = document.getElementById('next-match-detail');
+            const actions = document.getElementById('next-match-actions');
+            if (!panel || !detail || !actions) return;
+            const matches = (tournamentData && tournamentData.matches) || [];
+
+            if (!currentUserId) {
+                panel.style.display = 'flex';
+                detail.textContent = 'Log in to play your tournament matches.';
+                actions.innerHTML = '<a class="btn-bracket btn-share" href="/login">Log in</a>';
+                return;
+            }
+
+            const myMatch = matches.find(m => m.status !== 'completed' && (m.player1_id === currentUserId || m.player2_id === currentUserId));
+            if (!myMatch) {
+                panel.style.display = 'none';
+                return;
+            }
+
+            const opponentName = myMatch.player1_id === currentUserId ? myMatch.player2_name : myMatch.player1_name;
+            if (myMatch.status === 'in_progress' && myMatch.room_code) {
+                panel.style.display = 'flex';
+                detail.textContent = `You vs ${opponentName || 'Opponent'} — LIVE now.`;
+                actions.innerHTML = `<a class="btn-bracket btn-share" href="/game/${encodeURIComponent(myMatch.room_code)}">▶ Join game</a>`;
+            } else if (myMatch.status === 'scheduled') {
+                panel.style.display = 'flex';
+                detail.textContent = `You vs ${opponentName || 'Opponent'} — ready to play.`;
+                actions.innerHTML = `<button class="btn-bracket btn-share" onclick="startMatch(${Number(myMatch.id)})">🎮 Start match</button>`;
+            } else {
+                panel.style.display = 'none';
+            }
         }
 
         function startRollCountdowns() {
