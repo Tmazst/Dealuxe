@@ -2,6 +2,7 @@ instance/*.db
 instance/*.sqlite
 instance/*.sqlite3
 *.md
+.env
 .venv
 *.zip
 controllers/__pycache__/*cpython-311.cyc

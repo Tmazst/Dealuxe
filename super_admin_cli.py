@@ -25,6 +25,13 @@ import sys
 # Allow running directly from the project root (`python super_admin_cli.py`).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Load environment variables from a .env file if one exists.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+except Exception:
+    pass
+
 from flask import Flask  # noqa: E402
 
 from database import (  # noqa: E402

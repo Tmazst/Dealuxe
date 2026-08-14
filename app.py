@@ -8,6 +8,15 @@ try:
 except Exception:
     pass
 
+# Load environment variables from a .env file (python-dotenv). This must run
+# before any module reads os.environ (e.g. config.PaymentConfig). Existing
+# process environment variables take precedence over the .env file.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 from flask import Flask, render_template, request, jsonify, session
 from flask_socketio import SocketIO
 from game.manager_redis import GameManager

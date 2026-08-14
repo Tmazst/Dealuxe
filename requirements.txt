@@ -41,3 +41,4 @@ flask-socketio
 python-socketio
 gevent
 gevent-websocket
+python-dotenv
