@@ -980,6 +980,67 @@ html,body{
     color: #60a5fa;
 }
 
+/* Tournament-mode game-over result section (Phase 3 result UX) */
+.tournament-result-section {
+    background: rgba(139, 92, 246, 0.10);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    border-radius: 14px;
+    padding: 16px;
+    text-align: center;
+}
+
+.tournament-result-msg {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 14px;
+    line-height: 1.4;
+}
+
+.tournament-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+}
+
+.tournament-cta-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    color: #e9d5ff;
+    text-decoration: none;
+    font-family: Oswald, sans-serif;
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+    transition: all 0.25s ease;
+}
+
+.tournament-cta-btn:hover {
+    background: rgba(139, 92, 246, 0.25);
+    border-color: rgba(139, 92, 246, 0.9);
+    color: #fff;
+    transform: translateY(-2px);
+}
+
+.tournament-cta-btn.tournament-cta-primary {
+    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    border-color: transparent;
+    color: #1a0836;
+    box-shadow: 0 6px 20px rgba(245, 158, 11, 0.35);
+}
+
+.tournament-cta-btn.tournament-cta-primary:hover {
+    background: linear-gradient(135deg, #fcd34d, #fbbf24);
+    color: #1a0836;
+}
+
 /* Responsive modals */
 @media (max-width: 600px) {
     .game-start-modal, .game-over-modal {
