@@ -36,6 +36,35 @@
         .button-secondary { color: white; background: rgba(255,255,255,.06); border-color: var(--line); }
         .hero-note { color: var(--muted); font-size: .79rem; margin: 14px 0 0; }
         .hero-note i { color: var(--success); margin-right: 6px; }
+        .next-match-info { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .next-match-info .live-dot { font-size: .55rem; }
+        .next-match-info .opponent { color: white; font-weight: 800; }
+        .next-match-info .no-game { color: #f87171; font-weight: 700; }
+        .next-match-info .countdown { color: var(--gold); font-variant-numeric: tabular-nums; }
+        .modal-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(5,8,16,.72); backdrop-filter: blur(6px); opacity: 0; pointer-events: none; transition: opacity .2s; }
+        .modal-backdrop.visible { opacity: 1; pointer-events: auto; }
+        .modal { width: min(560px, 100%); background: linear-gradient(160deg, rgba(25,14,54,.98), var(--panel)); border: 1px solid rgba(255,228,107,.3); border-radius: 18px; padding: 26px; box-shadow: 0 30px 70px rgba(0,0,0,.4); }
+        .modal-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 18px; }
+        .modal-head h3 { margin: 0; color: var(--ink); font-size: 1.35rem; letter-spacing: -.03em; }
+        .modal-head p { margin: 6px 0 0; color: var(--muted); font-size: .82rem; }
+        .modal-close { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 4px 8px; border-radius: 8px; }
+        .modal-close:hover { color: white; background: rgba(255,255,255,.08); }
+        .type-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
+        .type-option { position: relative; border: 1px solid var(--line); background: rgba(255,255,255,.045); border-radius: 12px; padding: 14px 10px; cursor: pointer; text-align: center; transition: .2s; }
+        .type-option:hover { border-color: var(--accent-1); }
+        .type-option.selected { border-color: var(--gold); background: rgba(255,228,107,.08); }
+        .type-option img { width: 42px; height: 42px; object-fit: contain; margin-bottom: 8px; }
+        .type-option strong { display: block; color: white; font-size: .9rem; }
+        .type-option small { display: block; color: var(--muted); font-size: .72rem; margin-top: 3px; }
+        .form-field { margin: 14px 0; }
+        .form-field label { display: block; color: var(--muted); font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 7px; }
+        .form-field input[type="text"] { width: 100%; background: rgba(255,255,255,.06); border: 1px solid var(--line); color: white; border-radius: 9px; padding: 11px 13px; font-size: .95rem; outline: none; }
+        .form-field input[type="text"]:focus { border-color: var(--accent-1); }
+        .checkbox-field { display: flex; align-items: center; gap: 10px; margin-top: 6px; cursor: pointer; }
+        .checkbox-field input { accent-color: var(--gold); width: 17px; height: 17px; }
+        .checkbox-field span { color: var(--muted); font-size: .84rem; }
+        .modal-actions { display: flex; gap: 12px; margin-top: 20px; }
+        .modal-actions .button { flex: 1; justify-content: center; }
         .prize-board { background: linear-gradient(145deg, rgba(25,14,54,.98), var(--panel)); border: 1px solid rgba(255,228,107,.3); border-radius: 22px; padding: 24px; box-shadow: 0 25px 60px rgba(0,0,0,.25); position: relative; overflow: hidden; }
         .prize-board::after { content: '\f091'; font-family: 'Font Awesome 6 Free'; font-weight: 900; position: absolute; right: -5px; top: -27px; font-size: 9rem; opacity: .045; color: var(--gold); }
         .board-top { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 17px; }
@@ -78,12 +107,21 @@
                 <a href="#tournaments">Tournaments</a>
                 <a href="#how-to-play">How to play</a>
                 <a href="/lobby">Versus lobby</a>
+                <!--Login icon button / User Account profile icon goes here. Logout shall be inside the account profile modal-->
                 <a class="nav-play" href="#tournaments"><i class="fa-solid fa-play"></i> Play now</a>
             </div>
         </nav>
         <section class="three_cards" >
             <img src="{{ url_for('static', filename='images/3_cards.png') }}" alt="uMshova Deluxe tournament arena" style="width: 100%; max-width: 150px; height:auto; ">
         </section>
+
+        <div class="hero-actions">
+            <!-- Connected to the create-tournament modal (POST /api/tournaments/create); hidden automatically when the player already has a tournament in progress -->
+            <a class="button button-primary" style="background-color: rgb(216, 8, 8) !important;" href="#" id="createTournamentBtn" aria-haspopup="dialog"><i class="fa-solid fa-trophy"></i> Create tournament</a>
+            <!-- Connected to GET /api/tournaments/me/next-match; points at the player's next fixture (game room / bracket) or falls back to /lobby -->
+            <a class="button button-secondary" href="/lobby" id="nextMatchBtn"><i class="fa-regular fa-circle-play"></i> Next Match</a>
+        </div>
+        <p class="hero-note" id="nextMatchInfo" style="display:none;"></p>
 
         <section class="hero" aria-labelledby="hero-title">
             <div>
@@ -94,12 +132,12 @@
                     <a class="button button-primary" href="#tournaments"><i class="fa-solid fa-trophy"></i> Join a tournament</a>
                     <a class="button button-secondary" href="#how-to-play"><i class="fa-regular fa-circle-play"></i> Learn the game</a>
                 </div>
-                <p class="hero-note"><i class="fa-solid fa-shield-halved"></i> Clear entry fees. Live brackets. Prizes paid by placement.</p>
+                <p class="hero-note"><i class="fa-solid fa-shield-halved"></i> E10.00 entry fee. Live knockout tournament brackets. Winners prices are paid instantly.</p>
             </div>
             <aside class="prize-board" aria-label="Tournament prize breakdown">
                 <div class="board-top"><span class="board-title">Prize pool breakdown</span><span class="live-pill"><i class="fa-solid fa-circle"></i> LIVE GAMES</span></div>
                 <img src="{{ url_for('static', filename='images/3_cards.png') }}" alt="uMshova Deluxe tournament arena" style="width: 100%; max-width: 70px; height:auto; ">
-                <div class="prize-total"><span>Win up to</span><strong>E80.00</strong><small>of one uMshova tournament prize</small></div>
+                <div class="prize-total"><span>Win up to</span><strong>E80.00</strong><small>per tournament</small></div>
                 <div class="prize-ladder">
                     <div class="ladder-row"><img class="tournament_badge" src="/static/images/deluxe.png" alt="badge"><span>Deluxe - 16 players</span><strong>E80</strong></div>
                     <div class="ladder-row"><img class="tournament_badge" src="/static/images/premium.png" alt="badge"><span>Premium - 8 Players</span><strong>E40</strong></div>
@@ -139,6 +177,44 @@
                 </div>
             </div>
         </section>
+        <!-- Create tournament modal (connected to POST /api/tournaments/create) -->
+        <div class="modal-backdrop" id="createModal" aria-hidden="true">
+            <div class="modal" role="dialog" aria-modal="true" aria-labelledby="createModalTitle">
+                <div class="modal-head">
+                    <div>
+                        <h3 id="createModalTitle"><i class="fa-solid fa-trophy" style="color:var(--gold); margin-right:8px;"></i>Create a tournament</h3>
+                        <p>Choose a bracket size and pay the E10.00 entry fee to reserve your seat.</p>
+                    </div>
+                    <button class="modal-close" type="button" id="createModalClose" aria-label="Close">&times;</button>
+                </div>
+                <div class="type-grid" id="typeGrid">
+                    <button class="type-option selected" type="button" data-type="standard" data-max="4">
+                        <img src="/static/images/standard.png" alt="Standard">
+                        <strong>Standard</strong><small>4 players &middot; E20 top prize</small>
+                    </button>
+                    <button class="type-option" type="button" data-type="premium" data-max="8">
+                        <img src="/static/images/premium.png" alt="Premium">
+                        <strong>Premium</strong><small>8 players &middot; E40 top prize</small>
+                    </button>
+                    <button class="type-option" type="button" data-type="deluxe" data-max="16">
+                        <img src="/static/images/deluxe.png" alt="Deluxe">
+                        <strong>Deluxe</strong><small>16 players &middot; E80 top prize</small>
+                    </button>
+                </div>
+                <div class="form-field">
+                    <label for="tournamentName">Tournament name <span style="text-transform:none; font-weight:400;">(optional)</span></label>
+                    <input type="text" id="tournamentName" placeholder="e.g. Friday Night Showdown" maxlength="80">
+                </div>
+                <label class="checkbox-field" for="autoLock">
+                    <input type="checkbox" id="autoLock">
+                    <span>Auto-lock the bracket once the table is full</span>
+                </label>
+                <div class="modal-actions">
+                    <button class="button button-secondary" type="button" id="createCancelBtn">Cancel</button>
+                    <button class="button button-primary" type="button" id="createSubmitBtn" style="background: linear-gradient(135deg, rgb(216, 8, 8), #b91c1c);"><i class="fa-solid fa-bolt"></i> Create &amp; pay E10.00</button>
+                </div>
+            </div>
+        </div>
     </main>
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -205,6 +281,137 @@
         }
         function viewTournament(tournamentId) { window.location.href = `/tournaments/${tournamentId}`; }
         setInterval(fetchTournaments, 30000);
+
+        // ---------- Create tournament (hero CTA) ----------
+        const createModal = document.getElementById('createModal');
+        const createTournamentBtn = document.getElementById('createTournamentBtn');
+        let selectedType = 'standard';
+
+        function openCreateModal() { createModal.classList.add('visible'); createModal.setAttribute('aria-hidden', 'false'); }
+        function closeCreateModal() { createModal.classList.remove('visible'); createModal.setAttribute('aria-hidden', 'true'); }
+
+        createTournamentBtn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            try {
+                const res = await fetch('/api/auth/me', { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) { window.location.href = '/login'; return; }
+            } catch (err) { window.location.href = '/login'; return; }
+            openCreateModal();
+        });
+        document.getElementById('createModalClose').addEventListener('click', closeCreateModal);
+        document.getElementById('createCancelBtn').addEventListener('click', closeCreateModal);
+        createModal.addEventListener('click', (event) => { if (event.target === createModal) closeCreateModal(); });
+
+        document.querySelectorAll('#typeGrid .type-option').forEach((option) => {
+            option.addEventListener('click', () => {
+                selectedType = option.dataset.type;
+                document.querySelectorAll('#typeGrid .type-option').forEach((o) => o.classList.toggle('selected', o === option));
+            });
+        });
+
+        document.getElementById('createSubmitBtn').addEventListener('click', async (event) => {
+            const btn = event.currentTarget;
+            btn.disabled = true;
+            try {
+                const name = document.getElementById('tournamentName').value.trim();
+                const autoLock = document.getElementById('autoLock').checked;
+                const res = await fetch('/api/tournaments/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tournament_type: selectedType, tournament_name: name || undefined, is_auto_lock: autoLock }),
+                });
+                const result = await res.json();
+                if (res.status === 401) { window.location.href = '/login'; return; }
+                if (!res.ok) { alert(result.error || 'Unable to create tournament'); return; }
+                if (result.payment && result.payment.payment_url) { window.location.href = result.payment.payment_url; return; }
+                const tournamentId = result.tournament && result.tournament.id;
+                window.location.href = tournamentId ? `/tournaments/${tournamentId}` : '/tournaments';
+            } catch (err) {
+                alert('Unable to create tournament: ' + err.message);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // ---------- Next match (hero CTA) ----------
+        const nextMatchBtn = document.getElementById('nextMatchBtn');
+        const nextMatchInfo = document.getElementById('nextMatchInfo');
+        let countdownTimer = null;
+
+        function fmtCountdown(secs) {
+            const m = String(Math.floor(secs / 60)).padStart(2, '0');
+            const s = String(secs % 60).padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function renderLiveCountdown(startedAtIso) {
+            const started = new Date(startedAtIso).getTime();
+            const countdownEl = document.getElementById('matchCountdown');
+            const tick = () => {
+                const secs = Math.max(0, Math.floor((Date.now() - started) / 1000));
+                if (countdownEl) countdownEl.textContent = `Started ${fmtCountdown(secs)}`;
+            };
+            tick();
+            clearInterval(countdownTimer);
+            countdownTimer = setInterval(tick, 1000);
+        }
+
+        async function loadActiveTournaments() {
+            // If the player already has a tournament running, hide the create CTA.
+            try {
+                const res = await fetch('/api/tournaments/me/active', { headers: { 'Accept': 'application/json' } });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (data.tournaments && data.tournaments.length > 0 && createTournamentBtn) {
+                    createTournamentBtn.style.display = 'none';
+                }
+            } catch (err) { /* keep the CTA visible */ }
+        }
+
+        async function loadNextMatch() {
+            clearInterval(countdownTimer);
+            try {
+                const res = await fetch('/api/tournaments/me/next-match', { headers: { 'Accept': 'application/json' } });
+                const data = await res.json();
+
+                if (data && data.has_match) {
+                    const match = data.match;
+                    const live = match.status === 'in_progress';
+                    const selfName = match.self_name || 'You';
+                    const opponent = match.opponent_name || 'Opponent';
+
+                    nextMatchInfo.style.display = 'block';
+                    nextMatchInfo.className = 'hero-note next-match-info';
+                    nextMatchInfo.innerHTML = `
+                        <i class="fa-solid fa-circle live-dot" style="color:${live ? '#4ade80' : '#ffe46b'};"></i>
+                        <span><span class="opponent">${escapeHtml(selfName)}</span> vs <span class="opponent">${escapeHtml(opponent)}</span></span>
+                        <span>${live ? '<span style="color:#4ade80;">Match Live</span>' : '<span style="color:#ffe46b;">Game Scheduled</span>'}</span>
+                        <span class="countdown" id="matchCountdown"></span>`;
+
+                    if (live && match.started_at) renderLiveCountdown(match.started_at);
+
+                    nextMatchBtn.innerHTML = live
+                        ? '<i class="fa-regular fa-circle-play"></i> Play Match'
+                        : '<i class="fa-regular fa-circle-play"></i> Go to Match';
+                    nextMatchBtn.href = match.game_url || match.bracket_url || match.tournament_url;
+                    return;
+                }
+
+                nextMatchBtn.href = '/lobby';
+                nextMatchBtn.innerHTML = '<i class="fa-regular fa-circle-play"></i> Next Match';
+                nextMatchInfo.style.display = 'block';
+                nextMatchInfo.className = 'hero-note next-match-info';
+                nextMatchInfo.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <span class="no-game">No Game Scheduled for this player</span>';
+            } catch (err) {
+                nextMatchBtn.href = '/lobby';
+                nextMatchInfo.style.display = 'block';
+                nextMatchInfo.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <span class="no-game">No Game Scheduled for this player</span>';
+            }
+        }
+
+        loadActiveTournaments();
+        loadNextMatch();
+        setInterval(loadNextMatch, 30000);
     </script>
 </body>
 </html>

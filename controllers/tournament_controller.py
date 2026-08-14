@@ -3,6 +3,7 @@ import random
 
 from flask import Blueprint, request, jsonify, session, current_app
 from flask_socketio import emit, join_room, leave_room
+from sqlalchemy import or_
 
 from database import (
     db,
@@ -743,6 +744,101 @@ def init_tournament_events(socketio, app=None):
 def list_tournaments():
     tournaments = Tournament.query.order_by(Tournament.created_at.desc()).all()
     return jsonify({'tournaments': [_serialize_tournament(t) for t in tournaments]})
+
+
+@tournament_bp.route('/me/active', methods=['GET'])
+def my_active_tournaments():
+    """Return tournaments the current user is still part of (open/locked/in_progress).
+
+    Used by the tournament arena page to hide the "Create tournament" CTA while
+    the player already has a tournament in progress.
+    """
+    user_id = _get_current_user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    active = Tournament.query.filter(
+        Tournament.status.in_(['open', 'locked', 'in_progress'])
+    ).order_by(Tournament.created_at.desc()).all()
+
+    mine = []
+    for tournament in active:
+        is_participant = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id, user_id=user_id, status='registered'
+        ).first() is not None
+        if tournament.creator_id == user_id or is_participant:
+            mine.append(_serialize_tournament(tournament))
+
+    return jsonify({'tournaments': mine})
+
+
+@tournament_bp.route('/me/next-match', methods=['GET'])
+def my_next_match():
+    """Return the current user's next scheduled or live tournament match.
+
+    Powers the "Next Match" CTA on the tournament arena page. Prefers a live
+    match (in_progress) over scheduled fixtures, and only considers matches in
+    tournaments that are still running.
+    """
+    user_id = _get_current_user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    candidates = TournamentMatch.query.filter(
+        or_(
+            TournamentMatch.player1_id == user_id,
+            TournamentMatch.player2_id == user_id,
+        ),
+        TournamentMatch.status.in_(['scheduled', 'pending', 'in_progress']),
+    ).all()
+
+    # in_progress first, then by scheduled time / creation order
+    candidates.sort(key=lambda m: (
+        0 if m.status == 'in_progress' else 1,
+        m.scheduled_for if m.scheduled_for else datetime.min,
+        m.id,
+    ))
+
+    for match in candidates:
+        tournament = Tournament.query.get(match.tournament_id)
+        if tournament is None or tournament.status not in ('open', 'locked', 'in_progress'):
+            continue
+
+        room_code = None
+        if match.game_room_id:
+            from database import GameRoom
+            room = GameRoom.query.get(match.game_room_id)
+            if room is not None:
+                room_code = room.room_code
+
+        bracket = TournamentBracket.query.get(match.bracket_id) if match.bracket_id else None
+        opponent_id = match.player2_id if match.player1_id == user_id else match.player1_id
+
+        return jsonify({
+            'has_match': True,
+            'match': {
+                'id': match.id,
+                'tournament_id': tournament.id,
+                'tournament_code': tournament.tournament_code,
+                'tournament_name': tournament.tournament_name,
+                'round_name': bracket.round_name if bracket else None,
+                'status': match.status,
+                'user_id': user_id,
+                'self_name': _get_username(user_id),
+                'opponent_id': opponent_id,
+                'opponent_name': _get_username(opponent_id),
+                'player1_name': _get_username(match.player1_id),
+                'player2_name': _get_username(match.player2_id),
+                'room_code': room_code,
+                'started_at': match.started_at.isoformat() if match.started_at else None,
+                'scheduled_for': match.scheduled_for.isoformat() if match.scheduled_for else None,
+                'tournament_url': f'/tournaments/{tournament.id}',
+                'bracket_url': f'/tournaments/{tournament.id}/bracket',
+                'game_url': f'/game/{room_code}' if room_code else None,
+            },
+        }), 200
+
+    return jsonify({'has_match': False})
 
 
 @tournament_bp.route('/create', methods=['POST'])
