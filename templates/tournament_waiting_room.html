@@ -343,6 +343,60 @@
             cursor: not-allowed;
         }
 
+        .btn-vote {
+            background: var(--glass-strong);
+            border: 2px solid var(--accent-2);
+            color: var(--accent-2);
+            grid-column: 1;
+        }
+
+        .btn-vote:hover:not(:disabled) {
+            background: var(--accent-2);
+            color: var(--bg-1);
+            transform: translateY(-3px);
+        }
+
+        .btn-vote.voted {
+            background: var(--accent-2);
+            color: var(--bg-1);
+        }
+
+        .lock-votes {
+            margin-top: 15px;
+            padding: 12px 14px;
+            background: var(--glass-strong);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+        }
+
+        .lock-votes-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        .lock-votes-count {
+            color: var(--accent-2);
+            font-weight: 800;
+        }
+
+        .lock-votes-progress {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 99px;
+            overflow: hidden;
+        }
+
+        .lock-votes-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-2), #fcd34d);
+            border-radius: 99px;
+            transition: width 0.3s ease;
+        }
+
         /* Status Messages */
         .status-message {
             padding: 20px;
@@ -556,8 +610,11 @@
 
                 <!-- Controls -->
                 <div class="controls-section">
-                    <button class="btn-large btn-lock" id="lock-btn" onclick="lockTournament()">
+                    <button class="btn-large btn-lock" id="lock-btn" onclick="lockTournament()" style="display:none;">
                         🔒 Lock Tournament
+                    </button>
+                    <button class="btn-large btn-vote" id="vote-lock-btn" onclick="voteLock()" style="display:none;">
+                        🔒 Vote to Lock
                     </button>
                     <button class="btn-large btn-copy" onclick="copyToClipboard()">
                         📋 Copy Code
@@ -565,6 +622,17 @@
                     <button class="btn-large btn-leave" onclick="leaveTournament()">
                         👋 Leave Tournament
                     </button>
+                </div>
+
+                <!-- Manual-lock consensus votes (D3) -->
+                <div class="lock-votes" id="lock-votes" style="display:none;">
+                    <div class="lock-votes-row">
+                        <span>🔒 Lock votes</span>
+                        <span class="lock-votes-count" id="lock-votes-count">0/0</span>
+                    </div>
+                    <div class="lock-votes-progress">
+                        <div class="lock-votes-bar" id="lock-votes-bar" style="width:0%"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -613,6 +681,19 @@
             showNotification(data.message || 'Tournament action failed');
         });
 
+        socket.on('lock_votes_updated', (data) => {
+            console.log('🔒 Lock votes updated:', data);
+            const votesEl = document.getElementById('lock-votes');
+            if (data) {
+                if (votesEl) votesEl.style.display = 'block';
+                updateLockVotes(data.votes_needed, data.votes_received);
+            }
+            if (data && data.tournament_locked) {
+                lockUI();
+                startCountdown();
+            }
+        });
+
         function updateUI(data) {
             document.getElementById('tournament-name').textContent = data.tournament_name || 'Tournament';
             document.getElementById('tournament-type').textContent = (data.tournament_type || 'STANDARD').toUpperCase();
@@ -626,9 +707,31 @@
             document.getElementById('prize-2nd').textContent = 'E' + (pool * 0.125).toFixed(2);
             document.getElementById('prize-3rd').textContent = 'E' + (pool * 0.06).toFixed(2);
 
-            // Update button states
-            if (data.current_players >= data.max_players && isAdmin) {
-                document.getElementById('lock-btn').style.display = 'block';
+            // Update lock controls based on lock mode + consensus votes (D3)
+            const lockInfo = data.lock || {};
+            const lockBtn = document.getElementById('lock-btn');
+            const voteBtn = document.getElementById('vote-lock-btn');
+            const votesEl = document.getElementById('lock-votes');
+            const isOpen = data.status === 'open';
+            const isManual = lockInfo.mode === 'manual';
+
+            if (isOpen && isManual) {
+                if (isAdmin && lockBtn) {
+                    lockBtn.style.display = 'block';
+                    lockBtn.disabled = false;
+                    if (voteBtn) voteBtn.style.display = 'none';
+                } else if (voteBtn) {
+                    voteBtn.style.display = 'block';
+                    if (lockBtn) lockBtn.style.display = 'none';
+                }
+                if (votesEl) {
+                    votesEl.style.display = 'block';
+                    updateLockVotes(lockInfo.votes_needed || 0, lockInfo.votes_received || 0);
+                }
+            } else {
+                if (lockBtn) lockBtn.style.display = 'none';
+                if (voteBtn) voteBtn.style.display = 'none';
+                if (votesEl) votesEl.style.display = 'none';
             }
 
             // Update status message
@@ -650,7 +753,7 @@
                         <div class="player-details">
                             <div class="player-name">${player.username}</div>
                             <div class="player-role">
-                                ${player.is_creator ? '👑 CREATOR' : '🎮 PLAYER'}
+                                ${player.is_creator ? '👑 CREATOR' : '🎮 PLAYER'}${player.lock_voted ? ' · 🔒' : ''}
                             </div>
                         </div>
                     </div>
@@ -679,9 +782,37 @@
             socket.emit('request_tournament_lock', { tournament_code: tournamentCode });
         }
 
+        function voteLock() {
+            const btn = document.getElementById('vote-lock-btn');
+            socket.emit('vote_tournament_lock', { tournament_code: tournamentCode });
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('voted');
+                btn.innerHTML = '✅ Vote Cast';
+            }
+        }
+
+        function updateLockVotes(needed, received) {
+            const countEl = document.getElementById('lock-votes-count');
+            const barEl = document.getElementById('lock-votes-bar');
+            const safeNeeded = Math.max(Number(needed) || 0, 0);
+            const safeReceived = Math.max(Number(received) || 0, 0);
+            if (countEl) countEl.textContent = `${safeReceived}/${safeNeeded} votes`;
+            if (barEl && safeNeeded > 0) {
+                barEl.style.width = `${Math.min(100, (safeReceived / safeNeeded) * 100)}%`;
+            }
+        }
+
         function lockUI() {
-            document.getElementById('lock-btn').disabled = true;
-            document.getElementById('lock-btn').innerHTML = '🔒 Tournament Locked';
+            const lockBtn = document.getElementById('lock-btn');
+            if (lockBtn) {
+                lockBtn.disabled = true;
+                lockBtn.innerHTML = '🔒 Tournament Locked';
+            }
+            const voteBtn = document.getElementById('vote-lock-btn');
+            if (voteBtn) voteBtn.style.display = 'none';
+            const votesEl = document.getElementById('lock-votes');
+            if (votesEl) votesEl.style.display = 'none';
             document.getElementById('status-message').classList.remove('waiting');
             document.getElementById('status-message').classList.add('locked');
             document.getElementById('status-message').innerHTML = `

@@ -342,15 +342,15 @@ def deposit():
     db.session.commit()
     
     # Log transaction
-    from database import log_transaction
+    from database import log_transaction, TX_WALLET_TOPUP
     log_transaction(
         player_id=player.id,
-        transaction_type='deposit',
+        transaction_type=TX_WALLET_TOPUP,
         amount=amount,
         balance_type='real',
         balance_before=balance_before,
         balance_after=player.real_balance,
-        description='Real money deposit'
+        description='Real money wallet top-up'
     )
     
     return jsonify({

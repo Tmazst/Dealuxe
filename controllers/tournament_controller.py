@@ -18,6 +18,9 @@ from database import (
     create_tournament_record,
     add_tournament_participant,
     log_transaction,
+    TX_ENTRY_FEE,
+    TX_PRIZE_AWARD,
+    TX_REFUND,
 )
 
 
@@ -40,6 +43,53 @@ def _tournament_room(tournament_id):
     return f'tournament_{tournament_id}'
 
 
+def _lock_consensus_info(tournament):
+    """Vote status for manual-lock consensus (D3).
+
+    Only non-creator registered participants vote. When every voter has voted,
+    the tournament may be locked early at its current player count.
+    """
+    participants = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, status='registered'
+    ).all()
+    voters_needed = [p for p in participants if p.user_id != tournament.creator_id]
+    votes_received = sum(1 for p in voters_needed if p.lock_voted)
+    return {
+        'mode': 'auto' if tournament.is_auto_lock else 'manual',
+        'votes_needed': len(voters_needed),
+        'votes_received': votes_received,
+        'consensus_reached': bool(voters_needed and votes_received >= len(voters_needed)),
+    }
+
+
+def _perform_tournament_lock(tournament):
+    """Lock a tournament at its current player count and build its bracket.
+
+    Shared by the creator/admin lock path and the manual-lock consensus path.
+    Mirrors the existing lock behaviour (status -> locked, then the bracket
+    builder transitions the tournament into 'in_progress' with scheduled matches).
+    """
+    participant_count = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, status='registered'
+    ).count()
+    if participant_count < 2:
+        return False, 'At least two paid players are required'
+
+    tournament.current_player_count = participant_count
+    tournament.status = 'locked'
+    tournament.locked_at = datetime.utcnow()
+    tournament.locked_player_count = participant_count
+    _build_bracket(tournament)
+    db.session.commit()
+
+    summary = _serialize_tournament(tournament)
+    if _socketio is not None:
+        _socketio.emit('tournament_locked', {'tournament': summary},
+                       room=_tournament_room(tournament.id))
+    _emit_tournament_updated(tournament)
+    return True, None
+
+
 def _serialize_tournament(tournament):
     """Return the stable, UI-facing tournament contract."""
     current_players = TournamentParticipant.query.filter_by(
@@ -57,6 +107,8 @@ def _serialize_tournament(tournament):
         'creator': _get_username(tournament.creator_id),
         'creator_id': tournament.creator_id,
         'status': tournament.status,
+        'is_auto_lock': tournament.is_auto_lock,
+        'lock': _lock_consensus_info(tournament),
         'players_needed': max(tournament.max_players - current_players, 0),
         'created_at': tournament.created_at.isoformat() if tournament.created_at else None,
     }
@@ -117,7 +169,7 @@ def _local_debit_entry(player, amount, tournament_id):
     player.deduct_spending(amount)
     log_transaction(
         player_id=player.id,
-        transaction_type='tournament_entry',
+        transaction_type=TX_ENTRY_FEE,
         amount=amount,
         balance_type='real',
         balance_before=balance_before,
@@ -166,7 +218,7 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
     # callback confirmation.
     transaction = Transaction(
         player_id=player.id,
-        transaction_type='tournament_entry',
+        transaction_type=TX_ENTRY_FEE,
         amount=amount,
         balance_type='real',
         balance_before=player.real_balance,
@@ -391,6 +443,7 @@ def _serialize_participant(participant):
         'is_creator': participant.user_id == participant.tournament.creator_id,
         'status': participant.status,
         'payment_status': participant.payment_status,
+        'lock_voted': bool(participant.lock_voted),
         'paid_amount': participant.paid_amount,
         'registered_at': participant.registered_at.isoformat() if participant.registered_at else None,
     }
@@ -418,7 +471,7 @@ def _withdraw_participant(tournament, participant):
         player.daily_spending_amount = max(0.0, player.daily_spending_amount - amount)
         log_transaction(
             player_id=player.id,
-            transaction_type='tournament_refund',
+            transaction_type=TX_REFUND,
             amount=amount,
             balance_type='real',
             balance_before=balance_before,
@@ -554,7 +607,7 @@ def _finalize_tournament(tournament):
             player.total_winnings += amount
             log_transaction(
                 player_id=player.id,
-                transaction_type='prize_award',
+                transaction_type=TX_PRIZE_AWARD,
                 amount=amount,
                 balance_type='real',
                 balance_before=balance_before,
@@ -672,23 +725,55 @@ def init_tournament_events(socketio, app=None):
         if tournament.status != 'open':
             emit('tournament_error', {'message': 'Tournament is already locked or completed'})
             return
-        participant_count = TournamentParticipant.query.filter_by(
-            tournament_id=tournament.id, status='registered'
-        ).count()
-        if participant_count < 2:
-            emit('tournament_error', {'message': 'At least two paid players are required'})
+
+        ok, error = _perform_tournament_lock(tournament)
+        if not ok:
+            emit('tournament_error', {'message': error})
+
+    @socketio.on('vote_tournament_lock')
+    def handle_vote_tournament_lock(data=None):
+        """Manual-lock consensus (D3): every registered non-creator player votes.
+
+        When all voters have voted the tournament locks early at its current
+        player count. Broadcasts `lock_votes_updated` with the vote totals.
+        """
+        user_id = _get_current_user_id()
+        if not user_id:
+            emit('tournament_error', {'message': 'Authentication required'})
+            return
+        tournament = get_tournament_from_payload(data)
+        if tournament is None:
+            return
+        participant = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id, user_id=user_id, status='registered'
+        ).first()
+        if participant is None:
+            emit('tournament_error', {'message': 'You are not an active participant'})
+            return
+        if tournament.status != 'open':
+            emit('tournament_error', {'message': 'Tournament is already locked or completed'})
+            return
+        if tournament.is_auto_lock:
+            emit('tournament_error', {'message': 'This tournament uses auto-lock when full'})
+            return
+        if _can_manage_tournament(tournament, user_id):
+            emit('tournament_error', {'message': 'The creator or admin locks directly'})
             return
 
-        tournament.current_player_count = participant_count
-        tournament.status = 'locked'
-        tournament.locked_at = datetime.utcnow()
-        tournament.locked_player_count = participant_count
-        _build_bracket(tournament)
-        db.session.commit()
+        if not participant.lock_voted:
+            participant.lock_voted = True
+            db.session.commit()
 
-        summary = _serialize_tournament(tournament)
-        socketio.emit('tournament_locked', {'tournament': summary}, room=_tournament_room(tournament.id))
-        _emit_tournament_updated(tournament)
+        lock_info = _lock_consensus_info(tournament)
+        tournament_locked = False
+        if lock_info['consensus_reached']:
+            ok, error = _perform_tournament_lock(tournament)
+            tournament_locked = ok
+
+        socketio.emit('lock_votes_updated', {
+            **lock_info,
+            'tournament_locked': tournament_locked,
+        }, room=_tournament_room(tournament.id))
 
     @socketio.on('leave_tournament')
     def handle_leave_tournament(data=None):
@@ -970,19 +1055,47 @@ def lock_tournament(tournament_id):
     if not _can_manage_tournament(tournament, user_id):
         return jsonify({'error': 'Only the creator can lock this tournament'}), 403
 
-    if tournament.status in {'locked', 'in_progress', 'completed', 'cancelled'}:
+    if tournament.status != 'open':
         return jsonify({'error': 'Tournament already locked or completed'}), 400
 
-    if tournament.current_player_count < 2:
-        return jsonify({'error': 'Need at least 2 players to lock'}), 400
+    ok, error = _perform_tournament_lock(tournament)
+    if not ok:
+        return jsonify({'error': error}), 400
 
-    tournament.status = 'locked'
-    tournament.locked_at = datetime.utcnow()
-    tournament.locked_player_count = tournament.current_player_count
-    _build_bracket(tournament)
-    _emit_tournament_updated(tournament)
+    return jsonify({'message': 'Tournament locked', 'tournament': _serialize_tournament(tournament)})
 
-    return jsonify({'message': 'Tournament locked', 'tournament': tournament.to_dict()})
+
+@tournament_bp.route('/<int:tournament_id>/vote-lock', methods=['POST'])
+def vote_tournament_lock_rest(tournament_id):
+    """Manual-lock consensus (D3): cast the caller's vote to lock the tournament."""
+    user_id = _get_current_user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    tournament = Tournament.query.get_or_404(tournament_id)
+    participant = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, user_id=user_id, status='registered'
+    ).first()
+    if participant is None:
+        return jsonify({'error': 'You are not an active participant'}), 400
+    if tournament.status != 'open':
+        return jsonify({'error': 'Tournament is already locked or completed'}), 400
+    if tournament.is_auto_lock:
+        return jsonify({'error': 'This tournament uses auto-lock when full'}), 400
+    if _can_manage_tournament(tournament, user_id):
+        return jsonify({'error': 'The creator or admin locks directly'}), 400
+
+    if not participant.lock_voted:
+        participant.lock_voted = True
+        db.session.commit()
+
+    lock_info = _lock_consensus_info(tournament)
+    tournament_locked = False
+    if lock_info['consensus_reached']:
+        ok, error = _perform_tournament_lock(tournament)
+        tournament_locked = ok
+
+    return jsonify({**lock_info, 'tournament_locked': tournament_locked})
 
 
 @tournament_bp.route('/<int:tournament_id>/generate-bracket', methods=['POST'])
@@ -1176,6 +1289,9 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
         card_count=match.card_count,
         bet_amount=match.bet_amount,
         bet_type='tournament',
+        tournament_id=tournament.id,
+        match_id=match.id,
+        is_tournament_game=True,
         status='in_progress',
         started_at=datetime.utcnow(),
         created_at=datetime.utcnow()

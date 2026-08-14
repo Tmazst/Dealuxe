@@ -36,7 +36,9 @@ def ensure_tournament_schema():
             ('bet_sessions', 'tournament_id INTEGER'),
             ('game_rooms', 'tournament_id INTEGER'),
             ('game_rooms', 'match_id INTEGER'),
+            ('game_rooms', 'is_tournament_game BOOLEAN DEFAULT 0'),
             ('transactions', 'tournament_id INTEGER'),
+            ('tournament_participants', 'lock_voted BOOLEAN DEFAULT 0'),
         ]:
             column_name = column_definition.split()[0]
             if not _table_has_column(table_name, column_name):
@@ -438,6 +440,20 @@ class Leaderboard(db.Model):
 
 
 # ========================================
+# TRANSACTION TYPE CONSTANTS
+# Aligned with TOURNAMENT_DATABASE_SCHEMA.md `transaction_log.transaction_type` enum.
+# ========================================
+TX_ENTRY_FEE = 'entry_fee'        # Player paid to join a tournament (debit)
+TX_PRIZE_AWARD = 'prize_award'    # Tournament prize credited to the wallet
+TX_REFUND = 'refund'              # Tournament entry refunded
+TX_WITHDRAWAL = 'withdrawal'      # Wallet withdrawal / payout
+TX_WALLET_TOPUP = 'wallet_topup'  # Player loaded funds into the wallet
+TX_BET = 'bet'                    # Versus stake (v1 practice)
+TX_WIN = 'win'                    # Versus winnings (v1 practice)
+TX_FREE_CASH = 'free_cash'        # Welcome / promotional free cash
+
+
+# ========================================
 # TRANSACTION LOG (for audit trail)
 # ========================================
 
@@ -448,7 +464,7 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     player_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=False)
     
-    transaction_type = db.Column(db.String(50), nullable=False)  # 'bet', 'win', 'deposit', 'withdrawal', 'free_cash'
+    transaction_type = db.Column(db.String(50), nullable=False)  # see TX_* constants above
     amount = db.Column(db.Float, nullable=False)
     balance_type = db.Column(db.String(20), nullable=False)  # 'real' or 'fake'
     
@@ -550,6 +566,7 @@ class TournamentParticipant(db.Model):
     prize_awarded = db.Column(db.Float, nullable=False, default=0.0)
     registered_at = db.Column(db.DateTime, default=datetime.utcnow)
     payment_completed_at = db.Column(db.DateTime, nullable=True)
+    lock_voted = db.Column(db.Boolean, default=False)  # manual-lock consensus vote (D3)
     withdrew_at = db.Column(db.DateTime, nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
@@ -813,6 +830,7 @@ class GameRoom(db.Model):
     # Tournament linkage
     tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
     match_id = db.Column(db.Integer, db.ForeignKey('tournament_matches.id'), nullable=True)
+    is_tournament_game = db.Column(db.Boolean, default=False)  # schema doc marker (G1)
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -855,6 +873,7 @@ class GameRoom(db.Model):
             'turn_duration_seconds': self.turn_duration_seconds,
             'tournament_id': self.tournament_id,
             'match_id': self.match_id,
+            'is_tournament_game': self.is_tournament_game,
             'is_paused': self.status == 'paused',
             'pause_requested_by': self.pause_requested_by,
             'created_at': self.created_at.isoformat(),
