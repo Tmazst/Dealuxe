@@ -1,0 +1,19 @@
+py super_admin_cli.py bootstrap --username <your_admin_username> --email <your_email>
+
+
+### Then, to assign regular admins (CLI-only, as we designed)
+
+```powershell
+py super_admin_cli.py assign someplayer
+# prompts:
+#   Super admin username: root
+#   Super admin password: <your super admin password>
+```
+
+Other commands:
+
+```powershell
+py super_admin_cli.py revoke someplayer          # demote an admin (asks super admin password)
+py super_admin_cli.py reset-password someplayer  # reset a user's password
+py super_admin_cli.py list 
+```
