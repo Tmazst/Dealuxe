@@ -72,6 +72,53 @@
         </table>
     </div>
 
+    <div class="panel">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Disputes</h2>
+            <label>
+                Filter:
+                <select id="disputeFilter">
+                    <option value="">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="in_review">In Review</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </label>
+            <button id="reloadDisputes">Reload</button>
+        </div>
+        <table id="disputesTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Player</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                    <th>Resolution</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Audit Log</h2>
+        <table id="auditTable">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Admin</th>
+                    <th>Action</th>
+                    <th>Summary</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
     <script>
         const statusEl = document.getElementById('status');
         const usersTableBody = document.querySelector('#usersTable tbody');
@@ -90,6 +137,8 @@
                 <div class="summary-card"><span class="pill">Active</span><strong>${data.active_users}</strong></div>
                 <div class="summary-card"><span class="pill">Tournaments</span><strong>${data.total_tournaments}</strong></div>
                 <div class="summary-card"><span class="pill">Open</span><strong>${data.open_tournaments}</strong></div>
+                <div class="summary-card"><span class="pill">Pending Disputes</span><strong>${data.pending_disputes}</strong></div>
+                <div class="summary-card"><span class="pill">Credits Awarded</span><strong>E${data.total_credits_awarded}</strong></div>
             `;
         }
 
@@ -132,6 +181,7 @@
                         <button data-action="toggleActive" data-id="${user.id}">${user.is_active ? 'Disable' : 'Enable'}</button>
                         <button data-action="toggleAdmin" data-id="${user.id}">${user.is_admin ? 'Revoke Admin' : 'Make Admin'}</button>
                         <button data-action="saveBalances" data-id="${user.id}">Save</button>
+                        <button data-action="awardCredits" data-id="${user.id}">Award Credits</button>
                     </td>
                 `;
                 usersTableBody.appendChild(row);
@@ -157,6 +207,76 @@
                     </td>
                 `;
                 tournamentsTableBody.appendChild(row);
+            });
+        }
+
+        function escapeHtml(value) {
+            const node = document.createElement('span');
+            node.textContent = value == null ? '' : String(value);
+            return node.innerHTML;
+        }
+
+        async function sendJson(url, { method = 'POST', body } = {}) {
+            const response = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: body !== undefined ? JSON.stringify(body) : undefined,
+            });
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error || 'Request failed');
+            }
+            return response.json();
+        }
+
+        async function fetchDisputes() {
+            const filter = document.getElementById('disputeFilter').value;
+            const url = '/api/admin/disputes' + (filter ? `?status=${encodeURIComponent(filter)}` : '');
+            const response = await fetch(url, { credentials: 'same-origin' });
+            if (!response.ok) return;
+            const data = await response.json();
+            renderDisputes(data.disputes || []);
+        }
+
+        function renderDisputes(disputes) {
+            const body = document.querySelector('#disputesTable tbody');
+            body.innerHTML = '';
+            disputes.forEach(d => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${d.id}</td>
+                    <td>${escapeHtml(d.username || d.user_id)}</td>
+                    <td>${escapeHtml(d.category)}</td>
+                    <td>${escapeHtml(d.description)}</td>
+                    <td>${escapeHtml(d.status)}</td>
+                    <td>${escapeHtml(d.resolution || '')}</td>
+                    <td>
+                        <button data-action="resolveDispute" data-id="${d.id}" data-status="resolved">Resolve</button>
+                        <button data-action="resolveDispute" data-id="${d.id}" data-status="rejected">Reject</button>
+                        <button data-action="resolveDispute" data-id="${d.id}" data-status="in_review">In Review</button>
+                    </td>
+                `;
+                body.appendChild(row);
+            });
+        }
+
+        async function fetchAuditLogs() {
+            const response = await fetch('/api/admin/audit-logs', { credentials: 'same-origin' });
+            if (!response.ok) return;
+            const data = await response.json();
+            const body = document.querySelector('#auditTable tbody');
+            body.innerHTML = '';
+            (data.logs || []).forEach(log => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${escapeHtml(log.created_at || '')}</td>
+                    <td>${escapeHtml(log.admin_username || '')}</td>
+                    <td>${escapeHtml(log.action)}</td>
+                    <td>${escapeHtml(log.summary || '')}</td>
+                    <td>${escapeHtml(log.details || '')}</td>
+                `;
+                body.appendChild(row);
             });
         }
 
@@ -217,9 +337,29 @@
                 if (action === 'cancelTournament') {
                     await sendTournamentAction(userId, 'cancel');
                 }
+                if (action === 'awardCredits') {
+                    const amount = prompt('Amount to award (E):', '100');
+                    if (amount === null) return;
+                    const reason = prompt('Reason:', 'Free credits');
+                    await sendJson(`/api/admin/users/${userId}/credits`, {
+                        method: 'POST',
+                        body: { amount: parseFloat(amount) || 0, balance_type: 'fake', reason: reason || 'Free credits' },
+                    });
+                }
+                if (action === 'resolveDispute') {
+                    const status = button.dataset.status;
+                    const resolution = prompt(`Resolution note (${status}):`);
+                    if (resolution === null) return;
+                    await sendJson(`/api/admin/disputes/${button.dataset.id}/resolve`, {
+                        method: 'POST',
+                        body: { status, resolution: resolution.trim() || undefined },
+                    });
+                }
                 await fetchDashboard();
                 await fetchUsers(searchInput.value.trim());
                 await fetchTournaments();
+                await fetchDisputes();
+                await fetchAuditLogs();
             } catch (err) {
                 statusEl.textContent = 'Update failed: ' + err.message;
             }
@@ -232,10 +372,14 @@
             searchInput.value = '';
             fetchUsers();
         });
+        document.getElementById('disputeFilter').addEventListener('change', fetchDisputes);
+        document.getElementById('reloadDisputes').addEventListener('click', fetchDisputes);
 
         fetchDashboard();
         fetchUsers();
         fetchTournaments();
+        fetchDisputes();
+        fetchAuditLogs();
     </script>
 </body>
 </html>

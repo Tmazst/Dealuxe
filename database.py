@@ -671,6 +671,77 @@ class WithdrawalRequest(db.Model):
 
 
 # ========================================
+# ADMIN PLATFORM MODELS
+# (audit logs, disputes, wallet adjustments — ADMIN_FEATURE_PLAN.md)
+# ========================================
+
+
+class AdminAuditLog(db.Model):
+    """Immutable audit trail for every admin action."""
+    __tablename__ = 'admin_audit_logs'
+    __table_args__ = (
+        db.Index('idx_admin_audit_logs_admin_user_id', 'admin_user_id'),
+        db.Index('idx_admin_audit_logs_entity', 'entity_type', 'entity_id'),
+        db.Index('idx_admin_audit_logs_created_at', 'created_at'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    admin_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    action = db.Column(db.String(100), nullable=False)
+    entity_type = db.Column(db.String(50), nullable=True)
+    entity_id = db.Column(db.Integer, nullable=True)
+    summary = db.Column(db.String(255), nullable=True)
+    details = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AdminAuditLog {self.action} by admin {self.admin_user_id}>'
+
+
+class Dispute(db.Model):
+    """Player dispute filed for payment, result, account or other issues."""
+    __tablename__ = 'disputes'
+    __table_args__ = (
+        db.Index('idx_disputes_user_id', 'user_id'),
+        db.Index('idx_disputes_status', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
+    match_id = db.Column(db.Integer, nullable=True)
+    category = db.Column(db.String(50), nullable=False)  # payment, result, account, other
+    description = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='pending')  # pending/in_review/resolved/rejected
+    resolution = db.Column(db.Text, nullable=True)
+    resolved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Dispute {self.id} - {self.status}>'
+
+
+class WalletAdjustment(db.Model):
+    """Admin-triggered wallet balance change (with reason + acting admin)."""
+    __tablename__ = 'wallet_adjustments'
+    __table_args__ = (
+        db.Index('idx_wallet_adjustments_user_id', 'user_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    balance_type = db.Column(db.String(20), nullable=False)  # real, fake
+    delta = db.Column(db.Float, nullable=False)
+    reason = db.Column(db.String(255), nullable=False)
+    admin_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<WalletAdjustment {self.delta:+.2f} {self.balance_type} for user {self.user_id}>'
+
+
+# ========================================
 # HELPER FUNCTIONS
 # ========================================
 
