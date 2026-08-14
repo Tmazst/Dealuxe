@@ -33,7 +33,7 @@ def admin_required(f):
             return jsonify({'error': 'Authentication required'}), 401
 
         user = User.query.get(user_id)
-        if not user or not user.is_admin:
+        if not user or not (user.is_admin or user.is_super_admin):
             return jsonify({'error': 'Admin privileges required'}), 403
 
         return f(*args, **kwargs)
@@ -69,6 +69,11 @@ def get_users():
 @admin_required
 def patch_user(user_id):
     data = request.get_json(silent=True) or {}
+    if 'is_admin' in data or 'is_super_admin' in data:
+        return jsonify({
+            'error': 'Admin roles are managed via the super admin CLI only '
+                     '(python super_admin_cli.py assign/revoke).'
+        }), 400
     try:
         user_payload = update_user(user_id, data, admin_user_id=session['user_id'])
     except ValueError as exc:

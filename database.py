@@ -97,6 +97,7 @@ class User(db.Model):
     full_name = db.Column(db.String(100))
     is_active = db.Column(db.Boolean, default=True)
     is_admin = db.Column(db.Boolean, default=False)
+    is_super_admin = db.Column(db.Boolean, default=False)  # CLI-bootstrap-only role (promotes/demotes admins)
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.now)

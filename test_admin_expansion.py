@@ -188,6 +188,38 @@ class TestAdminExpansion(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()['status'], 'completed')
 
+    def test_patch_rejects_admin_role_change(self):
+        self._login(self.admin)
+        # is_admin can no longer be set through the API (super admin CLI only)
+        r = self.client.patch(f'/api/admin/users/{self.regular.id}', json={'is_admin': True})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('super admin CLI', r.get_json()['error'])
+
+        # The role was NOT changed
+        with self.app_context:
+            user = User.query.get(self.regular.id)
+            self.assertFalse(user.is_admin)
+
+    def test_super_admin_can_access_admin_endpoints(self):
+        with self.app_context:
+            super_admin = User(username='god', email='god@test.com', is_super_admin=True)
+            super_admin.set_password('pw')
+            db.session.add(super_admin)
+            db.session.flush()
+            db.session.add(Player(user_id=super_admin.id))
+            db.session.commit()
+
+        # Log in as the super admin directly
+        self.client.post('/api/auth/logout')
+        login = self.client.post('/api/auth/login', json={'username': 'god', 'password': 'pw'})
+        self.assertEqual(login.status_code, 200)
+
+        r = self.client.get('/api/admin/users')
+        self.assertEqual(r.status_code, 200)
+
+        r = self.client.get('/api/admin/audit-logs')
+        self.assertEqual(r.status_code, 200)
+
 
 if __name__ == '__main__':
     unittest.main()

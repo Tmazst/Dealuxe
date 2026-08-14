@@ -24,14 +24,14 @@ def login_required(f):
 
 
 def admin_required(f):
-    """Decorator to require admin privileges for routes"""
+    """Decorator to require admin (or super admin) privileges for routes"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             return jsonify({'error': 'Authentication required'}), 401
 
         user = User.query.get(session['user_id'])
-        if not user or not user.is_admin:
+        if not user or not (user.is_admin or user.is_super_admin):
             return jsonify({'error': 'Admin privileges required'}), 403
 
         return f(*args, **kwargs)
@@ -253,6 +253,7 @@ def get_current_user():
             'phone': user.phone,
             'full_name': user.full_name,
             'is_admin': user.is_admin,
+            'is_super_admin': user.is_super_admin,
             'created_at': user.created_at.isoformat(),
             'last_login': user.last_login.isoformat() if user.last_login else None
         },
@@ -498,6 +499,7 @@ def get_current_user_api():
             'phone': user.phone,
             'full_name': user.full_name,
             'is_admin': user.is_admin,
+            'is_super_admin': user.is_super_admin,
             'created_at': user.created_at.isoformat(),
             'last_login': user.last_login.isoformat() if user.last_login else None
         },

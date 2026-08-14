@@ -134,7 +134,7 @@ def _can_manage_tournament(tournament, user_id):
     if tournament.creator_id == user_id:
         return True
     user = User.query.get(user_id)
-    return bool(user and user.is_admin)
+    return bool(user and (user.is_admin or user.is_super_admin))
 
 
 def _can_view_tournament_members(tournament, user_id):
@@ -1354,7 +1354,7 @@ def complete_match(tournament_id, match_id):
     if not user_id:
         return jsonify({'error': 'Authentication required'}), 401
     user = User.query.get(user_id)
-    if not (user and user.is_admin):
+    if not (user and (user.is_admin or user.is_super_admin)):
         return jsonify({'error': 'Match results are server-authoritative'}), 403
 
     tournament = Tournament.query.get_or_404(tournament_id)

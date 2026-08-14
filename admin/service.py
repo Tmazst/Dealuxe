@@ -44,6 +44,7 @@ def _serialize_user(user):
         'full_name': user.full_name,
         'is_active': user.is_active,
         'is_admin': user.is_admin,
+        'is_super_admin': user.is_super_admin,
         'created_at': user.created_at.isoformat() if user.created_at else None,
         'last_login': user.last_login.isoformat() if user.last_login else None,
         'real_balance': player.real_balance if player else None,
@@ -74,14 +75,14 @@ def update_user(user_id, data, admin_user_id=None):
     target_user = User.query.get_or_404(user_id)
     player = get_player_by_user_id(target_user.id)
 
+    # NOTE: `is_admin` / `is_super_admin` are intentionally NOT settable here.
+    # Admin roles are managed exclusively via the super admin CLI
+    # (`python super_admin_cli.py assign/revoke`).
+
     changes = []
     if 'is_active' in data:
         target_user.is_active = _coerce_bool(data['is_active'])
         changes.append(f"is_active={target_user.is_active}")
-
-    if 'is_admin' in data:
-        target_user.is_admin = _coerce_bool(data['is_admin'])
-        changes.append(f"is_admin={target_user.is_admin}")
 
     if player is None and any(field in data for field in ('real_balance', 'fake_balance')):
         raise ValueError('Associated player profile not found')

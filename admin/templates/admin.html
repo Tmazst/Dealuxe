@@ -44,6 +44,7 @@
                     <th>Email</th>
                     <th>Active</th>
                     <th>Admin</th>
+                    <th>Super</th>
                     <th>Real Balance</th>
                     <th>Fake Balance</th>
                     <th>Actions</th>
@@ -175,11 +176,11 @@
                     <td>${user.email}</td>
                     <td>${user.is_active ? 'Yes' : 'No'}</td>
                     <td>${user.is_admin ? 'Yes' : 'No'}</td>
+                    <td>${user.is_super_admin ? 'Yes' : 'No'}</td>
                     <td><input type="number" step="0.01" value="${user.real_balance ?? 0}" data-field="real_balance"></td>
                     <td><input type="number" step="0.01" value="${user.fake_balance ?? 0}" data-field="fake_balance"></td>
                     <td>
                         <button data-action="toggleActive" data-id="${user.id}">${user.is_active ? 'Disable' : 'Enable'}</button>
-                        <button data-action="toggleAdmin" data-id="${user.id}">${user.is_admin ? 'Revoke Admin' : 'Make Admin'}</button>
                         <button data-action="saveBalances" data-id="${user.id}">Save</button>
                         <button data-action="awardCredits" data-id="${user.id}">Award Credits</button>
                     </td>
@@ -319,10 +320,6 @@
                     const currentActive = button.textContent.includes('Disable');
                     await sendUserUpdate(userId, { is_active: !currentActive });
                 }
-                if (action === 'toggleAdmin') {
-                    const currentAdmin = button.textContent.includes('Revoke Admin');
-                    await sendUserUpdate(userId, { is_admin: !currentAdmin });
-                }
                 if (action === 'saveBalances') {
                     const realBalance = parseFloat(row.querySelector('input[data-field="real_balance"]').value || 0);
                     const fakeBalance = parseFloat(row.querySelector('input[data-field="fake_balance"]').value || 0);
@@ -338,7 +335,7 @@
                     await sendTournamentAction(userId, 'cancel');
                 }
                 if (action === 'awardCredits') {
-                    const amount = prompt('Amount to award (E):', '100');
+                    const amount = prompt('Amount to award (E):', '10');
                     if (amount === null) return;
                     const reason = prompt('Reason:', 'Free credits');
                     await sendJson(`/api/admin/users/${userId}/credits`, {
