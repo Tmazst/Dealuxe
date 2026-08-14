@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from flask import current_app
+
 from database import (
     db,
     Tournament,
@@ -7,9 +9,12 @@ from database import (
     TournamentParticipant,
     TournamentBracket,
     User,
+    Player,
     AdminAuditLog,
     Dispute,
     WalletAdjustment,
+    add_tournament_participant,
+    create_tournament_record,
     get_player_by_user_id,
 )
 from sqlalchemy import or_
@@ -449,3 +454,125 @@ def resolve_dispute(dispute_id, admin_user_id, status='resolved', resolution=Non
     )
     db.session.commit()
     return _serialize_dispute(dispute)
+
+
+# -----------------------------
+# TEST ARENA (admin-only test tournament: 1 manual player + 3 bots)
+# -----------------------------
+
+TEST_BOT_NAMES = ('tournament_bot_1', 'tournament_bot_2', 'tournament_bot_3')
+TEST_BOT_PASSWORD = 'TournamentTest!2026'
+
+
+def _get_or_create_test_player(username, email):
+    """Get or create a local-test player account with a funded wallet."""
+    from database import get_user_by_username
+    user = get_user_by_username(username)
+    created = user is None
+    if created:
+        user = User(username=username, email=email)
+        user.set_password(TEST_BOT_PASSWORD)
+        db.session.add(user)
+        db.session.flush()
+    if Player.query.filter_by(user_id=user.id).first() is None:
+        db.session.add(Player(user_id=user.id, real_balance=1000.0))
+    return user, created
+
+
+def create_test_tournament(admin_user_id=None, manual_username='tournament_tester'):
+    """Create a local test tournament: one manual player + three bots.
+
+    Shares a single code path with ``tools/seed_manual_bot_tournament.py`` so
+    the admin UI and the CLI behave identically. Uses local-test participants
+    (no external payments) and mirrors ``test_tournament_match_flow.py``: lock
+    → build bracket → pre-settle the bot-vs-bot semi-final → the manual player
+    immediately has a real scheduled match against a bot.
+    """
+    from controllers.tournament_controller import (
+        _build_bracket,
+        _ensure_prize_pool,
+        record_tournament_match_result,
+    )
+
+    manual_username = (manual_username or 'tournament_tester').strip()
+    if len(manual_username) < 3:
+        raise ValueError('A valid manual username is required (min 3 characters)')
+
+    manual, manual_created = _get_or_create_test_player(manual_username, f'{manual_username}@local.test')
+    bots = []
+    for name in TEST_BOT_NAMES:
+        bot, _ = _get_or_create_test_player(name, f'{name}@local.test')
+        bots.append(bot)
+    db.session.commit()
+
+    tournament = create_tournament_record(
+        creator_id=manual.id,
+        tournament_type='standard',
+        tournament_name=f'Test Arena {datetime.utcnow():%d %b %H:%M}',
+        entry_fee=10.0,
+        max_players=4,
+        is_auto_lock=False,
+    )
+    for user in [manual, *bots]:
+        participant = add_tournament_participant(
+            tournament.id, user.id,
+            payment_status='completed',
+            paid_amount=tournament.entry_fee,
+            payment_method='local-test',
+        )
+        participant.status = 'registered'
+        participant.payment_completed_at = datetime.utcnow()
+
+    tournament.current_player_count = 4
+    tournament.prize_pool_amount = 40.0
+    tournament.status = 'locked'
+    tournament.locked_at = datetime.utcnow()
+    tournament.locked_player_count = 4
+    _ensure_prize_pool(tournament)
+    _build_bracket(tournament)
+    db.session.commit()
+
+    # Pre-settle the bot-vs-bot semi-final so the manual player has a real match.
+    scheduled = TournamentMatch.query.filter_by(
+        tournament_id=tournament.id, status='scheduled'
+    ).all()
+    for match in scheduled:
+        if manual.id not in {match.player1_id, match.player2_id}:
+            record_tournament_match_result(
+                match.id, match.player1_id, match.player2_id,
+                win_type='test_bot_simulation', duration_seconds=1,
+            )
+
+    next_match = TournamentMatch.query.filter_by(
+        tournament_id=tournament.id, status='scheduled'
+    ).filter(
+        or_(
+            TournamentMatch.player1_id == manual.id,
+            TournamentMatch.player2_id == manual.id,
+        )
+    ).first()
+
+    if admin_user_id:
+        log_admin_action(
+            admin_user_id, 'test_tournament.create',
+            entity_type='tournament', entity_id=tournament.id,
+            summary=f"Created test arena '{tournament.tournament_name}' (manual: {manual_username})",
+        )
+    db.session.commit()
+
+    return {
+        'tournament_id': tournament.id,
+        'tournament_name': tournament.tournament_name,
+        'tournament_code': tournament.tournament_code,
+        'bracket_url': f'/tournaments/{tournament.id}/bracket',
+        'manual_username': manual_username,
+        'manual_created': manual_created,
+        'manual_password': TEST_BOT_PASSWORD if manual_created else None,
+        'bots_enabled': bool(current_app.config.get('TOURNAMENT_TEST_BOTS_ENABLED')),
+        'next_match_id': next_match.id if next_match else None,
+    }
+
+
+def test_bots_enabled():
+    """Whether the reserved tournament_bot_* accounts auto-play their turns."""
+    return bool(current_app.config.get('TOURNAMENT_TEST_BOTS_ENABLED'))

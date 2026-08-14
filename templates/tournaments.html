@@ -116,6 +116,7 @@
                 <a href="#tournaments">Tournaments</a>
                 <a href="#how-to-play">How to play</a>
                 <a href="/lobby">Versus lobby</a>
+                {% if is_admin %}<a href="/admin/test-tournament"><i class="fa-solid fa-flask"></i> Test arena</a>{% endif %}
                 <!--Login icon button / User Account profile icon goes here. Logout shall be inside the account profile modal-->
                 <a class="nav-play" href="#tournaments"><i class="fa-solid fa-play"></i> Play now</a>
             </div>

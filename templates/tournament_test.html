@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>uMshova Deluxe | Test Arena</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 24px; background: #f7f8fb; color: #222; }
+        .panel { background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); max-width: 860px; }
+        h1, h2 { margin-top: 0; }
+        .status-line { font-size: 0.95em; margin: 8px 0; }
+        .ok { color: #16a34a; font-weight: 700; }
+        .warn { color: #b45309; font-weight: 700; }
+        .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+        input[type="text"] { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.95rem; }
+        button { padding: 10px 18px; border: none; border-radius: 9px; background: #2953bb; color: white; font-weight: 700; cursor: pointer; }
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .result-box { background: #f0f7ff; border: 1px solid #bcd2f5; border-radius: 10px; padding: 16px; margin-top: 14px; }
+        .result-box .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; font-size: 0.95rem; }
+        .result-box .label { font-weight: 700; color: #2953bb; min-width: 130px; }
+        .cred { font-family: monospace; background: #eef2f7; padding: 2px 7px; border-radius: 5px; }
+        .hint { color: #555; font-size: 0.88rem; }
+        ol li { margin-bottom: 8px; }
+        a { color: #2953bb; }
+        .step-code { font-family: monospace; background: #eef2f7; padding: 2px 7px; border-radius: 5px; font-size: 0.88rem; }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <h1>🧪 Tournament Test Arena</h1>
+        <p class="hint">
+            Create a local <strong>4-player standard tournament</strong> with <strong>one manual player + three bots</strong>
+            (E10 entry, E40 prize pool). The bot-vs-bot semi-final is auto-settled so the manual player
+            immediately has a real scheduled match against a bot. This mirrors
+            <span class="step-code">test_tournament_match_flow.py</span> but is driven from the browser instead of the CLI.
+        </p>
+
+        <div class="status-line" id="botsStatus">Checking bot driver...</div>
+
+        <div class="controls">
+            <label>Manual player username:
+                <input type="text" id="manualUsername" value="tournament_tester" maxlength="30">
+            </label>
+            <button id="createBtn">🚀 Create test tournament</button>
+        </div>
+
+        <div id="result"></div>
+    </div>
+
+    <div class="panel">
+        <h2>How to run the test</h2>
+        <ol>
+            <li>Create the tournament with the button above (or press it again to reset with a fresh one).</li>
+            <li>Log in at <strong>/login</strong> with the manual player credentials shown below.</li>
+            <li>Open the <strong>bracket</strong>, click <strong>"Start match"</strong> on your scheduled match and play — the bot plays its turns automatically.</li>
+            <li>Win to advance to the Final; lose to go to the <strong>3rd-Place playoff</strong>.</li>
+            <li>After the Final + 3rd-Place matches, verify the tournament is <strong>completed</strong> and the prizes are awarded (1st E20 / 2nd E5 / 3rd E2.40).</li>
+        </ol>
+        <p class="hint">
+            <i class="fa-solid fa-lightbulb"></i> <strong>Roll game test:</strong> start a match but don't join it,
+            then press <strong>"Roll game"</strong> on the bracket. After the 10-minute countdown the waiting player
+            wins by no-show.
+        </p>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('botsStatus');
+        const resultEl = document.getElementById('result');
+        const createBtn = document.getElementById('createBtn');
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/api/admin/test-tournament/status', { credentials: 'same-origin' });
+                const data = await res.json();
+                statusEl.innerHTML = data.bots_enabled
+                    ? '<span class="ok">✔ Bots enabled</span> — tournament_bot_* accounts play their turns automatically.'
+                    : '<span class="warn">⚠ Bots DISABLED</span> — ' + data.message;
+            } catch (err) {
+                statusEl.innerHTML = '<span class="warn">⚠ Could not check bot status.</span>';
+            }
+        }
+
+        function escapeHtml(value) {
+            const node = document.createElement('span');
+            node.textContent = value == null ? '' : String(value);
+            return node.innerHTML;
+        }
+
+        async function createTestTournament() {
+            createBtn.disabled = true;
+            resultEl.innerHTML = 'Creating test tournament...';
+            try {
+                const username = document.getElementById('manualUsername').value.trim() || 'tournament_tester';
+                const res = await fetch('/api/admin/test-tournament', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ manual_username: username }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    resultEl.innerHTML = `<div class="result-box"><span class="warn">✘ ${escapeHtml(data.error || 'Failed to create test tournament')}</span></div>`;
+                    return;
+                }
+                const t = data.test;
+                const credentials = t.manual_created
+                    ? `New account — username <span class="cred">${escapeHtml(t.manual_username)}</span>, password <span class="cred">${escapeHtml(t.manual_password)}</span>`
+                    : `Existing account reused — username <span class="cred">${escapeHtml(t.manual_username)}</span> (use its existing password)`;
+                const botsWarning = t.bots_enabled
+                    ? '<span class="ok">Bots enabled — matches will auto-play.</span>'
+                    : '<span class="warn">⚠ Bots disabled — restart with TOURNAMENT_TEST_BOTS_ENABLED=true or matches will stall on the bot turn.</span>';
+
+                resultEl.innerHTML = `
+                    <div class="result-box">
+                        <div class="row"><span class="label">Tournament</span> ${escapeHtml(t.tournament_name)}</div>
+                        <div class="row"><span class="label">Code</span> <span class="cred">${escapeHtml(t.tournament_code)}</span></div>
+                        <div class="row"><span class="label">Bracket</span> <a href="${escapeHtml(t.bracket_url)}" target="_blank">${escapeHtml(t.bracket_url)}</a></div>
+                        <div class="row"><span class="label">Manual player</span> ${credentials}</div>
+                        <div class="row"><span class="label">Next match</span> #${t.next_match_id || '—'}</div>
+                        <div class="row"><span class="label">Bots</span> ${botsWarning}</div>
+                    </div>`;
+            } catch (err) {
+                resultEl.innerHTML = `<div class="result-box"><span class="warn">✘ ${escapeHtml(err.message)}</span></div>`;
+            } finally {
+                createBtn.disabled = false;
+            }
+        }
+
+        createBtn.addEventListener('click', createTestTournament);
+        fetchStatus();
+    </script>
+</body>
+</html>

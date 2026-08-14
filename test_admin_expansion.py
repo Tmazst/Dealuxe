@@ -220,6 +220,47 @@ class TestAdminExpansion(unittest.TestCase):
         r = self.client.get('/api/admin/audit-logs')
         self.assertEqual(r.status_code, 200)
 
+    def test_test_tournament_create(self):
+        self._login(self.admin)
+        r = self.client.post('/api/admin/test-tournament', json={'manual_username': 'manual_tester'})
+        self.assertEqual(r.status_code, 201)
+        test = r.get_json()['test']
+
+        self.assertIn('bracket_url', test)
+        self.assertEqual(test['manual_username'], 'manual_tester')
+        self.assertTrue(test['manual_created'])
+        self.assertIsNotNone(test['manual_password'])
+        self.assertIsNotNone(test['next_match_id'])
+
+        # 3 bot accounts + manual player exist; manual player is in a scheduled match
+        from database import get_user_by_username, TournamentMatch
+        with self.app_context:
+            manual = get_user_by_username('manual_tester')
+            self.assertIsNotNone(manual)
+            for name in ('tournament_bot_1', 'tournament_bot_2', 'tournament_bot_3'):
+                self.assertIsNotNone(get_user_by_username(name))
+            match = TournamentMatch.query.get(test['next_match_id'])
+            self.assertIn(manual.id, {match.player1_id, match.player2_id})
+            self.assertEqual(match.status, 'scheduled')
+
+        # Audit entry recorded for the admin action
+        log = AdminAuditLog.query.filter_by(action='test_tournament.create').first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.admin_user_id, self.admin.id)
+
+    def test_test_tournament_requires_admin(self):
+        self._login(self.regular)
+        r = self.client.post('/api/admin/test-tournament', json={'manual_username': 'manual_tester'})
+        self.assertEqual(r.status_code, 403)
+
+    def test_test_tournament_status(self):
+        self._login(self.admin)
+        r = self.client.get('/api/admin/test-tournament/status')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertIn('bots_enabled', data)
+        self.assertIsInstance(data['bots_enabled'], bool)
+
 
 if __name__ == '__main__':
     unittest.main()

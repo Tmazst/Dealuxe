@@ -159,7 +159,7 @@ def get_player_fake_balance():
 @app.route("/")
 def index():
     form = GameStartForm()
-    return render_template("tournaments.html",form=form)
+    return render_template("tournaments.html", form=form, is_admin=_session_is_admin())
 
 @app.route("/get_player_fake_balance")
 def get_balance():
@@ -170,6 +170,21 @@ def get_balance():
 @admin_required
 def admin_page():
     return render_template('admin.html')
+
+
+@app.route("/admin/test-tournament")
+@admin_required
+def admin_test_tournament_page():
+    """Admin-only test arena UI (create a 1 manual + 3 bot tournament)."""
+    return render_template("tournament_test.html")
+
+
+def _session_is_admin():
+    user_id = session.get('user_id')
+    if not user_id:
+        return False
+    user = User.query.get(user_id)
+    return bool(user and (user.is_admin or user.is_super_admin))
 
 
 @app.route("/lobby")
@@ -204,7 +219,7 @@ def multiplayer_game(room_code):
 
 @app.route("/tournaments")
 def tournaments_page():
-    return render_template("tournaments.html")
+    return render_template("tournaments.html", is_admin=_session_is_admin())
 
 
 @app.route("/tournaments/<int:tournament_id>")

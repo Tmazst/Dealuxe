@@ -8,6 +8,7 @@ from admin.service import (
     cancel_tournament,
     complete_tournament,
     create_dispute,
+    create_test_tournament,
     dashboard_summary,
     force_start,
     get_tournament_detail,
@@ -18,6 +19,7 @@ from admin.service import (
     lock_tournament,
     resolve_dispute,
     start_tournament,
+    test_bots_enabled,
     update_user,
 )
 from database import User
@@ -200,3 +202,32 @@ def resolve_dispute_route(dispute_id):
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'message': 'Dispute updated', 'dispute': dispute})
+
+
+@admin_bp.route('/test-tournament/status', methods=['GET'])
+@admin_required
+def test_tournament_status_route():
+    """Whether the reserved tournament_bot_* accounts will auto-play."""
+    enabled = test_bots_enabled()
+    return jsonify({
+        'bots_enabled': enabled,
+        'message': (
+            'Bots are enabled — tournament_bot_* accounts play their turns automatically.'
+            if enabled
+            else 'Bots are DISABLED. Restart the app with TOURNAMENT_TEST_BOTS_ENABLED=true '
+                  'or matches will stall on the bot turn.'
+        ),
+    })
+
+
+@admin_bp.route('/test-tournament', methods=['POST'])
+@admin_required
+def create_test_tournament_route():
+    """Create a local test tournament: one manual player + three bots."""
+    data = request.get_json(silent=True) or {}
+    manual_username = (data.get('manual_username') or 'tournament_tester').strip()
+    try:
+        result = create_test_tournament(session['user_id'], manual_username)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Test tournament created', 'test': result}), 201
