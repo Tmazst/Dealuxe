@@ -65,6 +65,15 @@
         .checkbox-field span { color: var(--muted); font-size: .84rem; }
         .modal-actions { display: flex; gap: 12px; margin-top: 20px; }
         .modal-actions .button { flex: 1; justify-content: center; }
+        .schedule-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+        .schedule-option { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: rgba(255,255,255,.045); border-radius: 9px; padding: 10px 12px; cursor: pointer; transition: .2s; font-size: .84rem; color: var(--muted); }
+        .schedule-option:hover { border-color: var(--accent-1); }
+        .schedule-option:has(input:checked) { border-color: var(--gold); background: rgba(255,228,107,.08); color: white; }
+        .schedule-option input[type="radio"] { accent-color: var(--gold); width: 15px; height: 15px; }
+        .schedule-custom { grid-column: 1 / -1; }
+        .schedule-custom input[type="time"] { margin-left: auto; background: rgba(255,255,255,.06); border: 1px solid var(--line); color: white; border-radius: 8px; padding: 6px 9px; font-size: .85rem; color-scheme: dark; }
+        .schedule-custom input[type="time"]:disabled { opacity: .4; cursor: not-allowed; }
+        .schedule-hint { display: block; color: var(--muted); font-size: .72rem; margin-top: 8px; line-height: 1.4; }
         .prize-board { background: linear-gradient(145deg, rgba(25,14,54,.98), var(--panel)); border: 1px solid rgba(255,228,107,.3); border-radius: 22px; padding: 24px; box-shadow: 0 25px 60px rgba(0,0,0,.25); position: relative; overflow: hidden; }
         .prize-board::after { content: '\f091'; font-family: 'Font Awesome 6 Free'; font-weight: 900; position: absolute; right: -5px; top: -27px; font-size: 9rem; opacity: .045; color: var(--gold); }
         .board-top { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 17px; }
@@ -209,6 +218,33 @@
                     <input type="checkbox" id="autoLock">
                     <span>Auto-lock the bracket once the table is full</span>
                 </label>
+                <div class="form-field">
+                    <label>Start time</label>
+                    <div class="schedule-grid" id="scheduleGrid">
+                        <label class="schedule-option">
+                            <input type="radio" name="start_option" value="seats_filled" checked>
+                            <span>When seats are filled</span>
+                        </label>
+                        <label class="schedule-option">
+                            <input type="radio" name="start_option" value="in_5min">
+                            <span>In 5 minutes</span>
+                        </label>
+                        <label class="schedule-option">
+                            <input type="radio" name="start_option" value="in_10min">
+                            <span>In 10 minutes</span>
+                        </label>
+                        <label class="schedule-option">
+                            <input type="radio" name="start_option" value="in_20min">
+                            <span>In 20 minutes</span>
+                        </label>
+                        <label class="schedule-option schedule-custom">
+                            <input type="radio" name="start_option" value="custom">
+                            <span>Custom time</span>
+                            <input type="time" id="customStartTime" disabled>
+                        </label>
+                    </div>
+                    <small class="schedule-hint">Scheduled tournaments must start within 24 hours. If seats are not filled by the start time, it will start as soon as they are.</small>
+                </div>
                 <div class="modal-actions">
                     <button class="button button-secondary" type="button" id="createCancelBtn">Cancel</button>
                     <button class="button button-primary" type="button" id="createSubmitBtn" style="background: linear-gradient(135deg, rgb(216, 8, 8), #b91c1c);"><i class="fa-solid fa-bolt"></i> Create &amp; pay E10.00</button>
@@ -309,16 +345,33 @@
             });
         });
 
+        // Start-time scheduling (seats filled / in 5-10-20 min / custom HH:MM)
+        const customTimeInput = document.getElementById('customStartTime');
+        document.querySelectorAll('#scheduleGrid input[name="start_option"]').forEach((radio) => {
+            radio.addEventListener('change', () => {
+                customTimeInput.disabled = radio.value !== 'custom';
+                if (radio.value === 'custom') customTimeInput.focus();
+            });
+        });
+
         document.getElementById('createSubmitBtn').addEventListener('click', async (event) => {
             const btn = event.currentTarget;
             btn.disabled = true;
             try {
                 const name = document.getElementById('tournamentName').value.trim();
                 const autoLock = document.getElementById('autoLock').checked;
+                const startOption = document.querySelector('#scheduleGrid input[name="start_option"]:checked').value;
+                const customTimeStr = startOption === 'custom' ? (customTimeInput.value || '') : null;
                 const res = await fetch('/api/tournaments/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tournament_type: selectedType, tournament_name: name || undefined, is_auto_lock: autoLock }),
+                    body: JSON.stringify({
+                        tournament_type: selectedType,
+                        tournament_name: name || undefined,
+                        is_auto_lock: autoLock,
+                        start_option: startOption,
+                        custom_time_str: customTimeStr,
+                    }),
                 });
                 const result = await res.json();
                 if (res.status === 401) { window.location.href = '/login'; return; }

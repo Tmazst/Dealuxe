@@ -387,6 +387,21 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         room.player2_connected = True
         room.player2_last_seen = datetime.utcnow()
         db.session.commit()
+
+        # If this is a tournament match room, cancel any active no-show roll
+        # (the opponent has now joined).
+        if room.match_id:
+            from database import MatchRoll
+            active_roll = MatchRoll.query.filter_by(match_id=room.match_id, status='rolling').first()
+            if active_roll is not None:
+                active_roll.status = 'cancelled'
+                active_roll.resolved_at = datetime.utcnow()
+                db.session.commit()
+                from controllers.tournament_controller import _tournament_room
+                socketio.emit('match_roll_cancelled', {
+                    'match_id': room.match_id,
+                    'message': 'Your opponent joined — the roll was cancelled.',
+                }, room=_tournament_room(room.tournament_id) if room.tournament_id else None)
         
         # Join SocketIO room
         join_room(room_code)

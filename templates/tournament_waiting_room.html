@@ -546,6 +546,12 @@
             <span>Waiting for players<span class="loading-dots"></span></span>
         </div>
 
+        <!-- Schedule message (join notification) -->
+        <div id="schedule-message" class="status-message waiting" style="display:none; width: 100%; max-width: 1200px; background: rgba(139,92,246,.08); border-color: rgba(139,92,246,.35);">
+            <span class="status-icon">⏰</span>
+            <span id="schedule-message-text"></span>
+        </div>
+
         <!-- Main Content Grid -->
         <div class="main-content">
             <!-- Left: Tournament Info -->
@@ -737,6 +743,26 @@
             // Update status message
             if (data.status === 'locked') {
                 lockUI();
+            }
+
+            // Schedule message (join notification) + live countdown
+            const scheduleMsg = document.getElementById('schedule-message');
+            const scheduleMsgText = document.getElementById('schedule-message-text');
+            if (scheduleMsg && scheduleMsgText && data.schedule_message) {
+                scheduleMsg.style.display = 'flex';
+                scheduleMsgText.textContent = data.schedule_message;
+                clearInterval(window.__scheduleTick);
+                const scheduledAt = data.schedule && data.schedule.scheduled_start_at;
+                if (scheduledAt && data.status === 'open') {
+                    const target = new Date(scheduledAt).getTime();
+                    window.__scheduleTick = setInterval(() => {
+                        const remaining = Math.max(0, Math.floor((target - Date.now()) / 1000));
+                        const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
+                        const ss = String(remaining % 60).padStart(2, '0');
+                        scheduleMsgText.textContent = `${data.schedule_message} Starts in ${mm}:${ss}.`;
+                        if (remaining <= 0) clearInterval(window.__scheduleTick);
+                    }, 1000);
+                }
             }
         }
 

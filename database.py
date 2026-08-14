@@ -523,6 +523,7 @@ class Tournament(db.Model):
     bet_sessions = db.relationship('BetSession', foreign_keys='BetSession.tournament_id', backref='tournament', lazy='dynamic')
     game_rooms = db.relationship('GameRoom', foreign_keys='GameRoom.tournament_id', backref='tournament', lazy='dynamic')
     transactions = db.relationship('Transaction', foreign_keys='Transaction.tournament_id', backref='tournament', lazy='dynamic')
+    schedule = db.relationship('TournamentSchedule', backref='tournament', uselist=False, cascade='all, delete-orphan')
 
     def to_dict(self):
         return {
@@ -740,6 +741,58 @@ class WalletAdjustment(db.Model):
 
     def __repr__(self):
         return f'<WalletAdjustment {self.delta:+.2f} {self.balance_type} for user {self.user_id}>'
+
+
+class TournamentSchedule(db.Model):
+    """When a tournament should start (seats filled / in 5-10-20 min / custom time).
+
+    One row per tournament (1:1). `fallback_option` is what happens if the
+    scheduled time passes before all seats are filled — default 'seats_filled'.
+    """
+    __tablename__ = 'tournament_schedules'
+    __table_args__ = (
+        db.UniqueConstraint('tournament_id', name='uq_tournament_schedules_tournament_id'),
+        db.Index('idx_tournament_schedules_scheduled_start_at', 'scheduled_start_at'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
+    # seats_filled | in_5min | in_10min | in_20min | custom
+    start_option = db.Column(db.String(30), nullable=False, default='seats_filled')
+    scheduled_start_at = db.Column(db.DateTime, nullable=True)
+    custom_time_str = db.Column(db.String(5), nullable=True)  # 'HH:MM' for display
+    fallback_option = db.Column(db.String(30), nullable=False, default='seats_filled')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<TournamentSchedule {self.tournament_id} - {self.start_option}>'
+
+
+class MatchRoll(db.Model):
+    """No-show 'roll game' resolution for a tournament match (10-minute countdown).
+
+    A waiting player rolls the match; if the opponent does not join before the
+    deadline, the waiting player wins by no-show and the absent player loses
+    their entry stake.
+    """
+    __tablename__ = 'match_rolls'
+    __table_args__ = (
+        db.UniqueConstraint('match_id', name='uq_match_rolls_match_id'),
+        db.Index('idx_match_rolls_status_deadline', 'status', 'deadline'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    match_id = db.Column(db.Integer, db.ForeignKey('tournament_matches.id'), nullable=False)
+    requested_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    requested_at = db.Column(db.DateTime, default=datetime.utcnow)
+    deadline = db.Column(db.DateTime, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='rolling')  # rolling/resolved/cancelled
+    winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<MatchRoll {self.match_id} - {self.status}>'
 
 
 # ========================================

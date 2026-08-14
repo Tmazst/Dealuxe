@@ -247,6 +247,16 @@
             color: var(--success);
         }
 
+        .status-rolling {
+            color: var(--accent-2);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .roll-countdown {
+            font-variant-numeric: tabular-nums;
+            font-weight: 700;
+        }
+
         /* Bracket Connector Lines (optional SVG) */
         .bracket-connector {
             position: absolute;
@@ -548,9 +558,14 @@
         });
 
         let tournamentData = {};
+        const tournamentCode = '{{ tournament_code }}';
+        const currentUserId = {{ current_user_id|tojson }};
 
         socket.on('connect', () => {
             console.log('✅ Connected to bracket viewer');
+            if (tournamentCode && tournamentCode !== 'None') {
+                socket.emit('join_bracket_room', { tournament_code: tournamentCode });
+            }
             loadBracketData();
         });
 
@@ -576,6 +591,28 @@
             }
         });
 
+        socket.on('match_roll_started', (data) => {
+            console.log('🎲 Roll started:', data);
+            loadBracketData();
+            if (data.message) showNotification(data.message);
+        });
+
+        socket.on('match_roll_cancelled', (data) => {
+            console.log('🔄 Roll cancelled:', data);
+            loadBracketData();
+            if (data.message) showNotification(data.message);
+        });
+
+        socket.on('match_roll_resolved', (data) => {
+            console.log('🏁 Roll resolved:', data);
+            loadBracketData();
+            if (data.message) showNotification(data.message);
+        });
+
+        socket.on('tournament_schedule_fallback', (data) => {
+            if (data.message) showNotification(data.message);
+        });
+
         function startMatch(matchId) {
             const tId = '{{ tournament_id }}';
             fetch(`/api/tournaments/${tId}/matches/${matchId}/start`, {
@@ -592,6 +629,26 @@
             })
             .catch(err => {
                 showNotification('Failed to start match');
+            });
+        }
+
+        function rollMatch(matchId) {
+            const tId = '{{ tournament_id }}';
+            fetch(`/api/tournaments/${tId}/matches/${matchId}/roll`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    showNotification(data.error);
+                    return;
+                }
+                showNotification(data.message || 'Roll started');
+                loadBracketData();
+            })
+            .catch(err => {
+                showNotification('Failed to roll the game');
             });
         }
 
@@ -771,7 +828,24 @@
                     ${round.matches.map((slot) => {
                         const match = matchByBracket.get(slot.id);
                         const status = match ? match.status : slot.status;
-                        const canStart = match && status === 'scheduled';
+                        const isParticipant = currentUserId && (currentUserId === match.player1_id || currentUserId === match.player2_id);
+                        const isMePlayer1 = isParticipant && currentUserId === match.player1_id;
+                        const opponentConnected = match ? (isMePlayer1 ? match.player2_connected : match.player1_connected) : false;
+                        const activeRoll = match && match.roll && match.roll.status === 'rolling';
+                        const canStart = match && status === 'scheduled' && isParticipant;
+                        const canRoll = match && isParticipant && (status === 'scheduled' || status === 'in_progress') && !opponentConnected && !activeRoll;
+
+                        let actionsHtml = '';
+                        if (activeRoll) {
+                            actionsHtml = `<div class="match-status status-rolling" data-roll-deadline="${escapeHtml(match.roll.deadline || '')}">🎲 Rolling... <span class="roll-countdown">10:00</span></div>`;
+                        } else if (canStart) {
+                            actionsHtml = `<button class="btn-bracket btn-share" onclick="startMatch(${Number(match.id)})">Start match</button>`;
+                        } else if (canRoll) {
+                            actionsHtml = `<button class="btn-bracket btn-share" onclick="rollMatch(${Number(match.id)})">🎲 Roll game</button>`;
+                        } else {
+                            actionsHtml = `<div class="match-status status-${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</div>`;
+                        }
+
                         const firstWinner = slot.winner_id === slot.player1_id ? ' winner' : '';
                         const secondWinner = slot.winner_id === slot.player2_id ? ' winner' : '';
                         return `<div class="match-box ${escapeHtml(status)}">
@@ -780,11 +854,26 @@
                                 <div class="player-slot${firstWinner}"><div class="player-info"><div class="player-avatar">${escapeHtml((slot.player1_name || '?').charAt(0).toUpperCase())}</div><div class="player-name">${escapeHtml(slot.player1_name)}</div></div></div>
                                 <div class="player-slot${secondWinner}"><div class="player-info"><div class="player-avatar">${escapeHtml((slot.player2_name || '?').charAt(0).toUpperCase())}</div><div class="player-name">${escapeHtml(slot.player2_name)}</div></div></div>
                             </div>
-                            ${canStart ? `<button class="btn-bracket btn-share" onclick="startMatch(${Number(match.id)})">Start match</button>` : `<div class="match-status status-${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</div>`}
+                            ${actionsHtml}
                         </div>`;
                     }).join('')}
                 </div>`).join('');
         }
+
+        function startRollCountdowns() {
+            const elements = document.querySelectorAll('[data-roll-deadline]');
+            if (!elements.length) return;
+            elements.forEach(el => {
+                const target = new Date(el.dataset.rollDeadline).getTime();
+                const counter = el.querySelector('.roll-countdown');
+                if (!counter) return;
+                const remaining = Math.max(0, Math.floor((target - Date.now()) / 1000));
+                const mm = String(Math.floor(remaining / 60)).padStart(2, '0');
+                const ss = String(remaining % 60).padStart(2, '0');
+                counter.textContent = `${mm}:${ss}`;
+            });
+        }
+        setInterval(startRollCountdowns, 1000);
 
         function goBack() {
             window.location.href = '/tournaments';

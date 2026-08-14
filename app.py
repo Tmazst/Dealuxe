@@ -93,6 +93,31 @@ from controllers.multiplayer_controller import init_multiplayer_events
 init_multiplayer_events(socketio, manager, app)
 init_tournament_events(socketio, app)
 
+# -----------------------------
+# BACKGROUND SCHEDULER
+# (fires scheduled tournament starts + resolves no-show roll deadlines)
+# -----------------------------
+
+def start_background_scheduler(app, socketio):
+    import threading
+    import time
+
+    def _run():
+        with app.app_context():
+            while True:
+                try:
+                    from controllers.tournament_controller import process_scheduled_events
+                    process_scheduled_events()
+                except Exception as exc:
+                    print(f'[SCHEDULER] error: {exc}')
+                time.sleep(20)
+
+    threading.Thread(target=_run, daemon=True).start()
+    print('[APP] Background scheduler started')
+
+
+start_background_scheduler(app, socketio)
+
 #-------------------
 # Routes Methods
 #-------------------
@@ -203,6 +228,7 @@ def tournament_bracket_page(tournament_id):
         "tournament_bracket.html",
         tournament_id=tournament.id,
         tournament_code=tournament.tournament_code,
+        current_user_id=session.get('user_id'),
     )
 
 

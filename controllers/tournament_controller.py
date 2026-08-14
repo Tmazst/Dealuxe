@@ -12,6 +12,8 @@ from database import (
     TournamentBracket,
     TournamentMatch,
     TournamentPrizePool,
+    TournamentSchedule,
+    MatchRoll,
     Transaction,
     User,
     Player,
@@ -90,6 +92,73 @@ def _perform_tournament_lock(tournament):
     return True, None
 
 
+def _parse_custom_time(custom_time_str, now):
+    """Parse 'HH:MM' (or 'HHMM') into the next occurrence within 24h."""
+    if not custom_time_str:
+        raise ValueError('Custom start time is required (HH:MM, e.g. 13:30)')
+    text = str(custom_time_str).strip().replace(':', '').replace('.', '')
+    if not (text.isdigit() and len(text) == 4):
+        raise ValueError('Custom start time must be HH:MM, e.g. 13:30')
+    hours, minutes = int(text[:2]), int(text[2:])
+    if hours > 23 or minutes > 59:
+        raise ValueError('Custom start time must be a valid HH:MM time')
+    candidate = now.replace(hour=hours, minute=minutes, second=0, microsecond=0)
+    if candidate <= now:
+        candidate += timedelta(days=1)
+    return candidate, f'{hours:02d}:{minutes:02d}'
+
+
+def _resolve_schedule_time(start_option, custom_time_str=None):
+    """Validate a start option and return (scheduled_start_at, normalized_option, custom_time_str).
+
+    Raises ValueError on invalid input. `scheduled_start_at` is None for 'seats_filled'.
+    """
+    if start_option not in START_OPTIONS:
+        raise ValueError('Invalid start option')
+    now = datetime.utcnow()
+    if start_option == 'seats_filled':
+        return None, 'seats_filled', None
+    if start_option in COUNTDOWN_MINUTES:
+        return now + timedelta(minutes=COUNTDOWN_MINUTES[start_option]), start_option, None
+    if start_option == 'custom':
+        scheduled_at, custom_str = _parse_custom_time(custom_time_str, now)
+        if scheduled_at - now >= timedelta(hours=MAX_SCHEDULE_DELAY_HOURS):
+            raise ValueError('Scheduled start must be within the next 24 hours')
+        return scheduled_at, 'custom', custom_str
+    raise ValueError('Invalid start option')
+
+
+def _serialize_schedule(schedule):
+    if schedule is None:
+        return {
+            'start_option': 'seats_filled',
+            'scheduled_start_at': None,
+            'custom_time_str': None,
+            'fallback_option': 'seats_filled',
+        }
+    return {
+        'start_option': schedule.start_option,
+        'scheduled_start_at': schedule.scheduled_start_at.isoformat() if schedule.scheduled_start_at else None,
+        'custom_time_str': schedule.custom_time_str,
+        'fallback_option': schedule.fallback_option,
+    }
+
+
+def _schedule_message(tournament):
+    """Human-readable scheduling message shown when players join a tournament."""
+    schedule = tournament.schedule
+    if schedule is None or schedule.start_option == 'seats_filled':
+        return 'This tournament will start as soon as all seats are filled.'
+    if schedule.scheduled_start_at:
+        start_local = schedule.scheduled_start_at.strftime('%H:%M')
+        return (
+            f'This tournament is scheduled to start at {start_local} '
+            f'({schedule.start_option.replace("in_", "in ").replace("_", " ")}). '
+            'If seats are not filled by then, it will start as soon as they are.'
+        )
+    return 'This tournament will start as soon as all seats are filled.'
+
+
 def _serialize_tournament(tournament):
     """Return the stable, UI-facing tournament contract."""
     current_players = TournamentParticipant.query.filter_by(
@@ -109,6 +178,8 @@ def _serialize_tournament(tournament):
         'status': tournament.status,
         'is_auto_lock': tournament.is_auto_lock,
         'lock': _lock_consensus_info(tournament),
+        'schedule': _serialize_schedule(tournament.schedule),
+        'schedule_message': _schedule_message(tournament),
         'players_needed': max(tournament.max_players - current_players, 0),
         'created_at': tournament.created_at.isoformat() if tournament.created_at else None,
     }
@@ -150,6 +221,14 @@ ENTRY_FEE = 10.00
 
 # Allowed tournament sizes per type (scope mandates these exact sizes).
 MAX_PLAYERS_BY_TYPE = {'standard': 4, 'premium': 8, 'deluxe': 16}
+
+# -----------------------------
+# START-TIME SCHEDULING (user feature: schedule the tournament start)
+# -----------------------------
+START_OPTIONS = ('seats_filled', 'in_5min', 'in_10min', 'in_20min', 'custom')
+COUNTDOWN_MINUTES = {'in_5min': 5, 'in_10min': 10, 'in_20min': 20}
+MAX_SCHEDULE_DELAY_HOURS = 24
+ROLL_COUNTDOWN_SECONDS = 600  # 10 minutes for the no-show roll game
 
 
 def _is_payment_mock_mode():
@@ -510,12 +589,17 @@ def _serialize_bracket(bracket):
 
 def _serialize_match(match):
     room_code = None
+    player1_connected = False
+    player2_connected = False
     if match.game_room_id:
         from database import GameRoom
         room = GameRoom.query.get(match.game_room_id)
         if room:
             room_code = room.room_code
+            player1_connected = bool(room.player1_connected)
+            player2_connected = bool(room.player2_connected)
 
+    roll = MatchRoll.query.filter_by(match_id=match.id, status='rolling').first()
     return {
         'id': match.id,
         'bracket_id': match.bracket_id,
@@ -535,6 +619,13 @@ def _serialize_match(match):
         'started_at': match.started_at.isoformat() if match.started_at else None,
         'completed_at': match.completed_at.isoformat() if match.completed_at else None,
         'win_type': match.win_type,
+        'player1_connected': player1_connected,
+        'player2_connected': player2_connected,
+        'roll': {
+            'status': roll.status if roll else None,
+            'requested_by': roll.requested_by if roll else None,
+            'deadline': roll.deadline.isoformat() if roll and roll.deadline else None,
+        },
     }
 
 
@@ -822,6 +913,45 @@ def init_tournament_events(socketio, app=None):
         else:
             emit('tournament_match_started_response', response)
 
+    @socketio.on('roll_match')
+    def handle_roll_match(data=None):
+        """Start the 10-minute no-show roll for a tournament match."""
+        user_id = _get_current_user_id()
+        if not user_id:
+            emit('tournament_error', {'message': 'Authentication required'})
+            return
+        tournament = get_tournament_from_payload(data)
+        if tournament is None:
+            return
+        match_id = (data or {}).get('match_id')
+        match = TournamentMatch.query.filter_by(id=match_id, tournament_id=tournament.id).first()
+        if match is None:
+            emit('tournament_error', {'message': 'Match not found'})
+            return
+        if match.status in ('completed', 'cancelled'):
+            emit('tournament_error', {'message': 'Match is already finished'})
+            return
+        if user_id not in {match.player1_id, match.player2_id}:
+            emit('tournament_error', {'message': 'Only match participants can roll the game'})
+            return
+        roll, payload = _start_roll(match, user_id)
+        emit('match_roll_started_response', payload or {
+            'match_id': match.id,
+            'deadline': roll.deadline.isoformat(),
+            'message': 'The roll is already active.',
+        })
+
+    @socketio.on('join_bracket_room')
+    def handle_join_bracket_room(data=None):
+        """Allow bracket viewers (players + spectators) to receive live updates."""
+        code = (data or {}).get('tournament_code')
+        if not code or not isinstance(code, str):
+            return
+        tournament = Tournament.query.filter_by(tournament_code=code.strip()).first()
+        if tournament is None:
+            return
+        join_room(_tournament_room(tournament.id))
+
     return socketio
 
 
@@ -939,6 +1069,14 @@ def create_tournament():
     if tournament_type not in {'standard', 'premium', 'deluxe'}:
         return jsonify({'error': 'Invalid tournament type'}), 400
 
+    # Validate the start-time schedule BEFORE creating anything.
+    try:
+        scheduled_start_at, normalized_option, normalized_custom_time = _resolve_schedule_time(
+            data.get('start_option', 'seats_filled'), data.get('custom_time_str')
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
     # Server-enforced business rules (C3): E10 entry fee + fixed size per type.
     entry_fee = ENTRY_FEE
     max_players = MAX_PLAYERS_BY_TYPE.get(tournament_type, 4)
@@ -952,6 +1090,14 @@ def create_tournament():
         is_auto_lock=data.get('is_auto_lock', False),
         locked_player_count=data.get('locked_player_count'),
     )
+    schedule = TournamentSchedule(
+        tournament_id=tournament.id,
+        start_option=normalized_option,
+        scheduled_start_at=scheduled_start_at,
+        custom_time_str=normalized_custom_time,
+        fallback_option='seats_filled',
+    )
+    db.session.add(schedule)
     participant = add_tournament_participant(
         tournament.id, user_id, payment_status='pending', payment_method='wallet'
     )
@@ -1041,7 +1187,12 @@ def join_tournament(tournament_id):
     db.session.commit()
     _emit_tournament_updated(tournament)
 
-    return jsonify({'message': 'Joined tournament', 'participant': {'id': participant.id, 'user_id': user_id}})
+    return jsonify({
+        'message': 'Joined tournament',
+        'tournament_message': _schedule_message(tournament),
+        'schedule': _serialize_schedule(tournament.schedule),
+        'participant': {'id': participant.id, 'user_id': user_id},
+    })
 
 
 @tournament_bp.route('/<int:tournament_id>/lock', methods=['POST'])
@@ -1232,6 +1383,135 @@ def record_tournament_match_result(match_id, winner_id, loser_id, win_type='norm
     return match, None
 
 
+# -----------------------------
+# ROLL GAME (no-show resolution)
+# -----------------------------
+
+def _start_roll(match, user_id):
+    """Start (or resume) the 10-minute no-show roll for a tournament match.
+
+    Notifies the tournament room and the opponent's user room. Returns
+    (roll, payload) where payload is the broadcast payload (or None when an
+    active roll already exists).
+    """
+    existing = MatchRoll.query.filter_by(match_id=match.id, status='rolling').first()
+    if existing:
+        return existing, None
+
+    roll = MatchRoll(
+        match_id=match.id,
+        requested_by=user_id,
+        deadline=datetime.utcnow() + timedelta(seconds=ROLL_COUNTDOWN_SECONDS),
+        status='rolling',
+    )
+    db.session.add(roll)
+    db.session.commit()
+
+    opponent_id = match.player2_id if match.player1_id == user_id else match.player1_id
+    tournament = Tournament.query.get(match.tournament_id)
+    payload = {
+        'match_id': match.id,
+        'tournament_id': match.tournament_id,
+        'requested_by': user_id,
+        'requested_by_name': _get_username(user_id),
+        'opponent_id': opponent_id,
+        'deadline': roll.deadline.isoformat(),
+        'message': f'{_get_username(user_id)} is rolling the game. Join within 10 minutes or the match will be awarded by no-show.',
+    }
+    if _socketio is not None:
+        if tournament is not None:
+            _socketio.emit('match_roll_started', payload, room=_tournament_room(tournament.id))
+        if opponent_id:
+            _socketio.emit('match_roll_started', payload, room=f'user_{opponent_id}')
+    return roll, payload
+
+
+def _resolve_roll(roll):
+    """Resolve an expired roll: the waiting player wins by no-show."""
+    match = TournamentMatch.query.get(roll.match_id)
+    if match is None or match.status in ('completed', 'cancelled'):
+        roll.status = 'cancelled'
+        db.session.commit()
+        return None
+
+    winner_id = roll.requested_by
+    loser_id = match.player2_id if match.player1_id == winner_id else match.player1_id
+    if loser_id is None:
+        roll.status = 'cancelled'
+        db.session.commit()
+        return None
+
+    record_tournament_match_result(
+        match_id=match.id,
+        winner_id=winner_id,
+        loser_id=loser_id,
+        win_type='no_show',
+        started_at=match.started_at,
+        duration_seconds=ROLL_COUNTDOWN_SECONDS,
+    )
+    roll.status = 'resolved'
+    roll.winner_id = winner_id
+    roll.resolved_at = datetime.utcnow()
+    db.session.commit()
+
+    tournament = Tournament.query.get(match.tournament_id)
+    resolved_payload = {
+        'match_id': match.id,
+        'tournament_id': match.tournament_id,
+        'winner_id': winner_id,
+        'winner_name': _get_username(winner_id),
+        'message': f'No-show resolved — {_get_username(winner_id)} wins the match by roll.',
+    }
+    if _socketio is not None:
+        if tournament is not None:
+            room = _tournament_room(tournament.id)
+            _socketio.emit('match_roll_resolved', resolved_payload, room=room)
+        _socketio.emit('match_roll_resolved', resolved_payload, room=f'user_{winner_id}')
+        _socketio.emit('match_roll_resolved', resolved_payload, room=f'user_{loser_id}')
+    return resolved_payload
+
+
+def process_scheduled_events():
+    """Background worker: fire due tournament starts and resolve expired rolls.
+
+    Called periodically from the app-level scheduler thread (see app.py).
+    """
+    now = datetime.utcnow()
+
+    # 1) Due scheduled tournament starts (with seats-filled fallback)
+    schedules = TournamentSchedule.query.filter(
+        TournamentSchedule.scheduled_start_at.isnot(None),
+        TournamentSchedule.scheduled_start_at <= now,
+    ).all()
+    for schedule in schedules:
+        tournament = Tournament.query.get(schedule.tournament_id)
+        if tournament is None or tournament.status != 'open':
+            continue
+        registered = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id, status='registered'
+        ).count()
+        if registered >= tournament.max_players:
+            _perform_tournament_lock(tournament)
+        else:
+            # Fallback to option 1: start as soon as seats are filled.
+            schedule.start_option = 'seats_filled'
+            schedule.scheduled_start_at = None
+            db.session.commit()
+            if _socketio is not None:
+                _socketio.emit('tournament_schedule_fallback', {
+                    'message': 'Scheduled start time passed — this tournament will start as soon as all seats are filled.',
+                }, room=_tournament_room(tournament.id))
+            _emit_tournament_updated(tournament)
+
+    # 2) Expired no-show roll deadlines
+    rolls = MatchRoll.query.filter(
+        MatchRoll.status == 'rolling',
+        MatchRoll.deadline <= now,
+    ).all()
+    for roll in rolls:
+        _resolve_roll(roll)
+
+
 def start_tournament_match_helper(tournament_id, match_id, user_id=None):
     """
     Start a scheduled tournament match by creating or linking a real GameRoom,
@@ -1346,6 +1626,48 @@ def start_match_endpoint(tournament_id, match_id):
         return jsonify({'error': 'Authentication required'}), 401
     match, response, status_code = start_tournament_match_helper(tournament_id, match_id, user_id=user_id)
     return jsonify(response), status_code
+
+
+@tournament_bp.route('/<int:tournament_id>/matches/<int:match_id>/roll', methods=['POST'])
+def roll_match_endpoint(tournament_id, match_id):
+    """Start the 10-minute no-show roll for a tournament match.
+
+    If the opponent does not join before the deadline, the waiting player wins
+    the match by no-show (the absent player loses their entry stake).
+    """
+    user_id = _get_current_user_id()
+    if not user_id:
+        return jsonify({'error': 'Authentication required'}), 401
+
+    tournament = Tournament.query.get_or_404(tournament_id)
+    match = TournamentMatch.query.filter_by(id=match_id, tournament_id=tournament.id).first()
+    if match is None:
+        return jsonify({'error': 'Match not found'}), 404
+    if match.status in ('completed', 'cancelled'):
+        return jsonify({'error': 'Match is already finished'}), 400
+    if user_id not in {match.player1_id, match.player2_id}:
+        return jsonify({'error': 'Only match participants can roll the game'}), 403
+
+    # Rolling is not allowed when the opponent is already connected.
+    from database import GameRoom
+    if match.game_room_id:
+        room = GameRoom.query.get(match.game_room_id)
+        if room is not None:
+            opponent_connected = room.player2_connected if match.player1_id == user_id else room.player1_connected
+            if opponent_connected:
+                return jsonify({'error': 'Your opponent is online — start the match instead'}), 400
+
+    roll, payload = _start_roll(match, user_id)
+    if payload is None:
+        payload = {
+            'match_id': match.id,
+            'deadline': roll.deadline.isoformat(),
+            'message': 'The roll is already active.',
+        }
+    return jsonify({
+        'message': 'Roll started — the match will be awarded in 10 minutes if your opponent does not join.',
+        'roll': payload,
+    })
 
 
 @tournament_bp.route('/<int:tournament_id>/matches/<int:match_id>/complete', methods=['POST'])
