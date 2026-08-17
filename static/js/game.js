@@ -17,6 +17,16 @@ window.setLocalPlayerIndex = function(i) {
     console.log('[UI] localPlayerIndex set to', localPlayerIndex);
 };
 
+// The room code that tells game.js to route actions over the socket. Tournament
+// pages set window.tournamentRoomCode before the socket connects, and the
+// reconnect flow stores it on window.currentMultiplayer.room_code once the
+// first game_update arrives. Fall back to either so a tournament match never
+// drops to the single-player REST endpoints (which run the local AI).
+function getMultiplayerRoomCode() {
+    return (window.currentMultiplayer && window.currentMultiplayer.room_code)
+        || window.tournamentRoomCode || null;
+}
+
 // Store previous card counts to detect changes
 let previousCardCounts = { me: null, opponent: null };
 
@@ -333,9 +343,9 @@ async function attack(index) {
 
     try {
         // If we're in a multiplayer session, emit socket action instead of REST
-        if (window.currentMultiplayer && window.currentMultiplayer.room_code && window.socket) {
+        if (getMultiplayerRoomCode() && window.socket) {
             window.socket.emit('game_action', {
-                room_code: window.currentMultiplayer.room_code,
+                room_code: getMultiplayerRoomCode(),
                 action: 'attack',
                 data: { index: index }
             });
@@ -392,9 +402,9 @@ async function defend(indices) {
     console.log("Defend indices:", indices);
     const payload = { card_indices: indices };
     // If multiplayer, emit over socket
-    if (window.currentMultiplayer && window.currentMultiplayer.room_code && window.socket) {
+    if (getMultiplayerRoomCode() && window.socket) {
         window.socket.emit('game_action', {
-            room_code: window.currentMultiplayer.room_code,
+            room_code: getMultiplayerRoomCode(),
             action: 'defend',
             data: payload
         });
@@ -431,9 +441,9 @@ async function drawCard() {
     hideAttackConfirmModal();
 
     // If multiplayer, emit draw action
-    if (window.currentMultiplayer && window.currentMultiplayer.room_code && window.socket) {
+    if (getMultiplayerRoomCode() && window.socket) {
         window.socket.emit('game_action', {
-            room_code: window.currentMultiplayer.room_code,
+            room_code: getMultiplayerRoomCode(),
             action: 'draw',
             data: {}
         });
@@ -842,7 +852,7 @@ async function renderState(state) {
         if (state.attack_card && state.attacker !== localPlayerIndex && state.defender === localPlayerIndex) {
             if (state.attack_card !== lastDisplayedAttack) {
                 // In multiplayer: proceed automatically (no confirm modal)
-                if (window.currentMultiplayer && window.currentMultiplayer.room_code) {
+                if (getMultiplayerRoomCode()) {
                     hideAttackConfirmModal();
                     try {
                         await animateOpponentGhost(state.attack_card);
@@ -948,7 +958,7 @@ function showGameModal(){
     // In multiplayer, the server awards winnings; skip client-side session completion
     // and just show prize pool if available.
     try {
-        if (window.currentMultiplayer && window.currentMultiplayer.room_code) {
+        if (getMultiplayerRoomCode()) {
             const prizeDisplay = document.getElementById('prize-display');
             const winningsAmount = document.getElementById('winnings-amount');
             if (isPlayerWinner && prizeDisplay) {

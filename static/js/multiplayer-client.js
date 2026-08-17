@@ -355,6 +355,12 @@ if (socket) {
                 if (typeof renderState === 'function') renderState(payload.game_state);
             } catch (e) { /* non-fatal */ }
             window.currentMultiplayer = window.currentMultiplayer || {};
+            // Tournament/reconnect flows only ever receive 'game_update' (they never get
+            // 'game_started'), so the room_code/game_id that game.js relies on to pick the
+            // socket path must be populated here as well — otherwise actions silently fall
+            // back to the single-player REST endpoints and the local AI can play our hand.
+            window.currentMultiplayer.room_code = payload.room_code || window.currentMultiplayer.room_code || window.tournamentRoomCode || null;
+            if (payload.game_id) window.currentMultiplayer.game_id = payload.game_id;
             window.currentMultiplayer.your_turn = payload.is_my_turn;
             window.currentMultiplayer.turn_deadline = payload.turn_deadline;
             if (typeof setLocalPlayerIndex === 'function') setLocalPlayerIndex(payload.player_index);

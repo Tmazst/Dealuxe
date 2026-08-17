@@ -551,10 +551,26 @@ def game_state(game_id):
     return jsonify(engine.get_state())
 
 
+def _make_game_controller(engine, game_id):
+    """Build a FlaskGameController for a game.
+
+    Single-player (vs AI) games have no GameRoom and rely on the controller's
+    built-in local AI. Multiplayer/tournament games always have a GameRoom, and
+    their opponent acts through the socket — the local AI (hard-wired to engine
+    player 1) must never be allowed to play for them. Disabling it here is a
+    server-side safety net for any client that falls back to these REST
+    endpoints (e.g. a tournament page where the room code was not yet known).
+    """
+    from database import GameRoom
+    room = GameRoom.query.filter_by(game_id=game_id).first()
+    run_ai = room is None
+    return FlaskGameController(engine, run_ai=run_ai)
+
+
 @app.route("/api/game/<game_id>/start", methods=["POST"])
 def start_turn(game_id):
     engine = manager.get_game(game_id)
-    controller = FlaskGameController(engine)
+    controller = _make_game_controller(engine, game_id)
 
     controller.start_turn()
     # Persist change for Redis-backed manager
@@ -573,7 +589,7 @@ def start_turn(game_id):
 @app.route("/api/game/<game_id>/attack", methods=["POST"])
 def attack(game_id):
     engine = manager.get_game(game_id)
-    controller = FlaskGameController(engine)
+    controller = _make_game_controller(engine, game_id)
 
     index = int(request.json["index"])
     result = controller.attack(index)
@@ -589,7 +605,7 @@ def attack(game_id):
 @app.route("/api/game/<game_id>/defend", methods=["POST"])
 def defend(game_id):
     engine = manager.get_game(game_id)
-    controller = FlaskGameController(engine)
+    controller = _make_game_controller(engine, game_id)
 
     payload = request.json or {}
     card_indices = payload.get("card_indices")
@@ -613,7 +629,7 @@ def defend(game_id):
 @app.route("/api/game/<game_id>/draw", methods=["POST"])
 def draw(game_id):
     engine = manager.get_game(game_id)
-    controller = FlaskGameController(engine)
+    controller = _make_game_controller(engine, game_id)
 
     result = controller.draw()
     # Persist change for Redis-backed manager
@@ -628,7 +644,7 @@ def draw(game_id):
 @app.route("/api/game/<game_id>/rule8/drop", methods=["POST"])
 def rule8_drop(game_id):
     engine = manager.get_game(game_id)
-    controller = FlaskGameController(engine)
+    controller = _make_game_controller(engine, game_id)
 
     value = int(request.json["value"])
     result = controller.rule_8_drop(value)
@@ -644,7 +660,7 @@ def rule8_drop(game_id):
 @app.route("/api/game/<game_id>/rule8/crash", methods=["POST"])
 def rule8_crash(game_id):
     engine = manager.get_game(game_id)
-    controller = FlaskGameController(engine)
+    controller = _make_game_controller(engine, game_id)
 
     crash = bool(request.json["crash"])
     result = controller.rule_8_crash(crash)
@@ -660,7 +676,7 @@ def rule8_crash(game_id):
 @app.route("/api/game/<game_id>/leaderboard")
 def leaderboard(game_id):
     engine = manager.get_game(game_id)
-    controller = FlaskGameController(engine)
+    controller = _make_game_controller(engine, game_id)
 
     return controller.leaderboard()
 

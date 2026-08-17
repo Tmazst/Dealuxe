@@ -191,7 +191,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                 <div class="rule-number">📋 BASIC RULE</div>
                 <div class="rule-body">
                     <p><strong>ATTACK:</strong> Attacker plays a card <span class="card-badge">4-K</span></p>
-                    <p><strong>DEFEND:</strong> Defender plays 2 cards that sum to attacker's card value</p>
+                    <p><strong>DEFEND:</strong> Defender plays 2 or 3 cards that sum to attacker's card value</p>
                     <p class="rule-note">Example: Attacker plays <span class="card-example">8♠</span> → Defender plays <span class="card-example">3♥ + 5♦</span> = 8</p>
                 </div>
             </div>
@@ -312,7 +312,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
     </div>
 </div>
 
-<div class="game-start-modal-cont gen-flex-col">
+<div style="display:none" class="game-start-modal-cont gen-flex-col"> <!--Legacy - This modal was used in the old version. Do not turn it on it hides the tournament game player's hand-->
     <div class="game-start-modal ambience gen-flex-col ">
         <button class="modal-close-btn" onclick="showLobbyModal()" title="Open Lobby">
             <i class="fa-solid fa-times"></i>
