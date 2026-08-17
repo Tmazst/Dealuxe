@@ -528,6 +528,7 @@
     <div class="bracket-container">
         <!-- Header -->
         <div class="bracket-header">
+            {% include '_account_widget.html' %}
             <h1>🏆 TOURNAMENT BRACKET</h1>
             <p id="tournament-name" style="color: var(--muted); margin: 10px 0;">Tournament Name</p>
         </div>
@@ -607,7 +608,7 @@
 
     <script>
         const socket = io({
-            transports: ['websocket', 'polling']
+            transports: {{ config.SOCKET_TRANSPORTS|tojson }}
         });
 
         let tournamentData = {};

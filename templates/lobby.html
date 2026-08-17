@@ -452,20 +452,9 @@
 </head>
 <body>
     <div class="lobby-container">
-        <!-- Header Controls (Login/Logout) -->
+        <!-- Account widget (login/register or avatar + profile modal) -->
         <div class="header-controls">
-            {% if session.get('user_id') %}
-                <span class="username-display">
-                    <i class="fa-solid fa-user"></i> {{ session.get('username') }}
-                </span>
-                <a href="{{ url_for('auth.logout') }}" class="logout-btn">
-                    <i class="fa-solid fa-right-from-bracket"></i> Logout
-                </a>
-            {% else %}
-                <a href="{{ url_for('auth.login', next='/lobby') }}" class="login-btn">
-                    <i class="fa-solid fa-right-to-bracket"></i> Login
-                </a>
-            {% endif %}
+            {% include '_account_widget.html' %}
         </div>
         
         <a href="{{ url_for('index') }}" class="back-link">
@@ -589,6 +578,7 @@
     </script>
     
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
     <script src="{{ url_for('static', filename='js/multiplayer.js') }}"></script>
 </body>
 </html>

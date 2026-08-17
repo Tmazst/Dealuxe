@@ -117,7 +117,7 @@
                 <a href="#how-to-play">How to play</a>
                 <a href="/lobby">Versus lobby</a>
                 {% if is_admin %}<a href="/admin/test-tournament"><i class="fa-solid fa-flask"></i> Test arena</a>{% endif %}
-                <!--Login icon button / User Account profile icon goes here. Logout shall be inside the account profile modal-->
+                {% include '_account_widget.html' %}
                 <a class="nav-play" href="#tournaments"><i class="fa-solid fa-play"></i> Play now</a>
             </div>
         </nav>
@@ -256,7 +256,7 @@
 
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
-        const socket = io({ transports: ['websocket', 'polling'] });
+        const socket = io({ transports: {{ config.SOCKET_TRANSPORTS|tojson }} });
         let currentFilter = 'all';
         let tournamentsData = [];
         const grid = document.getElementById('tournaments-grid');
@@ -424,6 +424,21 @@
 
         async function loadNextMatch() {
             clearInterval(countdownTimer);
+
+            // Only query the next match when logged in — otherwise the 30s poll
+            // would hit the 401 guard on every tick.
+            try {
+                const me = await fetch('/api/auth/me', { headers: { 'Accept': 'application/json' } });
+                if (!me.ok) {
+                    nextMatchBtn.href = '/login';
+                    nextMatchBtn.innerHTML = '<i class="fa-regular fa-circle-play"></i> Next Match';
+                    nextMatchInfo.style.display = 'block';
+                    nextMatchInfo.className = 'hero-note next-match-info';
+                    nextMatchInfo.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <span class="no-game">Log in to see your next match</span>';
+                    return;
+                }
+            } catch (err) { /* fall through to the request */ }
+
             try {
                 const res = await fetch('/api/tournaments/me/next-match', { headers: { 'Accept': 'application/json' } });
                 const data = await res.json();

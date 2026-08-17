@@ -4,7 +4,7 @@
 
 // Only initialize Socket.IO for lobby page
 const socket = io({
-    transports: ['websocket', 'polling'],
+    transports: window.socketTransports || ['polling', 'websocket'],
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionAttempts: 5

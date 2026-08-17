@@ -57,9 +57,11 @@ app.config.from_object(PaymentConfig)
 # SOCKETIO INITIALIZATION
 # -----------------------------
 
-# local should use threading async mode
+# local should use threading async mode (polling transport — the Werkzeug dev
+# server cannot upgrade websockets with the threading driver)
 if os.environ.get("ENV") == "development":
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+    app.config['SOCKET_TRANSPORTS'] = ['polling']
 else:
     socketio = SocketIO(
         app,
@@ -69,6 +71,7 @@ else:
         logger=True,
         engineio_logger=True
     )
+    app.config['SOCKET_TRANSPORTS'] = ['websocket', 'polling']
 
 # socketio = SocketIO(app, cors_allowed_origins="*",async_mode='threading')
 

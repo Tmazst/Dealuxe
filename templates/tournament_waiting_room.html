@@ -530,6 +530,7 @@
     <div class="waiting-room-container">
         <!-- Header -->
         <div class="waiting-room-header">
+            {% include '_account_widget.html' %}
             <h1>⏳ TOURNAMENT WAITING ROOM</h1>
             <p id="tournament-name" style="color: var(--muted); margin: 10px 0;">Tournament Name</p>
             <div class="tournament-code" id="tournament-code" onclick="copyToClipboard()">
@@ -646,7 +647,7 @@
 
     <script>
         const socket = io({
-            transports: ['websocket', 'polling']
+            transports: {{ config.SOCKET_TRANSPORTS|tojson }}
         });
 
         let tournamentCode = '{{ tournament_code }}';

@@ -24,7 +24,8 @@
 
 <body{% if tournament_room_code %} data-tournament-room="{{ tournament_room_code }}"{% endif %}>
 {% if tournament_room_code %}
-<script>window.tournamentRoomCode = {{ tournament_room_code|tojson }};</script>
+<script>window.tournamentRoomCode = {{ tournament_room_code|tojson }};
+window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
 {% endif %}
 <div id="turn-indicator" aria-live="polite"></div>
 <header class="site-header">
@@ -32,12 +33,7 @@
     <div class="controls">
         <button class="btn-glass ambience" onclick="toggleRulesModal()">Rules</button>
         <!-- <button class="btn-glass ambience">Wallet</button> -->
-        {% if session.get('user_id') %}
-            <span class="btn-glass ambience" style="pointer-events: none;">{{ session.get('username') }}</span>
-            <a href="{{ url_for('auth.logout') }}" class="btn-glass ambience" style="text-decoration: none;">Logout</a>
-        {% else %}
-            <a href="{{ url_for('auth.login') }}" class="btn-glass ambience" style="text-decoration: none;">Login</a>
-        {% endif %}
+        {% include '_account_widget.html' %}
     </div>
 </header>
 

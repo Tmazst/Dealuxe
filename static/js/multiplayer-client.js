@@ -3,7 +3,7 @@
 'use strict';
 
 // Reuse existing socket if available, otherwise create one
-var socket = window.socket || (window.io ? io({ transports: ['websocket','polling'] }) : null);
+var socket = window.socket || (window.io ? io({ transports: window.socketTransports || ['polling', 'websocket'] }) : null);
 if (!socket) {
     console.warn('Socket.IO not available for multiplayer-client.js');
 };

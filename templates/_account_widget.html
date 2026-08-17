@@ -1,0 +1,112 @@
+<!-- ============================================
+     Account widget: login/register buttons when logged
+     out, avatar + profile modal when logged in.
+     Add this partial to a page header via the Jinja
+     "include" tag (e.g. include '_account_widget.html').
+     ============================================ -->
+<style>
+    .account-widget { display: inline-flex; align-items: center; gap: 10px; }
+    .account-widget .account-guest { display: none; align-items: center; gap: 8px; }
+    .account-widget .account-link { color: #fff; text-decoration: none; font-weight: 700; font-size: .85rem; padding: 8px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.07); transition: .2s; }
+    .account-widget .account-link:hover { background: rgba(255,255,255,.15); }
+    .account-widget .account-link.account-primary { background: #2953bb; border-color: transparent; }
+    .account-widget .account-link.account-primary:hover { background: #3565d4; }
+    .account-widget .account-avatar { display: none; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #1a0836; font-weight: 800; font-size: 1rem; cursor: pointer; border: 2px solid rgba(255,255,255,.35); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+    .account-widget .account-avatar:hover { transform: scale(1.06); }
+    .account-modal-overlay { position: fixed; inset: 0; z-index: 9000; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(5,8,16,.7); backdrop-filter: blur(5px); }
+    .account-modal { width: min(420px, 100%); background: #fff; color: #222; border-radius: 16px; padding: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.45); position: relative; max-height: 90vh; overflow: auto; }
+    .account-modal .account-modal-close { position: absolute; top: 12px; right: 14px; background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #888; line-height: 1; }
+    .account-modal .account-modal-header { font-size: 1.15rem; font-weight: 800; margin-bottom: 14px; }
+    .account-modal .account-role { display: inline-block; margin: 2px 4px 6px 0; padding: 3px 9px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: .75rem; font-weight: 700; }
+    .account-modal .account-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #eef1f6; font-size: .9rem; }
+    .account-modal .account-row span { color: #6b7280; }
+    .account-modal .account-row strong { color: #111827; word-break: break-word; }
+    .account-modal .account-logout { width: 100%; margin-top: 18px; padding: 11px; border: none; border-radius: 10px; background: #dc2626; color: #fff; font-weight: 700; cursor: pointer; }
+    .account-modal .account-logout:hover { background: #b91c1c; }
+</style>
+
+<div class="account-widget" id="accountWidget">
+    <div class="account-guest" id="accountGuest">
+        <a class="account-link" href="/login">Log in</a>
+        <a class="account-link account-primary" href="/register">Register</a>
+    </div>
+    <button class="account-avatar" id="accountAvatar" aria-label="Account" title="My account"></button>
+</div>
+
+<div class="account-modal-overlay" id="accountModal">
+    <div class="account-modal">
+        <button class="account-modal-close" id="accountModalClose" aria-label="Close">&times;</button>
+        <div class="account-modal-header">👤 My account</div>
+        <div id="accountModalBody">Loading...</div>
+        <button class="account-logout" id="accountLogout">Logout</button>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+    function $(id) { return document.getElementById(id); }
+    var avatar = $('accountAvatar');
+    var guest = $('accountGuest');
+    var modal = $('accountModal');
+    var body = $('accountModalBody');
+    var logoutBtn = $('accountLogout');
+    if (!avatar || !guest || !modal) return;
+
+    function esc(v) {
+        var n = document.createElement('span');
+        n.textContent = v == null ? '' : String(v);
+        return n.innerHTML;
+    }
+
+    function showGuest() {
+        guest.style.display = 'inline-flex';
+        avatar.style.display = 'none';
+    }
+
+    function openModal() { modal.style.display = 'flex'; }
+    function closeModal() { modal.style.display = 'none'; }
+
+    async function loadAccount() {
+        try {
+            var res = await fetch('/api/auth/me', { headers: { 'Accept': 'application/json' } });
+            if (!res.ok) { showGuest(); return; }
+            var data = await res.json();
+            if (!data || !data.user) { showGuest(); return; }
+            var u = data.user;
+            var p = data.player || {};
+            avatar.textContent = (u.username || '?').charAt(0).toUpperCase();
+            avatar.style.display = 'inline-flex';
+            guest.style.display = 'none';
+            avatar.onclick = openModal;
+
+            var roles = '';
+            if (u.is_super_admin) roles += '<span class="account-role">👑 Super Admin</span>';
+            if (u.is_admin) roles += '<span class="account-role">🛡️ Admin</span>';
+            var real = p.real_balance != null ? 'E' + Number(p.real_balance).toFixed(2) : '—';
+            var fake = p.fake_balance != null ? 'E' + Number(p.fake_balance).toFixed(2) : '—';
+
+            body.innerHTML =
+                '<div class="account-row"><span>Username</span><strong>' + esc(u.username) + '</strong></div>' +
+                '<div class="account-row"><span>Email</span><strong>' + esc(u.email || '—') + '</strong></div>' +
+                '<div class="account-row"><span>Phone</span><strong>' + esc(u.phone || '—') + '</strong></div>' +
+                '<div class="account-row"><span>Real balance</span><strong>' + real + '</strong></div>' +
+                '<div class="account-row"><span>Fake balance</span><strong>' + fake + '</strong></div>' +
+                '<div style="padding-top:6px;">' + roles + '</div>';
+        } catch (e) {
+            showGuest();
+        }
+    }
+
+    logoutBtn.addEventListener('click', async function () {
+        try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } }); } catch (e) {}
+        window.location.href = '/';
+    });
+    $('accountModalClose').addEventListener('click', closeModal);
+    modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+
+    loadAccount();
+})();
+</script>
+
