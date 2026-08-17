@@ -577,7 +577,7 @@
         };
     </script>
     
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="/static/js/socket.io.min.js"></script>
     <script>window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
     <script src="{{ url_for('static', filename='js/multiplayer.js') }}"></script>
 </body>

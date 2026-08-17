@@ -263,7 +263,7 @@
         </div>
     </main>
 
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="/static/js/socket.io.min.js"></script>
     <script>
         const socket = io({ transports: {{ config.SOCKET_TRANSPORTS|tojson }} });
         let currentFilter = 'all';

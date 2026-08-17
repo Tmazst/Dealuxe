@@ -3,12 +3,20 @@
 // ==============================================
 
 // Only initialize Socket.IO for lobby page
-const socket = io({
-    transports: window.socketTransports || ['polling', 'websocket'],
-    reconnection: true,
-    reconnectionDelay: 1000,
-    reconnectionAttempts: 5
-});
+let socket = null;
+if (typeof io === 'function') {
+    socket = io({
+        transports: window.socketTransports || ['polling', 'websocket'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionAttempts: 5
+    });
+} else {
+    // Defensive: if the Socket.IO client failed to load (offline, CDN blocked by
+    // a proxy browser like Opera Mini) keep the page alive instead of throwing.
+    console.warn('Socket.IO client not loaded (io undefined) - live multiplayer features disabled');
+    socket = { on: function(){}, off: function(){}, emit: function(){} };
+}
 
 // expose socket to page-level scripts so multiplayer-client.js can reuse it
 window.socket = socket;
