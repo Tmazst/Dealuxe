@@ -133,6 +133,15 @@
         </div>
         <p class="hero-note" id="nextMatchInfo" style="display:none;"></p>
 
+        <!-- Seats-full / tournament-starting prompt (visible to participants) -->
+        <div class="arena-notice" id="arenaNotice" style="display:none; align-items:center; gap:14px; margin:0 auto 22px; padding:14px 18px; border:1px solid rgba(250,204,21,.45); border-radius:14px; background:rgba(250,204,21,.10); color:#fff; max-width:1250px; justify-content:space-between;">
+            <span id="arenaNoticeText"></span>
+            <span style="display:flex; align-items:center; gap:10px;">
+                <a class="button button-primary" id="arenaNoticeBtn" href="#" style="margin:0; padding:10px 16px; font-size:.82rem;">Go to game</a>
+                <button type="button" onclick="closeArenaNotice()" style="background:none; border:none; color:#fff; font-size:1.15rem; cursor:pointer;" aria-label="Dismiss">&times;</button>
+            </span>
+        </div>
+
         <section class="hero" aria-labelledby="hero-title">
             <div>
                 <div class="eyebrow"><i class="fa-solid fa-circle"></i> Tournament arena is open</div>
@@ -263,7 +272,7 @@
 
         socket.on('connect', fetchTournaments);
         socket.on('tournaments_list', (data) => { tournamentsData = data.tournaments || []; renderTournaments(); });
-        socket.on('tournament_updated', fetchTournaments);
+        socket.on('tournament_updated', handleTournamentUpdated);
         socket.on('tournament_error', (data) => { console.error('Tournament error:', data.message); });
 
         document.querySelectorAll('.filter').forEach((button) => button.addEventListener('click', () => {
@@ -277,6 +286,9 @@
         function escapeHtml(value) { const node = document.createElement('span'); node.textContent = value || ''; return node.innerHTML; }
         function labelForType(type) { return { standard: 'Standard · 4 players', premium: 'Premium · 8 players', deluxe: 'Deluxe · 16 players' }[type] || 'Tournament'; }
         function labelForStatus(status) { return { open: 'Open seats', locked: 'Bracket locked', in_progress: 'Live now', completed: 'Complete' }[status] || status; }
+        // Advertised top prize (1st place at a FULL bracket) - fixed per type so a
+        // partially-filled tournament never shows a misleading "win E10" figure.
+        const TOP_PRIZE_BY_TYPE = { standard: 20, premium: 40, deluxe: 80 };
 
         function renderTournaments() {
             if (!tournamentsData.length) {
@@ -284,7 +296,7 @@
                 return;
             }
             grid.innerHTML = tournamentsData.map((tournament) => {
-                const prizePool = amount(tournament.prize_pool) * 0.5;
+                const prizePool = TOP_PRIZE_BY_TYPE[tournament.type] ?? (amount(tournament.prize_pool) * 0.5);
                 const current = amount(tournament.current_players);
                 const maximum = Math.max(amount(tournament.max_players), 1);
                 const progress = Math.min((current / maximum) * 100, 100);
@@ -304,7 +316,7 @@
                     <div class="card-prize"><span>Win</span><strong>E${prizePool.toFixed(2)}</strong></div>
                     <div class="slots"><span><i class="fa-solid fa-users"></i> <strong>${current}</strong> Currently joined</span><span>${Math.max(maximum - current, 0)} left</span></div>
                     <div class="progress"><span style="width:${progress}%"></span></div>
-                    <div class="card-actions">${canJoin ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})"><i class="fa-solid fa-bolt"></i> Join for E${amount(tournament.entry_fee).toFixed(2)}</button>` : `<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-chart-simple"></i> View bracket</button>`}<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-arrow-right"></i> Details</button></div>
+                    <div class="card-actions">${canJoin ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})"><i class="fa-solid fa-bolt"></i> Join for E${amount(tournament.entry_fee).toFixed(2)}</button>` : `<button class="button button-primary" type="button" onclick="viewBracket(${Number(tournament.id)})"><i class="fa-solid fa-gamepad"></i> Go to game</button>`}<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-arrow-right"></i> Details</button></div>
                 </article>`;
             }).join('');
         }
@@ -317,6 +329,45 @@
             window.location.href = `/tournaments/${tournamentId}`;
         }
         function viewTournament(tournamentId) { window.location.href = `/tournaments/${tournamentId}`; }
+        function viewBracket(tournamentId) { window.location.href = `/tournaments/${tournamentId}/bracket`; }
+
+        async function handleTournamentUpdated(data) {
+            fetchTournaments();
+            if (!data || (data.status !== 'locked' && data.status !== 'in_progress')) return;
+            // Only prompt/auto-redirect when the logged-in player is actually in this bracket.
+            let mine = [];
+            try {
+                const res = await fetch('/api/tournaments/me/active', { headers: { 'Accept': 'application/json' } });
+                if (res.ok) mine = (await res.json()).tournaments || [];
+            } catch (e) { return; }
+            if (mine.some((t) => Number(t.id) === Number(data.id))) showArenaNotice(data);
+        }
+
+        function showArenaNotice(t) {
+            const notice = document.getElementById('arenaNotice');
+            if (!notice) return;
+            document.getElementById('arenaNoticeText').innerHTML =
+                `Seats are full! <strong>${escapeHtml(t.name)}</strong> is starting in <strong id="arenaNoticeCount">10</strong>s.`;
+            document.getElementById('arenaNoticeBtn').href = `/tournaments/${Number(t.id)}/bracket`;
+            notice.style.display = 'flex';
+            if (window.__arenaNoticeTimer) clearInterval(window.__arenaNoticeTimer);
+            let remaining = 10;
+            window.__arenaNoticeTimer = setInterval(() => {
+                remaining -= 1;
+                const el = document.getElementById('arenaNoticeCount');
+                if (el) el.textContent = Math.max(remaining, 0);
+                if (remaining <= 0) {
+                    clearInterval(window.__arenaNoticeTimer);
+                    window.location.href = `/tournaments/${Number(t.id)}/bracket`;
+                }
+            }, 1000);
+        }
+
+        function closeArenaNotice() {
+            const notice = document.getElementById('arenaNotice');
+            if (notice) notice.style.display = 'none';
+            if (window.__arenaNoticeTimer) clearInterval(window.__arenaNoticeTimer);
+        }
         setInterval(fetchTournaments, 30000);
 
         // ---------- Create tournament (hero CTA) ----------
@@ -424,7 +475,7 @@
 
         async function loadNextMatch() {
             clearInterval(countdownTimer);
-
+            const tournamentBtn = document.getElementById("createTournamentBtn");
             // Only query the next match when logged in — otherwise the 30s poll
             // would hit the 401 guard on every tick.
             try {
@@ -471,10 +522,12 @@
                 nextMatchInfo.style.display = 'block';
                 nextMatchInfo.className = 'hero-note next-match-info';
                 nextMatchInfo.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <span class="no-game">No Game Scheduled for this player</span>';
+                tournamentBtn.style.display="flex";
             } catch (err) {
                 nextMatchBtn.href = '/lobby';
                 nextMatchInfo.style.display = 'block';
                 nextMatchInfo.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> <span class="no-game">No Game Scheduled for this player</span>';
+                tournamentBtn.style.display="flex";
             }
         }
 

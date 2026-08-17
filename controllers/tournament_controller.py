@@ -84,12 +84,24 @@ def _perform_tournament_lock(tournament):
     _build_bracket(tournament)
     db.session.commit()
 
-    summary = _serialize_tournament(tournament)
-    if _socketio is not None:
-        _socketio.emit('tournament_locked', {'tournament': summary},
-                       room=_tournament_room(tournament.id))
-    _emit_tournament_updated(tournament)
+    _announce_tournament_locked(tournament)
     return True, None
+
+
+def _announce_tournament_locked(tournament, countdown=3):
+    """Notify every waiting-room client that the tournament is locked/starting.
+
+    Emits ``tournament_locked`` (lock UI + countdown), ``tournament_starting``
+    (auto-redirect to the bracket) and ``tournament_updated`` (public refresh).
+    """
+    if _socketio is None:
+        return
+    summary = _serialize_tournament(tournament)
+    room = _tournament_room(tournament.id)
+    _socketio.emit('tournament_locked', {'tournament': summary}, room=room)
+    _socketio.emit('tournament_starting', {'countdown': countdown}, room=room)
+    _socketio.emit('tournament_updated', summary, room=room)
+    _socketio.emit('tournament_updated', summary, to=None)
 
 
 def _parse_custom_time(custom_time_str, now):
@@ -1185,13 +1197,22 @@ def join_tournament(tournament_id):
     tournament.prize_pool_amount += tournament.entry_fee
     _ensure_prize_pool(tournament)
 
+    # Notify waiting rooms so their participant list refreshes in real time.
+    if _socketio is not None:
+        _socketio.emit('participant_joined', {
+            'user_id': user_id,
+            'username': _get_username(user_id),
+            'current_players': tournament.current_player_count,
+        }, room=_tournament_room(tournament.id))
+
     if tournament.current_player_count >= tournament.max_players and tournament.is_auto_lock:
-        tournament.status = 'locked'
-        tournament.locked_at = datetime.utcnow()
-        tournament.locked_player_count = tournament.current_player_count
-        _build_bracket(tournament)
-    db.session.commit()
-    _emit_tournament_updated(tournament)
+        # Seats are full on an auto-lock bracket: lock it, build the bracket and
+        # announce (tournament_locked + tournament_starting) so every waiting
+        # room auto-redirects to the bracket page.
+        _perform_tournament_lock(tournament)
+    else:
+        db.session.commit()
+        _emit_tournament_updated(tournament)
 
     return jsonify({
         'message': 'Joined tournament',

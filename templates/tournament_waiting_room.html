@@ -623,6 +623,9 @@
                     <button class="btn-large btn-vote" id="vote-lock-btn" onclick="voteLock()" style="display:none;">
                         🔒 Vote to Lock
                     </button>
+                    <button class="btn-large btn-start" id="go-to-game-btn" onclick="goToBracket()" style="display:none; background: linear-gradient(135deg, #16a34a, #15803d);">
+                        Go to game
+                    </button>
                     <button class="btn-large btn-copy" onclick="copyToClipboard()">
                         📋 Copy Code
                     </button>
@@ -645,6 +648,7 @@
         </div>
     </div>
 
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
         const socket = io({
             transports: {{ config.SOCKET_TRANSPORTS|tojson }}
@@ -662,6 +666,7 @@
         socket.on('tournament_updated', (data) => {
             console.log('🔄 Tournament updated:', data);
             updateUI(data);
+            updatePlayersList();
         });
 
         socket.on('participant_joined', (data) => {
@@ -678,10 +683,29 @@
 
         socket.on('tournament_starting', (data) => {
             console.log('🎮 Tournament starting in', data.countdown);
-            document.getElementById('countdown').style.display = 'block';
-            setTimeout(() => {
-                window.location.href = `/tournaments/{{ tournament_id }}/bracket`;
-            }, data.countdown * 1000);
+            const cd = document.getElementById('countdown');
+            if (cd) cd.style.display = 'block';
+            const timerEl = document.getElementById('countdown-timer');
+            if (timerEl) timerEl.textContent = String(Math.max(Number(data.countdown) || 3, 1)) + 's';
+            const statusMsg = document.getElementById('status-message');
+            if (statusMsg) {
+                statusMsg.classList.remove('waiting');
+                statusMsg.classList.add('locked', 'starting');
+                statusMsg.innerHTML = `<span class="status-icon">🏆</span><span>Seats filled! Tournament starting in <strong id="start-countdown-num">${data.countdown}</strong>s - get ready to play.</span>`;
+            }
+            const goBtn = document.getElementById('go-to-game-btn');
+            if (goBtn) goBtn.style.display = 'inline-block';
+            let remaining = Math.max(Number(data.countdown) || 3, 1);
+            if (window.__startTick) clearInterval(window.__startTick);
+            window.__startTick = setInterval(() => {
+                remaining -= 1;
+                const numEl = document.getElementById('start-countdown-num');
+                if (numEl) numEl.textContent = Math.max(remaining, 0);
+                if (remaining <= 0) {
+                    clearInterval(window.__startTick);
+                    window.location.href = `/tournaments/{{ tournament_id }}/bracket`;
+                }
+            }, 1000);
         });
 
         socket.on('tournament_error', (data) => {
@@ -864,6 +888,8 @@
                 }
             }, 1000);
         }
+
+        function goToBracket() { window.location.href = `/tournaments/{{ tournament_id }}/bracket`; }
 
         function copyToClipboard() {
             const code = document.getElementById('tournament-code').textContent;

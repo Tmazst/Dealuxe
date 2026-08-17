@@ -395,11 +395,25 @@ def _handle_entry_fee_callback(payload):
                 tournament.current_player_count += 1
                 tournament.prize_pool_amount += tournament.entry_fee
 
+                from controllers.tournament_controller import (
+                    _emit_tournament_updated,
+                    _perform_tournament_lock,
+                    _tournament_room,
+                )
+                if socketio:
+                    socketio.emit('participant_joined', {
+                        'user_id': user_id,
+                        'username': (User.query.get(user_id).username
+                                     if User.query.get(user_id) else 'Player'),
+                        'current_players': tournament.current_player_count,
+                    }, room=_tournament_room(tournament.id))
+
                 if (tournament.is_auto_lock
                         and tournament.current_player_count >= tournament.max_players):
-                    tournament.status = 'locked'
-                    tournament.locked_at = _dt.utcnow()
-                    tournament.locked_player_count = tournament.current_player_count
+                    # Full auto-lock bracket: lock, build the bracket, announce.
+                    _perform_tournament_lock(tournament)
+                else:
+                    _emit_tournament_updated(tournament)
     else:
         # Refund the prepaid amount on failure.
         player = Player.query.filter_by(user_id=user_id).first()
