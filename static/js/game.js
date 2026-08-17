@@ -71,10 +71,21 @@ async function fetchPlayerDetails() {
 
         if (!data || !Array.isArray(data.players) || data.players.length === 0) return null;
 
-        // Try to match by name if we already have myPlayer from createGame
+        // 1) Trust the server-provided my_player when present — the backend knows
+        //    which seat the requesting user holds (multiplayer/tournament rooms).
         let found = null;
-        if (myPlayer && myPlayer.name) {
+        if (data.my_player && typeof data.my_player.id === 'number') {
+            found = data.players.find(p => p.id === data.my_player.id) || data.my_player;
+        }
+
+        // 2) Match by name if we already have myPlayer from createGame
+        if (!found && myPlayer && myPlayer.name) {
             found = data.players.find(p => p.name === myPlayer.name);
+        }
+
+        // 3) Respect the socket-provided local player index
+        if (!found && typeof localPlayerIndex === 'number' && data.players[localPlayerIndex]) {
+            found = data.players[localPlayerIndex];
         }
 
         // Fallback: use first player

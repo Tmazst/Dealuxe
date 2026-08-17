@@ -400,6 +400,7 @@ def _build_bracket(tournament):
     participants = TournamentParticipant.query.filter_by(
         tournament_id=tournament.id, status='registered'
     ).order_by(TournamentParticipant.registered_at.asc()).all()
+
     if len(participants) < 2:
         return []
 
@@ -845,7 +846,7 @@ def init_tournament_events(socketio, app=None):
             emit('tournament_error', {'message': 'Tournament is already locked or completed'})
             return
         if tournament.is_auto_lock:
-            emit('tournament_error', {'message': 'This tournament uses auto-lock when full'})
+            emit('tournament_error', {'message': 'This tournament is set to auto lock itself when players full'})
             return
         if _can_manage_tournament(tournament, user_id):
             emit('tournament_error', {'message': 'The creator or admin locks directly'})
@@ -875,6 +876,11 @@ def init_tournament_events(socketio, app=None):
         tournament = get_tournament_from_payload(data)
         if tournament is None:
             return
+
+        if tournament.status in ('in_progress', 'completed', 'cancelled'):
+            emit('tournament_error', {'message': 'Tournament is already in progress or started'})
+            return
+
         participant = TournamentParticipant.query.filter_by(
             tournament_id=tournament.id, user_id=user_id
         ).first()

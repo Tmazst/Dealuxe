@@ -248,6 +248,9 @@ def tournament_waiting_room_page(tournament_id):
 @app.route("/tournaments/<int:tournament_id>/bracket")
 def tournament_bracket_page(tournament_id):
     tournament = Tournament.query.get_or_404(tournament_id)
+    
+    if not tournament:
+        return jsonify({"Status":f"Tournament with not found"})
     return render_template(
         "tournament_bracket.html",
         tournament_id=tournament.id,
@@ -507,18 +510,36 @@ def create_game():
 @app.route("/api/game/<game_id>/player_details")
 def player_details(game_id):
     engine = manager.get_game(game_id)
-    # engine.players is a list of Player objects; convert to JSON-serializable dicts
+
+    # Determine the requesting user's seat. Multiplayer/tournament games map
+    # room.player1 -> engine index 0 and room.player2 -> engine index 1.
+    # Single-player (vs AI) games have no room and default to index 0.
+    player_index = 0
+    user_id = session.get('user_id')
+    if user_id is not None:
+        try:
+            from database import GameRoom
+            room = GameRoom.query.filter_by(game_id=game_id).first()
+            if room is not None and room.player2_id == user_id:
+                player_index = 1
+        except Exception:
+            pass
+
+    # engine.players is a list of Player objects; convert to JSON-serializable
+    # dicts. Only expose the requesting player's full hand — the opponent's
+    # hand is masked (live play uses the socket masked state, not this endpoint).
     players = []
     for i, p in enumerate(engine.players):
         players.append({
             "id": i,
             "name": p.name,
             "hand_count": len(p.hand),
-            "hand": [str(c) for c in p.hand]
+            "hand": [str(c) for c in p.hand] if i == player_index else [],
         })
 
-    print(f"[APP] Player details for game {game_id}: {len(players)} players")
-    return jsonify({"players": players,"my_player": players[0] if players else None})
+    my_player = players[player_index] if players else None
+    print(f"[APP] Player details for game {game_id}: {len(players)} players (my index {player_index})")
+    return jsonify({"players": players, "my_player": my_player})
 
 
 @app.route("/api/game/<game_id>/state")

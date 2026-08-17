@@ -602,6 +602,8 @@
             </button>
         </div>
     </div>
+    
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
     <script>
         const socket = io({
@@ -705,12 +707,17 @@
 
         function loadBracketData() {
             const tId = '{{ tournament_id }}';
-            if (tId && tId !== 'None' && tId !== '{{ tournament_id }}') {
+            // NOTE: after Jinja renders this page `{{ tournament_id }}` becomes a
+            // real id (e.g. "1"), so a condition like `tId !== '{{ tournament_id }}'`
+            // would ALWAYS be false and real data would never load. Just check the id.
+            if (tId && tId !== 'None') {
                 fetch(`/api/tournaments/${tId}/overview`)
                     .then(res => res.json())
                     .then(data => {
                         if (data && data.tournament) {
                             tournamentData = data;
+                            renderBracket();
+                        } else {
                             renderBracket();
                         }
                     })
@@ -878,18 +885,22 @@
                     <div class="bracket-title">${escapeHtml(round.round_name).toUpperCase()}</div>
                     ${round.matches.map((slot) => {
                         const match = matchByBracket.get(slot.id);
+                        // A bracket slot may not have a match object yet (e.g. a
+                        // future round) — render it as a neutral box instead of crashing.
                         const status = match ? match.status : slot.status;
-                        const isParticipant = currentUserId && (currentUserId === match.player1_id || currentUserId === match.player2_id);
+                        const isParticipant = !!match && currentUserId && (currentUserId === match.player1_id || currentUserId === match.player2_id);
                         const isMePlayer1 = isParticipant && currentUserId === match.player1_id;
                         const opponentConnected = match ? (isMePlayer1 ? match.player2_connected : match.player1_connected) : false;
-                        const activeRoll = match && match.roll && match.roll.status === 'rolling';
-                        const canStart = match && status === 'scheduled' && isParticipant;
-                        const canRoll = match && isParticipant && (status === 'scheduled' || status === 'in_progress') && !opponentConnected && !activeRoll;
+                        const activeRoll = !!match && match.roll && match.roll.status === 'rolling';
+                        const canStart = !!match && status === 'scheduled' && isParticipant;
+                        const canRoll = !!match && isParticipant && (status === 'scheduled' || status === 'in_progress') && !opponentConnected && !activeRoll;
 
                         let actionsHtml = '';
-                        if (activeRoll) {
+                        if (!match) {
+                            actionsHtml = `<div class="match-status status-${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</div>`;
+                        } else if (activeRoll) {
                             actionsHtml = `<div class="match-status status-rolling" data-roll-deadline="${escapeHtml(match.roll.deadline || '')}">🎲 Rolling... <span class="roll-countdown">10:00</span></div>`;
-                        } else if (status === 'in_progress' && match && match.room_code) {
+                        } else if (status === 'in_progress' && match.room_code) {
                             // Direct link into the multiplayer game UI
                             actionsHtml = isParticipant
                                 ? `<a class="btn-bracket btn-share" href="/game/${escapeHtml(match.room_code)}">▶ Join game</a>`

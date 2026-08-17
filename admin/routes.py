@@ -1,6 +1,6 @@
 from functools import wraps
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request, session, render_template
 
 from admin.service import (
     adjust_wallet,
@@ -58,6 +58,11 @@ def login_required_only(f):
 @admin_required
 def admin_dashboard():
     return jsonify(dashboard_summary())
+
+@admin_bp.route('/admin', methods=['GET'])
+@admin_required
+def admin():
+    return render_template("admin.html")
 
 
 @admin_bp.route('/users', methods=['GET'])

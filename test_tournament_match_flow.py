@@ -16,6 +16,7 @@ from database import (
     create_tournament_record,
     add_tournament_participant,
 )
+
 from controllers.tournament_controller import (
     _build_bracket,
     start_tournament_match_helper,
@@ -74,6 +75,7 @@ class TestTournamentMatchFlow(unittest.TestCase):
             add_tournament_participant(t.id, u.id, payment_status='completed', payment_method='wallet')
             tp = TournamentParticipant.query.filter_by(tournament_id=t.id, user_id=u.id).first()
             tp.status = 'registered'
+        
         t.current_player_count = 4
         t.prize_pool_amount = 40.0
         db.session.commit()
