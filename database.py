@@ -74,7 +74,7 @@ def ensure_tournament_schema():
 def init_db(app):
     """Initialize database with Flask app"""
     # SQLite configuration (will switch to MySQL later)
-    app.config['SQLALCHEMY_DATABASE_URI'] ='sqlite:////var/www/dealuxe-2/dealuxe_game.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] ='sqlite:///dealuxe_game.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ECHO'] = False  # Set to True for SQL debugging
     
