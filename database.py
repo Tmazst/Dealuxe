@@ -24,7 +24,13 @@ def _table_has_column(table_name, column_name):
 
 
 def ensure_tournament_schema():
-    """Add tournament-related columns to existing tables when the database already exists."""
+    """Add missing columns to existing tables when the database already exists.
+
+    SQLAlchemy's ``db.create_all()`` never alters existing tables, so every
+    new column added to the models after a database was first created must be
+    listed here or legacy databases (e.g. a pre-existing VPS install) will fail
+    with ``no such column``.
+    """
     if db.engine is None:
         return
 
@@ -33,6 +39,7 @@ def ensure_tournament_schema():
 
     with db.session.begin():
         for table_name, column_definition in [
+            ('users', 'is_super_admin BOOLEAN DEFAULT 0'),
             ('bet_sessions', 'tournament_id INTEGER'),
             ('game_rooms', 'tournament_id INTEGER'),
             ('game_rooms', 'match_id INTEGER'),
@@ -67,7 +74,7 @@ def ensure_tournament_schema():
 def init_db(app):
     """Initialize database with Flask app"""
     # SQLite configuration (will switch to MySQL later)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///dealuxe_game.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] ='sqlite:////var/www/dealuxe-2/dealuxe_game.db'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ECHO'] = False  # Set to True for SQL debugging
     
