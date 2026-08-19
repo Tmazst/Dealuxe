@@ -1525,15 +1525,9 @@ html,body{
     filter: saturate(0.96);
 }
 
-/* Themed player card faces per rank group (PNGs in /static/images; the warm
-   gradient below is the fallback for ranks without art, e.g. A/2/3). Added by
-   playerCardBgClass() in game.js / game-core.js. */
-.card.player-card.player-card-4-10-bg{
-    background:
-        url('/static/images/card-4-10-bg.png') center / cover no-repeat,
-        radial-gradient(ellipse at 22% 8%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.35) 35%, transparent 65%),
-        linear-gradient(135deg, #fffef9 0%, #faf7ee 48%, #f3ead8 100%);
-}
+/* Themed player card faces for J/Q/K (PNGs in /static/images; all other ranks
+   keep the plain warm gradient face). Added by playerCardBgClass() in
+   game.js / game-core.js. */
 .card.player-card.player-card-j-bg{
     background:
         url('/static/images/card-j-bg.png') center / cover no-repeat,
@@ -1571,8 +1565,8 @@ html,body{
 
 /* Card typography / suits */
 .card.player-card .rank,
-.card.player-card .suit,
-.card.player-card .center {
+.card.player-card .suit
+{
     color: #c91414 !important;
 
     /* Printed ink — not neon/glowing red */
@@ -1582,6 +1576,10 @@ html,body{
 
     -webkit-font-smoothing: antialiased;
     text-rendering: geometricPrecision;
+}
+
+.card.player-card .center {
+    color: rgba(201, 20, 20,0)
 }
 /* Test New Look */
 

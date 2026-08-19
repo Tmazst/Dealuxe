@@ -1621,7 +1621,7 @@ function updateDrawButton(state) {
 
 // Player card faces: themed PNG background per rank group (files in /static/images).
 function playerCardBgClass(rank) {
-    const map = { '4': '4-10', '5': '4-10', '6': '4-10', '7': '4-10', '8': '4-10', '9': '4-10', '10': '4-10', 'J': 'j', 'Q': 'q', 'K': 'k' };
+    const map = { 'J': 'j', 'Q': 'q', 'K': 'k' };
     return map[String(rank).toUpperCase()] || '';
 }
 
