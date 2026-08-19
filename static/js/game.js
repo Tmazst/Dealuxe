@@ -1161,8 +1161,12 @@ async function displayGameOverFinancials(isPlayerWinner) {
 function parseCardString(s) {
     if (!s) return { rank: s, suit: '' };
     const str = String(s).replace(/\s*icon$/i, '').trim();
-    const m = str.match(/^([0-9]{1,2}|[AJQK])([a-zA-Z]+)$/i);
+    // Unicode suit symbols used by the engine, e.g. "K" + spade.
+    const m = str.match(/^([0-9]{1,2}|[AJQK])([\u2665\u2666\u2663\u2660])$/);
     if (m) return { rank: m[1], suit: m[2] };
+    // Legacy letter suits ("KH", "10Hearts").
+    const m2 = str.match(/^([0-9]{1,2}|[AJQK])([a-zA-Z]+)$/i);
+    if (m2) return { rank: m2[1], suit: m2[2] };
     const alt = str.match(/^(.+?)([a-zA-Z]+)$/);
     if (alt) return { rank: alt[1], suit: alt[2] };
     return { rank: str, suit: '' };

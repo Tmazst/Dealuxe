@@ -17,3 +17,21 @@ py super_admin_cli.py revoke someplayer          # demote an admin (asks super a
 py super_admin_cli.py reset-password someplayer  # reset a user's password
 py super_admin_cli.py list 
 ```
+
+------------------------------------------------------------
+
+Tournament
+Test Arena 14 Aug 15:01
+Code
+TMT-20260814150107-STA
+Bracket
+/tournaments/1/bracket
+Manual player
+New account — username
+tournament_tester
+, password
+TournamentTest!2026
+Next match
+#2
+Bots
+Bots enabled — matches will auto-play.

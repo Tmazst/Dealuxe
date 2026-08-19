@@ -1471,6 +1471,14 @@ html,body{
 .card .suit{font-size:18px; color: #da1212 !important;} /*color:rgb(36, 36, 36);*/
 .card .center{font-size:44px;text-align:center; color: #da1212 !important;}
 
+/* Keep card rank/suit text above the gloss sheen (fixes text loss on proxy browsers like Opera Mini) */
+.card .rank,
+.card .center,
+.card .suit {
+    position: relative;
+    z-index: 3;
+}
+
 /* Player cards - warm gold face so your hand is instantly recognisable */
 .card.player-card-old{
     border-color: rgba(218, 18, 18,0.35) ;
