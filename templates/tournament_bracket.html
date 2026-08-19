@@ -209,6 +209,20 @@
             text-overflow: ellipsis;
         }
 
+        .prize-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(250, 204, 21, 0.22), rgba(217, 119, 6, 0.28));
+            border: 1px solid rgba(250, 204, 21, 0.5);
+            color: var(--gold);
+            font-size: 0.72rem;
+            font-weight: 800;
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
         .player-score {
             color: var(--accent-2);
             font-weight: 700;
@@ -462,10 +476,13 @@
             .bracket-wrapper {
                 gap: 20px;
                 padding: 20px;
+                flex-direction: column;
+                align-items: stretch;
+                overflow-x: visible;
             }
 
             .bracket-column {
-                min-width: 200px;
+                min-width: 0;
                 gap: 15px;
             }
 
@@ -867,6 +884,11 @@
                 '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
             }[char]));
             const matchByBracket = new Map(matches.map((match) => [match.bracket_id, match]));
+            const prizes = tournamentData.prizes || [];
+            const prizeByUser = {};
+            prizes.forEach((p) => {
+                if (p && p.user_id != null && Number(p.amount) > 0) prizeByUser[p.user_id] = Number(p.amount);
+            });
             const statusLabel = (status) => ({
                 scheduled: 'Ready to play', in_progress: 'Live now', completed: 'Completed', pending: 'Waiting'
             }[status] || status);
@@ -919,8 +941,8 @@
                         return `<div class="match-box ${escapeHtml(status)}">
                             <div class="match-header"><span class="match-round">Match ${slot.match_number}</span><span class="match-time">${escapeHtml(statusLabel(status))}</span></div>
                             <div class="match-players">
-                                <div class="player-slot${firstWinner}"><div class="player-info"><div class="player-avatar">${escapeHtml((slot.player1_name || '?').charAt(0).toUpperCase())}</div><div class="player-name">${escapeHtml(slot.player1_name)}</div></div></div>
-                                <div class="player-slot${secondWinner}"><div class="player-info"><div class="player-avatar">${escapeHtml((slot.player2_name || '?').charAt(0).toUpperCase())}</div><div class="player-name">${escapeHtml(slot.player2_name)}</div></div></div>
+                                <div class="player-slot${firstWinner}"><div class="player-info"><div class="player-avatar">${escapeHtml((slot.player1_name || '?').charAt(0).toUpperCase())}</div><div class="player-name">${escapeHtml(slot.player1_name)}</div></div>${prizeByUser[slot.player1_id] ? `<span class="prize-badge">🏆 E${prizeByUser[slot.player1_id].toFixed(2)}</span>` : ''}</div>
+                                <div class="player-slot${secondWinner}"><div class="player-info"><div class="player-avatar">${escapeHtml((slot.player2_name || '?').charAt(0).toUpperCase())}</div><div class="player-name">${escapeHtml(slot.player2_name)}</div></div>${prizeByUser[slot.player2_id] ? `<span class="prize-badge">🏆 E${prizeByUser[slot.player2_id].toFixed(2)}</span>` : ''}</div>
                             </div>
                             ${actionsHtml}
                         </div>`;

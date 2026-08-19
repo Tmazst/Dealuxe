@@ -1302,6 +1302,15 @@ def tournament_overview(tournament_id):
         'matches': [_serialize_match(m) for m in matches],
         'next_matches': [_serialize_match(m) for m in next_matches[:5]],
         'recent_results': [_serialize_match(m) for m in recent_results[-5:]][::-1],
+        'prizes': [
+            {
+                'placement': row.placement,
+                'amount': row.prize_amount,
+                'user_id': row.user_id,
+                'status': row.status,
+            }
+            for row in TournamentPrizePool.query.filter_by(tournament_id=tournament.id).all()
+        ],
         'stats': _tournament_stats(tournament, matches, participants),
     })
 
