@@ -20,7 +20,7 @@
         .brand { color: var(--ink); text-decoration: none; font-weight: 900; font-size: 1.05rem; letter-spacing: .12em; white-space: nowrap; }
         .brand i { color: var(--gold); margin-right: 9px; }
         .nav-links { display: flex; align-items: center; gap: 26px; }
-        .nav-links a { color: var(--muted); text-decoration: none; font-size: .9rem; font-weight: 700; transition: color .2s; }
+        .nav-links a { color: var(--muted); text-decoration: none; font-size: .9rem; font-weight: 700; transition: color .2s; display: inline-flex; align-items: center; gap: 6px; }
         .nav-links a:hover { color: white; }
         .nav-play { color: #100d24 !important; background: var(--gold); padding: 10px 15px; border-radius: 9px; }
         .hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr); gap: 42px; align-items: center; padding: clamp(46px, 8vw, 96px) 0 62px; }
@@ -99,7 +99,7 @@
         .slots { display: flex; justify-content: space-between; color: var(--muted); font-size: .83rem; margin-bottom: 8px; }.slots strong { color: white; }.progress { height: 7px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,.09); }.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-1), var(--success)); border-radius: inherit; }.card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }.card-actions .button { min-height: 42px; padding-inline: 10px; font-size: .77rem; }.button-join { background: var(--success); color: #08251d; }.button-detail { background: rgba(255,255,255,.045); color: white; border-color: var(--line); }
         .empty-state { border: 1px dashed rgba(255,255,255,.2); border-radius: 15px; padding: 68px 20px; text-align: center; color: var(--muted); grid-column: 1 / -1; }.empty-state i { color: var(--accent-1); font-size: 2.5rem; margin-bottom: 14px; }.empty-state h3 { color: white; margin: 0 0 7px; }
         .how-to-play { margin-top: 92px; padding: 34px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(115deg, rgba(139,92,246,.16), rgba(15,23,36,.76) 58%); }.how-grid { display: grid; grid-template-columns: .9fr 1.4fr; gap: 44px; align-items: center; }.how-copy h2 { font-size: clamp(1.8rem, 3.5vw, 3rem); letter-spacing: -.045em; margin: 10px 0; }.how-copy p { color: var(--muted); line-height: 1.6; }.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }.step { border: 1px solid var(--line); padding: 17px; background: rgba(8,5,20,.32); border-radius: 12px; }.step i { color: var(--gold); font-size: 1.35rem; margin-bottom: 16px; }.step span { display: block; color: var(--success); font-size: .69rem; font-weight: 900; letter-spacing: .1em; margin-bottom: 6px; }.step strong { display: block; font-size: .94rem; }.step p { font-size: .78rem; margin: 7px 0 0; }
-        @media (max-width: 820px) { .nav-links a:not(.nav-play) { display: none; }.hero, .how-grid { grid-template-columns: 1fr; }.hero { padding-top: 48px; }.prize-strip { grid-template-columns: 1fr; }.prize-strip article { border-right: 0; border-bottom: 1px solid var(--line); }.prize-strip article:last-child { border-bottom: 0; }.how-to-play { padding: 24px; }.steps { grid-template-columns: 1fr; }.section-head { align-items: start; flex-direction: column; }.section-head a { display: none; } }
+        @media (max-width: 820px) { .nav { padding-inline: 12px; }.nav-links { gap: 4px 12px; }.nav-links a { gap: 5px; }.nav-links a .nav-label { display: none; }.nav-links a i { font-size: 1.05rem; }.nav-links .nav-play { padding: 8px 11px; }.account-widget { gap: 6px; }.nav-links .account-widget a.account-link { padding: 7px 10px; font-size: .74rem; }.hero, .how-grid { grid-template-columns: 1fr; }.hero { padding-top: 48px; }.prize-strip { grid-template-columns: 1fr; }.prize-strip article { border-right: 0; border-bottom: 1px solid var(--line); }.prize-strip article:last-child { border-bottom: 0; }.how-to-play { padding: 24px; }.steps { grid-template-columns: 1fr; }.section-head { align-items: start; flex-direction: column; }.section-head a { display: none; } }
         @media (max-width: 480px) { .arena { padding-inline: 15px; }.nav { min-height: 52px; }.hero h1 { font-size: 3rem; }.prize-board { padding: 19px; }.prize-total strong { font-size: 3rem; }.filters { width: 100%; }.filter { flex: 1; }.card-actions { grid-template-columns: 1fr; } }
     .three_cards{
         width:100%;
@@ -113,12 +113,12 @@
         <nav class="nav" aria-label="Main navigation">
             <a class="brand" href="/"><i class="fa-solid fa-crown"></i>uMSHOVA DELUXE</a>
             <div class="nav-links">
-                <a href="#tournaments">Tournaments</a>
-                <a href="#how-to-play">How to play</a>
-                <a href="/lobby">Versus lobby</a>
-                {% if is_admin %}<a href="/admin/test-tournament"><i class="fa-solid fa-flask"></i> Test arena</a>{% endif %}
+                <a href="#tournaments"><i class="fa-solid fa-trophy"></i><span class="nav-label">Tournaments</span></a>
+                <a href="#how-to-play"><i class="fa-solid fa-book-open"></i><span class="nav-label">How to play</span></a>
+                <a href="/lobby"><i class="fa-solid fa-gamepad"></i><span class="nav-label">Versus lobby</span></a>
+                {% if is_admin %}<a href="/admin/test-tournament"><i class="fa-solid fa-flask"></i><span class="nav-label">Test arena</span></a>{% endif %}
                 {% include '_account_widget.html' %}
-                <a class="nav-play" href="#tournaments"><i class="fa-solid fa-play"></i> Play now</a>
+                <a class="nav-play" href="#tournaments"><i class="fa-solid fa-play"></i><span class="nav-label">Play now</span></a>
             </div>
         </nav>
         <section class="three_cards" >
