@@ -1618,6 +1618,13 @@ function updateDrawButton(state) {
 }
 
 /* CARDS RENDERING AND AUTOMATION */
+
+// Player card faces: themed PNG background per rank group (files in /static/images).
+function playerCardBgClass(rank) {
+    const map = { '4': '4-10', '5': '4-10', '6': '4-10', '7': '4-10', '8': '4-10', '9': '4-10', '10': '4-10', 'J': 'j', 'Q': 'q', 'K': 'k' };
+    return map[String(rank).toUpperCase()] || '';
+}
+
 function renderCards(cards) {
     console.log("[UI] Rendering cards:", cards);
     cards = cards.map(cardStr => {
@@ -1641,6 +1648,10 @@ function renderCards(cards) {
             <div class="center">${card.suit}</div>
             <div class="suit">${card.suit}</div>
         `;
+
+        // Player card face background per rank (see style.css)
+        const cardBg = playerCardBgClass(card.rank);
+        if (cardBg) div.className += ' player-card-' + cardBg + '-bg';
 
         div.addEventListener("click", () => onCardClick(index));
 
