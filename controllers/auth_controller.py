@@ -72,7 +72,8 @@ def register():
                 email=email,
                 password=password,
                 phone=phone,
-                full_name=full_name
+                full_name=full_name,
+                country=form.country.data
             )
             
             # Award welcome bonus (free cash)
@@ -117,7 +118,8 @@ def register_api_internal():
             email=data['email'],
             password=data['password'],
             phone=data.get('phone'),
-            full_name=data.get('full_name')
+            full_name=data.get('full_name'),
+            country=data.get('country')
         )
         
         # Award welcome bonus (free cash)
@@ -252,6 +254,14 @@ def get_current_user():
             'email': user.email,
             'phone': user.phone,
             'full_name': user.full_name,
+            'country': user.country,
+            'address': user.address,
+            'date_of_birth': user.date_of_birth.isoformat() if user.date_of_birth else None,
+            'id_number': user.id_number,
+            'kyc_status': user.kyc_status or 'not_submitted',
+            'kyc_document_path': user.kyc_document_path,
+            'id_photo_path': user.id_photo_path,
+            'id_photo_back_path': user.id_photo_back_path,
             'is_admin': user.is_admin,
             'is_super_admin': user.is_super_admin,
             'created_at': user.created_at.isoformat(),
@@ -411,7 +421,8 @@ def register_api():
             email=data['email'],
             password=data['password'],
             phone=data.get('phone'),
-            full_name=data.get('full_name')
+            full_name=data.get('full_name'),
+            country=data.get('country')
         )
         
         # Award welcome bonus (free cash)
@@ -498,6 +509,14 @@ def get_current_user_api():
             'email': user.email,
             'phone': user.phone,
             'full_name': user.full_name,
+            'country': user.country,
+            'address': user.address,
+            'date_of_birth': user.date_of_birth.isoformat() if user.date_of_birth else None,
+            'id_number': user.id_number,
+            'kyc_status': user.kyc_status or 'not_submitted',
+            'kyc_document_path': user.kyc_document_path,
+            'id_photo_path': user.id_photo_path,
+            'id_photo_back_path': user.id_photo_back_path,
             'is_admin': user.is_admin,
             'is_super_admin': user.is_super_admin,
             'created_at': user.created_at.isoformat(),

@@ -25,6 +25,7 @@ from controllers.session_controller import session_bp
 from controllers.auth_controller import auth_bp, admin_required
 from controllers.tournament_controller import tournament_bp, init_tournament_events
 from admin.routes import admin_bp
+from user.routes import user_bp
 from Forms import  *
 from database import db, init_db, Tournament, User
 from database import Player
@@ -61,7 +62,7 @@ app.config.from_object(PaymentConfig)
 # server cannot upgrade websockets with the threading driver)
 if os.environ.get("ENV") == "development":
     socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
-    app.config['SOCKET_TRANSPORTS'] = ['polling']
+    app.config['SOCKET_TRANSPORTS'] = ['websocket', 'polling']
 else:
     socketio = SocketIO(
         app,
@@ -89,6 +90,16 @@ app.register_blueprint(session_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(tournament_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(user_bp)
+
+# Ensure the upload directory exists for user KYC / ID files
+try:
+    os.makedirs(
+        app.config.get('UPLOAD_FOLDER') or os.path.join(app.instance_path, 'uploads'),
+        exist_ok=True,
+    )
+except Exception as exc:
+    print(f"[APP] Warning: could not create upload folder: {exc}")
 
 # -----------------------------
 # GAME MANAGER (GLOBAL)
@@ -122,6 +133,11 @@ def start_background_scheduler(app, socketio):
                     process_scheduled_events()
                 except Exception as exc:
                     print(f'[SCHEDULER] error: {exc}')
+                try:
+                    from controllers.multiplayer_controller import process_expired_room_turns
+                    process_expired_room_turns(socketio, manager)
+                except Exception as exc:
+                    print(f'[SCHEDULER] multiplayer turn sweep error: {exc}')
                 time.sleep(20)
 
     threading.Thread(target=_run, daemon=True).start()
@@ -358,17 +374,27 @@ def _handle_entry_fee_callback(payload):
     metadata = payload.get('metadata') or {}
 
     try:
-        transaction_id = int(metadata.get('transaction_id'))
+        external_ref_id = metadata.get('external_ref_id')
+        transaction_id = int(metadata.get('transaction_id')) if metadata.get('transaction_id') else None
         user_id = int(metadata.get('user_id'))
     except (TypeError, ValueError):
-        print("[PAYMENT] Entry callback missing transaction_id/user_id metadata")
+        print("[PAYMENT] Entry callback missing external_ref_id/user_id metadata")
         return
 
     tournament_code = metadata.get('tournament_code')
-    transaction = Transaction.query.get(transaction_id)
+
+    # Map back to the pending transaction. New payments are matched by the
+    # strong external reference (the same id sent to the gateway as
+    # `reference`); legacy in-flight payments (created before external_ref_id
+    # existed) still carry the integer transaction_id in metadata.
+    transaction = None
+    if external_ref_id:
+        transaction = Transaction.query.filter_by(external_ref_id=external_ref_id).first()
+    elif transaction_id:
+        transaction = Transaction.query.get(transaction_id)
 
     if transaction is None:
-        print(f"[PAYMENT] Transaction {transaction_id} not found")
+        print(f"[PAYMENT] Transaction not found for external_ref_id={external_ref_id or transaction_id}")
         return
 
     # Record the external transaction id for idempotency.
@@ -389,7 +415,14 @@ def _handle_entry_fee_callback(payload):
                 participant.payment_status = 'completed'
                 participant.payment_completed_at = _dt.utcnow()
                 participant.transaction_id = payload.get('transaction_id')
-                participant.external_payment_id = metadata.get('reference')
+                # The gateway echoes our `reference` at the top level of the
+                # callback payload; fall back to the metadata mapping id for
+                # legacy callbacks that never carried a reference.
+                participant.external_payment_id = (
+                    payload.get('reference')
+                    or metadata.get('external_ref_id')
+                    or metadata.get('reference')
+                )
                 participant.status = 'registered'
 
                 tournament.current_player_count += 1

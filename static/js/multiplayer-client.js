@@ -268,6 +268,10 @@ if (socket) {
             try { updateMultiplayerProgressBars(data.state, data.your_player_index); } catch (e) {}
             // Update turn indicator
             try { updateTurnIndicator(data.state, data.your_player_index); } catch (e) {}
+            // Start/stop the turn countdown timer
+            try {
+                if (typeof startTurnCountdown === 'function') startTurnCountdown(data.turn_deadline, !!data.your_turn);
+            } catch (e) {}
         } else {
             // Not on game page - fallback to redirect behavior
             try { window.location.href = '/game/' + data.room_code; } catch (e) { console.error(e); }
@@ -364,6 +368,10 @@ if (socket) {
             window.currentMultiplayer.your_turn = payload.is_my_turn;
             window.currentMultiplayer.turn_deadline = payload.turn_deadline;
             if (typeof setLocalPlayerIndex === 'function') setLocalPlayerIndex(payload.player_index);
+            // Start/stop the turn countdown timer
+            try {
+                if (typeof startTurnCountdown === 'function') startTurnCountdown(payload.turn_deadline, !!payload.is_my_turn);
+            } catch (e) {}
             // Update progress bars and turn indicator
             try { updateMultiplayerProgressBars(payload.game_state, payload.player_index); } catch (e) {}
             try { updateTurnIndicator(payload.game_state, payload.player_index); } catch (e) {}
@@ -376,6 +384,21 @@ if (socket) {
                 }
             } catch (e) {}
         }
+    });
+
+    // Turn expired / auto-played notices. The server emits this when a deadline
+    // passed: either a late real move was accepted (accepted: true), or a truly
+    // absent player was auto-played (accepted: false, auto_played_card set).
+    socket.on('turn_timeout', function(payload) {
+        console.warn('[multiplayer-client] turn_timeout', payload);
+        if (typeof showTurnTimeoutBanner === 'function') {
+            var msg = (payload && payload.message) ? payload.message : 'Your turn expired';
+            if (payload && payload.auto_played_card) msg = msg + ' (' + payload.auto_played_card + ')';
+            showTurnTimeoutBanner(msg);
+        }
+        try {
+            if (typeof stopTurnCountdown === 'function') stopTurnCountdown();
+        } catch (e) {}
     });
 
     socket.on('opponent_disconnected', function(data) {

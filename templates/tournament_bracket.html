@@ -748,6 +748,7 @@
         function renderBracket() {
             if (tournamentData && tournamentData.tournament && Array.isArray(tournamentData.rounds)) {
                 renderLiveBracket();
+                renderFinalsPodium();
                 return;
             }
             const wrapper = document.getElementById('bracket-wrapper');
@@ -874,6 +875,7 @@
             document.getElementById('today-matches').textContent = '3';
             document.getElementById('live-count').textContent = '1';
             document.getElementById('completed-count').textContent = '3';
+            renderFinalsPodium();
         }
 
         function renderLiveBracket() {
@@ -984,6 +986,30 @@
             } else {
                 panel.style.display = 'none';
             }
+        }
+
+        function renderFinalsPodium() {
+            const section = document.getElementById('finals-section');
+            if (!section) return;
+            const t = (tournamentData && tournamentData.tournament) || {};
+            if (t.status !== 'completed') {
+                section.style.display = 'none';
+                return;
+            }
+            const podium = Array.isArray(tournamentData.podium) ? tournamentData.podium : [];
+            const byPlacement = {};
+            podium.forEach((entry) => { byPlacement[Number(entry.placement)] = entry; });
+            const fill = (nameId, prizeId, placement) => {
+                const entry = byPlacement[placement] || {};
+                const nameEl = document.getElementById(nameId);
+                const prizeEl = document.getElementById(prizeId);
+                if (nameEl) nameEl.textContent = entry.username || '—';
+                if (prizeEl) prizeEl.textContent = `E${Number(entry.amount || 0).toFixed(2)}`;
+            };
+            fill('winner-name', 'winner-prize', 1);
+            fill('runner-up-name', 'runner-up-prize', 2);
+            fill('third-place-name', 'third-place-prize', 3);
+            section.style.display = 'block';
         }
 
         function startRollCountdowns() {

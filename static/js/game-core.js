@@ -58,6 +58,8 @@ function renderCards(cards) {
     parsedCards.forEach((card, index) => {
         const div = document.createElement("div");
         div.className = "card player-card";
+        // Real-deck coloring: clubs & spades are black (hearts/diamonds stay red)
+        if (card.suit === "♠" || card.suit === "♣") div.className += " black-suit";
         div.style.left = `${index * overlap}px`;
         div.style.zIndex = index;
         div.dataset.cardIndex = index;
@@ -106,6 +108,11 @@ function parseCardString(s) {
     const alt = str.match(/^(.+?)([a-zA-Z]+)$/);
     if (alt) return { rank: alt[1], suit: alt[2] };
     return { rank: str, suit: '' };
+}
+
+// Real-deck coloring helper: returns ' black-suit' for clubs & spades (black ink).
+function blackSuitClass(suit) {
+    return (suit === "♠" || suit === "♣") ? " black-suit" : "";
 }
 
 // ==============================================
@@ -268,7 +275,7 @@ function animateCardGhostToPile(cardEl, targetId = 'attack-pile') {
         const pileRect = pile.getBoundingClientRect();
 
         const ghost = document.createElement('div');
-        ghost.className = 'card ghost player-card entering';
+        ghost.className = 'card ghost player-card entering' + (cardEl.classList.contains('black-suit') ? ' black-suit' : '');
         ghost.innerHTML = cardEl.innerHTML;
         document.body.appendChild(ghost);
 
@@ -319,7 +326,7 @@ function animateOpponentDefense(values) {
 
     cards.forEach((card, i) => {
         const ghost = document.createElement("div");
-        ghost.className = "card ghost opponent-card entering";
+        ghost.className = "card ghost opponent-card entering" + blackSuitClass(card.suit);
         ghost.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
@@ -378,7 +385,7 @@ function animateUserDefense(values) {
 
     cards.forEach((card, i) => {
         const ghost = document.createElement("div");
-        ghost.className = "card ghost player-card entering";
+        ghost.className = "card ghost player-card entering" + blackSuitClass(card.suit);
         ghost.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
@@ -440,7 +447,7 @@ function animateOpponentGhost(value) {
 
         const card = parseCardString(value);
         const ghost = document.createElement('div');
-        ghost.className = 'card ghost opponent-card entering';
+        ghost.className = 'card ghost opponent-card entering' + blackSuitClass(card.suit);
         ghost.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
@@ -598,7 +605,7 @@ function addCardsToAttackPile(cards, cardClass) {
 
     cards.forEach((card, i) => {
         const el = document.createElement('div');
-        el.className = `card pile-defense ${cardClass} entering`;
+        el.className = `card pile-defense ${cardClass} entering` + blackSuitClass(card.suit);
         el.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>

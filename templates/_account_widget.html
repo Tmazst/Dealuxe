@@ -23,6 +23,8 @@
     .account-modal .account-row strong { color: #111827; word-break: break-word; }
     .account-modal .account-logout { width: 100%; margin-top: 18px; padding: 11px; border: none; border-radius: 10px; background: #dc2626; color: #fff; font-weight: 700; cursor: pointer; }
     .account-modal .account-logout:hover { background: #b91c1c; }
+    .account-manage-btn { display: block; text-align: center; padding: 11px; border-radius: 10px; background: #2953bb; color: #fff; font-weight: 700; text-decoration: none; margin-top: 12px; transition: .2s; }
+    .account-manage-btn:hover { background: #3565d4; }
 </style>
 
 <div class="account-widget" id="accountWidget">
@@ -92,7 +94,8 @@
                 '<div class="account-row"><span>Phone</span><strong>' + esc(u.phone || '—') + '</strong></div>' +
                 '<div class="account-row"><span>Real balance</span><strong>' + real + '</strong></div>' +
                 '<div class="account-row"><span>Fake balance</span><strong>' + fake + '</strong></div>' +
-                '<div style="padding-top:6px;">' + roles + '</div>';
+                '<div style="padding-top:6px;">' + roles + '</div>' +
+                '<a class="account-manage-btn" href="/account">⚙️ Manage account</a>';
         } catch (e) {
             showGuest();
         }

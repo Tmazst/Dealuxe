@@ -98,6 +98,16 @@
         .tournament-card h3 { font-size: 1.3rem; margin: 0 0 8px; color: white; }.creator { color: var(--muted); font-size: .83rem; margin: 0; }.creator i { color: var(--accent-1); margin-right: 6px; }.card-prize { display: flex; align-items: baseline; justify-content: space-between; margin: 23px 0 16px; }.card-prize span { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }.card-prize strong { font-size: 1.75rem; color: var(--gold); letter-spacing: -.04em; }
         .slots { display: flex; justify-content: space-between; color: var(--muted); font-size: .83rem; margin-bottom: 8px; }.slots strong { color: white; }.progress { height: 7px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,.09); }.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-1), var(--success)); border-radius: inherit; }.card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }.card-actions .button { min-height: 42px; padding-inline: 10px; font-size: .77rem; }.button-join { background: var(--success); color: #08251d; }.button-detail { background: rgba(255,255,255,.045); color: white; border-color: var(--line); }
         .empty-state { border: 1px dashed rgba(255,255,255,.2); border-radius: 15px; padding: 68px 20px; text-align: center; color: var(--muted); grid-column: 1 / -1; }.empty-state i { color: var(--accent-1); font-size: 2.5rem; margin-bottom: 14px; }.empty-state h3 { color: white; margin: 0 0 7px; }
+        /* Results podium on completed tournament cards (1st / 2nd / 3rd + prizes) */
+        .card-podium { display: flex; flex-direction: column; gap: 6px; margin: 20px 0 16px; }
+        .podium-row { display: flex; align-items: center; gap: 9px; font-size: .82rem; padding: 8px 11px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255,255,255,.045); }
+        .podium-row.podium-1 { background: rgba(255,215,0,.09); border-color: rgba(255,215,0,.38); }
+        .podium-row.podium-2 { background: rgba(192,192,192,.07); border-color: rgba(192,192,192,.3); }
+        .podium-row.podium-3 { background: rgba(205,127,50,.08); border-color: rgba(205,127,50,.32); }
+        .podium-medal { font-size: 1.05rem; line-height: 1; }
+        .podium-name { flex: 1; color: white; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .podium-prize { color: var(--gold); font-weight: 800; letter-spacing: -.02em; }
+        .completed-note { text-align: center; justify-content: center; }
         .how-to-play { margin-top: 92px; padding: 34px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(115deg, rgba(139,92,246,.16), rgba(15,23,36,.76) 58%); }.how-grid { display: grid; grid-template-columns: .9fr 1.4fr; gap: 44px; align-items: center; }.how-copy h2 { font-size: clamp(1.8rem, 3.5vw, 3rem); letter-spacing: -.045em; margin: 10px 0; }.how-copy p { color: var(--muted); line-height: 1.6; }.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }.step { border: 1px solid var(--line); padding: 17px; background: rgba(8,5,20,.32); border-radius: 12px; }.step i { color: var(--gold); font-size: 1.35rem; margin-bottom: 16px; }.step span { display: block; color: var(--success); font-size: .69rem; font-weight: 900; letter-spacing: .1em; margin-bottom: 6px; }.step strong { display: block; font-size: .94rem; }.step p { font-size: .78rem; margin: 7px 0 0; }
         @media (max-width: 820px) { .nav { padding-inline: 12px; }.nav-links { gap: 4px 12px; }.nav-links a { gap: 5px; }.nav-links a .nav-label { display: none; }.nav-links a i { font-size: 1.05rem; }.nav-links .nav-play { padding: 8px 11px; }.account-widget { gap: 6px; }.nav-links .account-widget a.account-link { padding: 7px 10px; font-size: .74rem; }.hero, .how-grid { grid-template-columns: 1fr; }.hero { padding-top: 48px; }.prize-strip { grid-template-columns: 1fr; }.prize-strip article { border-right: 0; border-bottom: 1px solid var(--line); }.prize-strip article:last-child { border-bottom: 0; }.how-to-play { padding: 24px; }.steps { grid-template-columns: 1fr; }.section-head { align-items: start; flex-direction: column; }.section-head a { display: none; } }
         @media (max-width: 480px) { .arena { padding-inline: 15px; }.nav { min-height: 52px; }.hero h1 { font-size: 3rem; }.prize-board { padding: 19px; }.prize-total strong { font-size: 3rem; }.filters { width: 100%; }.filter { flex: 1; }.card-actions { grid-template-columns: 1fr; } }
@@ -301,22 +311,36 @@
                 const maximum = Math.max(amount(tournament.max_players), 1);
                 const progress = Math.min((current / maximum) * 100, 100);
                 const canJoin = tournament.status === 'open';
+                const isComplete = tournament.status === 'completed';
+                // Final placement list (1st/2nd/3rd + prize amounts) once the bracket is over.
+                const podium = isComplete && Array.isArray(tournament.podium) ? tournament.podium : null;
+                const podiumHtml = podium && podium.length ? `<div class="card-podium">${[1, 2, 3].map((p) => {
+                    const entry = podium.find((e) => Number(e.placement) === p) || {};
+                    const medal = p === 1 ? '🥇' : p === 2 ? '🥈' : '🥉';
+                    return `<div class="podium-row podium-${p}"><span class="podium-medal">${medal}</span><span class="podium-name">${escapeHtml(entry.username || '—')}</span><strong class="podium-prize">E${amount(entry.amount).toFixed(2)}</strong></div>`;
+                }).join('')}</div>` : null;
                 const badge =tournament.tournament_type === "standard"
                         ? "standard"
                         : tournament.tournament_type === "premium"
                         ? "premium"
                         : "deluxe";
                 // console.log('Rendering tournament:', tournament.name, 'Type:', tournament.tournament_type, 'Badge:', tournament.tournament_type);
+                // Completed cards show the results podium (and explicitly close
+                // the door to new joinings) instead of the advertised prize.
+                const resultBody = isComplete
+                    ? (podiumHtml || '<div class="card-prize completed-note"><span>Tournament finished</span><strong>🎊</strong></div>')
+                        + '<div class="slots completed-note"><span>🔒 No new joinings — bracket closed</span></div>'
+                    : `<div class="card-prize"><span>Win</span><strong>E${prizePool.toFixed(2)}</strong></div>`
+                        + `<div class="slots"><span><i class="fa-solid fa-users"></i> <strong>${current}</strong> Currently joined</span><span>${Math.max(maximum - current, 0)} left</span></div>`
+                        + `<div class="progress"><span style="width:${progress}%"></span></div>`;
                 return `<article class="tournament-card">
 
                     <img class="tournament_badge" src="/static/images/${badge}.png" alt="badge">
                 
                     <div class="card-meta"><span class="type-badge ${escapeHtml(tournament.type)}">${escapeHtml(labelForType(tournament.type))}</span><span class="status ${escapeHtml(tournament.status)}">${escapeHtml(labelForStatus(tournament.status))}</span></div>
                     <h3>${escapeHtml(tournament.name)}</h3><p class="creator"><i class="fa-solid fa-user"></i>Hosted by ${escapeHtml(tournament.creator || 'uMshova')}</p>
-                    <div class="card-prize"><span>Win</span><strong>E${prizePool.toFixed(2)}</strong></div>
-                    <div class="slots"><span><i class="fa-solid fa-users"></i> <strong>${current}</strong> Currently joined</span><span>${Math.max(maximum - current, 0)} left</span></div>
-                    <div class="progress"><span style="width:${progress}%"></span></div>
-                    <div class="card-actions">${canJoin ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})"><i class="fa-solid fa-bolt"></i> Join for E${amount(tournament.entry_fee).toFixed(2)}</button>` : `<button class="button button-primary" type="button" onclick="viewBracket(${Number(tournament.id)})"><i class="fa-solid fa-gamepad"></i> Go to game</button>`}<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-arrow-right"></i> Details</button></div>
+                    ${resultBody}
+                    <div class="card-actions">${canJoin ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})"><i class="fa-solid fa-bolt"></i> Join for E${amount(tournament.entry_fee).toFixed(2)}</button>` : `<button class="button button-primary" type="button" onclick="viewBracket(${Number(tournament.id)})"><i class="fa-solid ${isComplete ? 'fa-trophy' : 'fa-gamepad'}"></i> ${isComplete ? 'View results' : 'Go to game'}</button>`}<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-arrow-right"></i> Details</button></div>
                 </article>`;
             }).join('');
         }

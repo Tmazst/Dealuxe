@@ -56,6 +56,67 @@ html,body{
 
 #turn-indicator.visible { display: inline-flex; align-items: center; gap: 8px; }
 
+/* Turn countdown timer pill (below the turn indicator) */
+#turn-timer {
+    position: fixed;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 12px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(30, 120, 80, 0.35), rgba(20, 90, 60, 0.25));
+    border: 1px solid rgba(120, 230, 170, 0.6);
+    color: #d8ffe8;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    box-shadow: 0 4px 14px rgba(0, 200, 120, 0.25);
+    backdrop-filter: blur(6px);
+    z-index: 9998;
+    font-variant-numeric: tabular-nums;
+}
+#turn-timer.urgent {
+    background: linear-gradient(135deg, rgba(200, 40, 40, 0.55), rgba(140, 20, 20, 0.4));
+    border-color: rgba(255, 120, 120, 0.9);
+    color: #ffe0e0;
+    box-shadow: 0 4px 18px rgba(255, 60, 60, 0.5);
+    animation: turnTimerPulse 0.8s ease-in-out infinite;
+}
+@keyframes turnTimerPulse {
+    0%, 100% { transform: translateX(-50%) scale(1); }
+    50% { transform: translateX(-50%) scale(1.06); }
+}
+
+/* Timeout / reconnect notice banner */
+#turn-timeout-banner {
+    position: fixed;
+    top: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 90vw;
+    padding: 10px 18px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(220, 140, 30, 0.92), rgba(180, 90, 10, 0.92));
+    border: 1px solid rgba(255, 200, 120, 0.9);
+    color: #fff8ec;
+    font-weight: 700;
+    font-size: 15px;
+    text-align: center;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+    z-index: 10000;
+}
+
+/* Card click pulse (multiplayer: server-authoritative attack) */
+.card.playing {
+    animation: cardPlayPulse 0.45s ease-in-out;
+    box-shadow: 0 0 18px rgba(255, 215, 80, 0.9);
+}
+@keyframes cardPlayPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.12); }
+    100% { transform: scale(1); }
+}
+
     /* <style> */
         * {
             margin: 0;
@@ -2336,6 +2397,23 @@ pre{
     .win-icon {
         font-size: 24px;
     }
+}
+
+/* Real-deck coloring — clubs & spades render black (hearts/diamonds stay red).
+   Placed LAST so it outranks the per-theme card-face rules that also use
+   `!important` and appear above (e.g. `.card.player-card .rank/.suit`,
+   `.card.opponent-card ...`, `.card.ghost.player-card/opponent-card ...`).
+   The `.black-suit` class is added wherever a card face is built in
+   game.js / game-core.js. */
+.card.black-suit .rank,
+.card.black-suit .suit,
+.card.black-suit .center,
+.card.ghost.black-suit .rank,
+.card.ghost.black-suit .suit,
+.card.ghost.black-suit .center {
+    color: #111827 !important;
+    text-shadow: 0 1px 2px rgba(17, 24, 39, 0.18) !important;
+    font-weight: 700 !important;
 }
 
 

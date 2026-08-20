@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import random
+import uuid
 
 from flask import Blueprint, request, jsonify, session, current_app
 from flask_socketio import emit, join_room, leave_room
@@ -194,6 +195,10 @@ def _serialize_tournament(tournament):
         'schedule_message': _schedule_message(tournament),
         'players_needed': max(tournament.max_players - current_players, 0),
         'created_at': tournament.created_at.isoformat() if tournament.created_at else None,
+        'completed_at': tournament.completed_at.isoformat() if tournament.completed_at else None,
+        # Final placement list (1st/2nd/3rd + prize amounts) once completed,
+        # None otherwise — drives the results podium on the tournament cards.
+        'podium': _serialize_podium(tournament),
     }
 
 
@@ -315,6 +320,7 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
         balance_before=player.real_balance,
         balance_after=player.real_balance,
         tournament_id=tournament_id,
+        external_ref_id=uuid.uuid4().hex[:12],
         description=f'Tournament entry #{tournament_id} (pending)',
     )
     db.session.add(transaction)
@@ -322,8 +328,12 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
 
     phone_number = _get_user_phone(user_id)
 
+    # Pass the strong external reference (Transaction.external_ref_id) -- NOT
+    # the small internal integer id -- as the gateway reference. The callback
+    # maps back to this row via metadata.external_ref_id, which is exactly the
+    # reference the gateway echoes.
     result = payment_service.initiate_tournament_entry_payment(
-        transaction_id=transaction.id,
+        external_ref_id=transaction.external_ref_id,
         user_id=user_id,
         amount=amount,
         phone_number=phone_number,
@@ -526,6 +536,36 @@ def _get_username(user_id):
         return None
     user = User.query.get(user_id)
     return user.username if user else None
+
+
+def _serialize_podium(tournament):
+    """Return the final placement list (1st/2nd/3rd + prize amounts).
+
+    Only meaningful once the tournament is completed. Returns None for
+    open/locked/in-progress tournaments so list payloads stay lean.
+    """
+    if tournament.status != 'completed':
+        return None
+
+    rows = {
+        row.placement: row
+        for row in TournamentPrizePool.query.filter_by(
+            tournament_id=tournament.id
+        ).all()
+    }
+    return [
+        {
+            'placement': placement,
+            'user_id': user_id,
+            'username': _get_username(user_id),
+            'amount': round(rows[placement].prize_amount, 2) if placement in rows else 0.0,
+        }
+        for placement, user_id in (
+            (1, tournament.winner_id),
+            (2, tournament.runner_up_id),
+            (3, tournament.third_place_id),
+        )
+    ]
 
 
 def _serialize_participant(participant):
@@ -1311,6 +1351,9 @@ def tournament_overview(tournament_id):
             }
             for row in TournamentPrizePool.query.filter_by(tournament_id=tournament.id).all()
         ],
+        # Final placement list (1st/2nd/3rd + prize amounts + usernames) once
+        # completed — populates the results podium on the bracket page.
+        'podium': _serialize_podium(tournament),
         'stats': _tournament_stats(tournament, matches, participants),
     })
 

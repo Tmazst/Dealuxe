@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Account · Dealuxe</title>
+    <style>
+        :root {
+            --bg-1: #07090f;
+            --bg-2: #10172a;
+            --card: rgba(255, 255, 255, 0.045);
+            --card-border: rgba(255, 255, 255, 0.10);
+            --text: #eef2ff;
+            --muted: rgba(255, 255, 255, 0.62);
+            --accent: #2953bb;
+            --accent-2: #3565d4;
+            --gold: #fbbf24;
+            --success: #3ee6b5;
+            --danger: #ef4444;
+            --warn: #f59e0b;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(180deg, var(--bg-1), var(--bg-2));
+            color: var(--text);
+            min-height: 100vh;
+        }
+        a { color: inherit; }
+        .site-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--card-border);
+            background: rgba(7, 9, 15, 0.75);
+            backdrop-filter: blur(8px);
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        .brand { font-weight: 900; font-size: 1.15rem; letter-spacing: 0.4px; }
+        .brand span { color: var(--gold); }
+        .header-nav { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .header-nav a {
+            text-decoration: none;
+            font-weight: 700;
+            font-size: .85rem;
+            padding: 8px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--card-border);
+            background: var(--card);
+            transition: .2s;
+        }
+        .header-nav a:hover { background: rgba(255, 255, 255, .12); }
+        .header-nav a.primary { background: var(--accent); border-color: transparent; }
+        .header-nav a.primary:hover { background: var(--accent-2); }
+        .header-nav a.danger { color: #fca5a5; border-color: rgba(239, 68, 68, .4); }
+        .wrap { max-width: 1080px; margin: 0 auto; padding: 26px 18px 60px; }
+        .page-title { font-size: 1.6rem; font-weight: 900; margin: 0 0 4px; }
+        .page-sub { color: var(--muted); margin: 0 0 22px; font-size: .95rem; }
+        .flash { padding: 12px 16px; border-radius: 10px; margin-bottom: 14px; font-weight: 600; font-size: .92rem; }
+        .flash.success { background: rgba(62, 230, 181, .12); border: 1px solid rgba(62, 230, 181, .5); color: #a7f3d0; }
+        .flash.error { background: rgba(239, 68, 68, .12); border: 1px solid rgba(239, 68, 68, .5); color: #fecaca; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 20px;
+        }
+        .card h2 { margin: 0 0 16px; font-size: 1.05rem; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        .card h2 small { color: var(--muted); font-weight: 500; font-size: .78rem; }
+        .form-group { margin-bottom: 14px; }
+        .form-label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+        .form-control {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--card-border);
+            background: rgba(0, 0, 0, .28);
+            color: var(--text);
+            font-size: .95rem;
+        }
+        .form-control:focus { outline: none; border-color: var(--accent-2); }
+        .form-control[readonly] { opacity: .6; }
+        .btn {
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 10px;
+            border: none;
+            font-weight: 700;
+            cursor: pointer;
+            font-size: .9rem;
+            color: #fff;
+            background: var(--accent);
+            transition: .2s;
+        }
+        .btn:hover { background: var(--accent-2); }
+        .btn.gold { background: #d97706; }
+        .btn.gold:hover { background: #f59e0b; }
+        .btn.block { width: 100%; }
+        .btn:disabled { opacity: .55; cursor: not-allowed; }
+        .info-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--card-border); font-size: .92rem; }
+        .info-row span { color: var(--muted); }
+        .info-row strong { text-align: right; word-break: break-word; }
+        .balance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+        .balance-tile { background: rgba(0, 0, 0, .28); border: 1px solid var(--card-border); border-radius: 12px; padding: 12px; text-align: center; }
+        .balance-tile .label { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+        .balance-tile .amount { font-size: 1.25rem; font-weight: 900; margin-top: 4px; }
+        .balance-tile .amount.real { color: var(--success); }
+        .balance-tile .amount.fake { color: var(--gold); }
+        .kyc-status { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: .8rem; font-weight: 800; }
+        .kyc-status.not_submitted { background: rgba(148, 163, 184, .18); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, .4); }
+        .kyc-status.pending_review { background: rgba(245, 158, 11, .15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, .45); }
+        .kyc-status.verified { background: rgba(62, 230, 181, .14); color: #6ee7b7; border: 1px solid rgba(62, 230, 181, .45); }
+        .kyc-status.rejected { background: rgba(239, 68, 68, .14); color: #fca5a5; border: 1px solid rgba(239, 68, 68, .45); }
+        .upload-block { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--card-border); }
+        .upload-block h3 { margin: 0 0 8px; font-size: .9rem; }
+        .upload-file { font-size: .82rem; color: var(--muted); margin-top: 6px; }
+        .upload-file a { color: #93c5fd; text-decoration: none; }
+        .upload-file a:hover { text-decoration: underline; }
+        table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+        th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--card-border); }
+        th { color: var(--muted); font-size: .76rem; text-transform: uppercase; letter-spacing: .5px; }
+        .tx-positive { color: var(--success); }
+        .tx-negative { color: #fca5a5; }
+        .empty { color: var(--muted); text-align: center; padding: 22px 0; }
+        .back-link { display: inline-block; margin-bottom: 18px; color: #93c5fd; text-decoration: none; font-weight: 600; font-size: .9rem; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <div class="brand">♠️ uMshova <span>Dealuxe</span></div>
+        <nav class="header-nav">
+            <a href="/lobby">Lobby</a>
+            <a href="/">Tournaments</a>
+            <a class="primary" href="/account">My Account</a>
+            <a class="danger" href="/api/auth/logout" onclick="return confirm('Log out of your account?')">Logout</a>
+        </nav>
+    </header>
+
+    <main class="wrap">
+        <a class="back-link" href="/">← Back to Tournaments</a>
+        <h1 class="page-title">👤 My Account</h1>
+        <p class="page-sub">Manage your profile, wallet and identity verification (KYC).</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+
+        <div class="grid">
+
+            <!-- Profile -->
+            <section class="card">
+                <h2>✏️ Profile Details</h2>
+                <form method="post" action="/account/profile">
+                    {{ profile_form.hidden_tag() }}
+                    <div class="form-group">
+                        <label class="form-label">Username</label>
+                        <input class="form-control" type="text" value="{{ user.username }}" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input class="form-control" type="text" value="{{ user.email }}" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ profile_form.full_name.label.text }}</label>
+                        {{ profile_form.full_name(class="form-control", placeholder="Your full name as shown on your ID") }}
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ profile_form.phone.label.text }}</label>
+                        {{ profile_form.phone(class="form-control", placeholder="e.g. +268 76 000 000 (mobile money)") }}
+                        <div style="font-size:.75rem; color: var(--muted); margin-top:4px;">Required for payments and prize payouts via MojaPOS.</div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ profile_form.country.label.text }}</label>
+                        {{ profile_form.country(class="form-control") }}
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ profile_form.date_of_birth.label.text }}</label>
+                        {{ profile_form.date_of_birth(class="form-control") }}
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ profile_form.address.label.text }}</label>
+                        {{ profile_form.address(class="form-control", placeholder="Street address") }}
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">{{ profile_form.id_number.label.text }}</label>
+                        {{ profile_form.id_number(class="form-control", placeholder="National ID / passport number") }}
+                    </div>
+                    {{ profile_form.submit(class="btn block") }}
+                </form>
+            </section>
+
+            <!-- Wallet -->
+            <section class="card">
+                <h2>💳 Wallet</h2>
+                <div class="balance-grid">
+                    <div class="balance-tile">
+                        <div class="label">Real balance</div>
+                        <div class="amount real">E{{ '%.2f'|format(player.real_balance or 0) }}</div>
+                    </div>
+                    <div class="balance-tile">
+                        <div class="label">Fake balance</div>
+                        <div class="amount fake">E{{ '%.2f'|format(player.fake_balance or 0) }}</div>
+                    </div>
+                </div>
+                <div class="info-row"><span>Games played</span><strong>{{ player.total_games or 0 }}</strong></div>
+                <div class="info-row"><span>Wins / Losses</span><strong>{{ player.wins or 0 }} / {{ player.losses or 0 }}</strong></div>
+                <div class="info-row"><span>Win rate</span><strong>{{ '%.1f'|format(player.win_rate or 0) }}%</strong></div>
+                <div class="info-row"><span>Member since</span><strong>{{ user.created_at.strftime('%d %b %Y') if user.created_at else '—' }}</strong></div>
+
+                <div class="upload-block">
+                    <h3>💰 Top up wallet</h3>
+                    <div style="display:flex; gap:8px;">
+                        <input class="form-control" id="topupAmount" type="number" min="1" step="0.01" placeholder="Amount (SZL)">
+                        <button class="btn gold" id="topupBtn">Top up</button>
+                    </div>
+                    <div class="upload-file" id="topupResult"></div>
+                    {% if account.kyc_status != 'verified' %}
+                        <div class="upload-file">⚠️ Top-ups above the daily limit require verified KYC. Complete the KYC section to unlock.</div>
+                    {% endif %}
+                </div>
+            </section>
+
+            <!-- KYC -->
+            <section class="card">
+                <h2>🪪 Identity Verification <small>(KYC)</small></h2>
+                <div style="margin-bottom: 6px;">
+                    <span class="kyc-status {{ account.kyc_status }}">{{ account.kyc_status|replace('_', ' ')|title }}</span>
+                </div>
+                {% if account.kyc_submitted_at %}
+                    <div class="info-row"><span>Submitted</span><strong>{{ account.kyc_submitted_at[:10] }}</strong></div>
+                {% endif %}
+
+                <div class="upload-block">
+                    <h3>📄 KYC Document <small>(proof of address / utility bill)</small></h3>
+                    <form method="post" action="/account/kyc" enctype="multipart/form-data">
+                        {{ kyc_form.hidden_tag() }}
+                        {{ kyc_form.kyc_document(class="form-control") }}
+                        <div style="margin-top:10px;">{{ kyc_form.submit(class="btn block") }}</div>
+                    </form>
+                    {% if account.kyc_document_path %}
+                        <div class="upload-file">✓ <a href="/account/uploads/{{ account.kyc_document_path }}" target="_blank">View KYC document</a></div>
+                    {% endif %}
+                </div>
+
+                <div class="upload-block">
+                    <h3>🪪 ID / Passport Photos <small>(front &amp; back)</small></h3>
+                    <form method="post" action="/account/id-photo" enctype="multipart/form-data">
+                        {{ id_form.hidden_tag() }}
+                        <div class="form-group">
+                            <label class="form-label">{{ id_form.id_photo.label.text }}</label>
+                            {{ id_form.id_photo(class="form-control") }}
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ id_form.id_photo_back.label.text }}</label>
+                            {{ id_form.id_photo_back(class="form-control") }}
+                        </div>
+                        {{ id_form.submit(class="btn block") }}
+                    </form>
+                    {% if account.id_photo_path or account.id_photo_back_path %}
+                        <div class="upload-file">
+                            ✓
+                            {% if account.id_photo_path %}<a href="/account/uploads/{{ account.id_photo_path }}" target="_blank">Front</a>{% endif %}
+                            {% if account.id_photo_back_path %}<a href="/account/uploads/{{ account.id_photo_back_path }}" target="_blank">Back</a>{% endif %}
+                        </div>
+                    {% endif %}
+                </div>
+            </section>
+        </div>
+
+        <!-- Recent transactions -->
+        <section class="card" style="margin-top:18px;">
+            <h2>🧾 Recent Transactions</h2>
+            {% if transactions %}
+                <table>
+                    <thead>
+                        <tr><th>Date</th><th>Type</th><th>Description</th><th>Amount</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for tx in transactions %}
+                            <tr>
+                                <td>{{ tx.created_at.strftime('%d %b %Y %H:%M') }}</td>
+                                <td>{{ tx.transaction_type|replace('_', ' ')|title }}</td>
+                                <td>{{ tx.description or '—' }}</td>
+                                <td class="{% if tx.amount > 0 %}tx-positive{% else %}tx-negative{% endif %}">
+                                    {{ '+' if tx.amount > 0 else '' }}E{{ '%.2f'|format(tx.amount) }}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <div class="empty">No transactions yet.</div>
+            {% endif %}
+        </section>
+    </main>
+
+
+    <script>
+        (function () {
+            var btn = document.getElementById('topupBtn');
+            var amountInput = document.getElementById('topupAmount');
+            var result = document.getElementById('topupResult');
+            if (!btn || !amountInput) return;
+            btn.addEventListener('click', async function () {
+                var amount = parseFloat(amountInput.value);
+                if (!amount || amount <= 0) { result.textContent = 'Enter a valid amount.'; return; }
+                btn.disabled = true;
+                result.textContent = 'Requesting...';
+                try {
+                    var res = await fetch('/account/topup', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ amount: amount })
+                    });
+                    var data = await res.json();
+                    if (!res.ok) {
+                        result.textContent = '⚠️ ' + (data.error || 'Topup failed');
+                    } else if (data.mock) {
+                        result.textContent = '✓ Mock topup complete. New balance: E' + Number(data.new_balance).toFixed(2);
+                        setTimeout(function () { window.location.reload(); }, 1200);
+                    } else if (data.payment_url) {
+                        window.location.href = data.payment_url;
+                    } else {
+                        result.textContent = '✓ Initiated. Reference: ' + (data.external_transaction_id || '');
+                    }
+                } catch (e) {
+                    result.textContent = '⚠️ Network error. Try again.';
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        })();
+    </script>
+</body>
+</html>
+

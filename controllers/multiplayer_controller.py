@@ -662,51 +662,26 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             emit('error', {'message': 'Not your turn'})
             return
         
-        # Check turn deadline - if expired, auto-play a safe action
+        # Turn deadline handling. IMPORTANT: never hijack a move the player
+        # actually submitted. The turn/role validation above has already
+        # confirmed this player IS the current actor, so their deliberate
+        # action is accepted even if the deadline passed (e.g. they were
+        # reconnecting and only just re-submitted). The OLD code overrode the
+        # submitted card with index 0, so a player who clicked e.g. the Q at
+        # index 1 saw the server play the J at index 0 -- the UI then looked
+        # like it had rendered the wrong card even though both sides were
+        # technically 'correct'. Players who send NO action at all are handled
+        # by the background AFK sweep process_expired_room_turns() below, which
+        # only fires when a room's turn is long overdue and nothing arrived.
         if room.turn_deadline and datetime.utcnow() > room.turn_deadline:
-            print(f"[MULTIPLAYER] Turn expired for user {user_id} - auto-playing action")
-            
-            # Auto-play based on phase (state and player_index already fetched above)
-            if state.get('phase') == 'DEFENSE' and state.get('defender') == player_index:
-                # Auto-draw if defending
-                print(f"[MULTIPLAYER] Auto-draw for expired defense turn")
-                action_type = 'draw'
-            elif state.get('phase') == 'ATTACK' and state.get('attacker') == player_index:
-                # Auto-skip or play first card if attacking
-                print(f"[MULTIPLAYER] Auto-attack with first card for expired attack turn")
-                action_data = {'index': 0}  # Attack with first card
-                action_type = 'attack'
-            elif state.get('phase') == 'RULE_8' and state.get('attacker') == player_index:
-                # Attacker timed out deciding which low card to trail -- auto-drop
-                # their lowest-value card so the trail keeps moving.
-                attacker_hand = engine.players[player_index].hand
-                if attacker_hand:
-                    auto_drop_value = min(c.value for c in attacker_hand)
-                    print(f"[MULTIPLAYER] Auto rule8_drop (value={auto_drop_value}) for expired RULE_8 attacker turn")
-                    action_data = {'value': auto_drop_value}
-                    action_type = 'rule8_drop'
-                else:
-                    emit('error', {'message': 'Turn expired - unable to auto-play'})
-                    return
-            elif state.get('phase') == 'RULE_8' and state.get('defender') == player_index:
-                # Defender timed out deciding whether to crash the trail -- default
-                # to NOT crashing (the passive/non-committal choice) so the trail
-                # simply continues instead of the game stalling indefinitely.
-                print(f"[MULTIPLAYER] Auto rule8_crash(False) for expired RULE_8 defender turn")
-                action_data = {'crash': False}
-                action_type = 'rule8_crash'
-            else:
-                # Shouldn't happen, but emit error and return
-                emit('error', {'message': 'Turn expired - unable to auto-play'})
-                return
-            
-            # Emit notification to both players
+            print(f"[MULTIPLAYER] Turn expired for user {user_id} - accepting late action '{action_type}' as submitted")
             socketio.emit('turn_timeout', {
-                'message': f'Player {player_index + 1} ran out of time - auto-playing',
-                'player_index': player_index
+                'message': f'Player {player_index + 1} ran out of time - late move accepted',
+                'player_index': player_index,
+                'accepted': True,
+                'action': action_type
             }, room=room_code)
-            
-            # Continue with auto-action (don't return here)
+            # Continue with the player's own action (don't return here)
         
         # Get game engine
         game_id = room.game_id
@@ -1066,3 +1041,233 @@ def init_multiplayer_events(socketio, game_manager, app=None):
     
     
     return socketio
+
+
+# ---------------------------------------------------------------------------
+# BACKGROUND TURN SWEEP (genuinely AFK players)
+# ---------------------------------------------------------------------------
+# Called every ~20s from app.py's scheduler. Handles players who miss their
+# turn WITHOUT submitting any action, so the opponent isn't held hostage by an
+# absent player. It never overrides a move the player actually sent --
+# handle_game_action now accepts late-but-real actions as submitted.
+# ---------------------------------------------------------------------------
+
+
+def _auto_play_expired_room(socketio, game_manager, room, now):
+    """Execute one safe auto-play action for a room whose turn is long overdue."""
+    if not room.game_id:
+        return
+
+    engine = game_manager.get_game(room.game_id)
+    state = engine.get_state()
+    if not state or state.get('game_over'):
+        return
+
+    phase = state.get('phase')
+    attacker = state.get('attacker')
+    defender = state.get('defender')
+
+    # Which player is supposed to act right now?
+    player_index = 0 if room.current_turn_player == room.player1_id else 1
+    if phase == 'ATTACK':
+        if attacker != player_index:
+            return
+    elif phase == 'DEFENSE':
+        if defender != player_index:
+            return
+    elif phase == 'RULE_8':
+        # Both attacker (pick trail card) and defender (crash choice) can act.
+        if attacker != player_index and defender != player_index:
+            return
+    else:
+        return
+
+    user_id = room.player1_id if player_index == 0 else room.player2_id
+    if not user_id:
+        return
+
+    action_type = None
+    action_data = {}
+    if phase == 'DEFENSE':
+        action_type = 'draw'
+    elif phase == 'ATTACK':
+        action_type = 'attack'
+        action_data = {'index': 0}
+    elif phase == 'RULE_8':
+        if attacker == player_index:
+            attacker_hand = engine.players[attacker].hand
+            if not attacker_hand:
+                return
+            action_type = 'rule8_drop'
+            action_data = {'value': min(c.value for c in attacker_hand)}
+        else:  # defender deciding whether to crash -> default to NOT crashing
+            action_type = 'rule8_crash'
+            action_data = {'crash': False}
+
+    if not action_type:
+        return
+
+    print(f"[MULTIPLAYER] Auto-playing '{action_type}' for user {user_id} (room {room.room_code}, expired turn)")
+
+    controller = FlaskGameController(engine, run_ai=False)
+    result = None
+    try:
+        if action_type == 'attack':
+            result = controller.attack(action_data.get('index'))
+        elif action_type == 'draw':
+            result = controller.draw()
+        elif action_type == 'rule8_drop':
+            result = controller.rule_8_drop(action_data.get('value'))
+        elif action_type == 'rule8_crash':
+            result = controller.rule_8_crash(action_data.get('crash'))
+    except Exception as exc:
+        print(f"[MULTIPLAYER] Auto-play error for room {room.room_code}: {exc}")
+        return
+
+    # Persist updated engine state back to the manager
+    try:
+        game_manager.update_game(room.game_id, engine)
+    except Exception as exc:
+        print(f"[MULTIPLAYER] Warning: failed to persist game state: {exc}")
+
+    # Opt-in local tournament-bot demo: let a tournament_bot_* opponent answer.
+    try:
+        from flask import current_app
+        if current_app.config.get('TOURNAMENT_TEST_BOTS_ENABLED'):
+            from controllers.ai_controller import SimpleAIController
+            for _ in range(4):
+                bstate = engine.get_state()
+                if bstate.get('game_over'):
+                    break
+                bactor = bstate.get('defender') if bstate.get('phase') == 'DEFENSE' else bstate.get('attacker')
+                bactor_user_id = room.player1_id if bactor == 0 else room.player2_id
+                bactor_user = User.query.get(bactor_user_id)
+                if not bactor_user or not bactor_user.username.startswith('tournament_bot_'):
+                    break
+                SimpleAIController(engine, player_id=bactor, think_delay=0, jitter=0).play_if_needed()
+            game_manager.update_game(room.game_id, engine)
+    except Exception as exc:
+        print(f"[MULTIPLAYER] Auto-play bot hook skipped: {exc}")
+
+    state = engine.get_state()
+
+    base_state = {
+        'phase': state.get('phase'),
+        'attacker': state.get('attacker'),
+        'defender': state.get('defender'),
+        'attack_card': state.get('attack_card'),
+        'attack_card_value': state.get('attack_card_value'),
+        'game_over': state.get('game_over'),
+        'winner': state.get('winner'),
+        'ui_log': state.get('ui_log', []),
+        'attack_pile': [state.get('attack_card')] if state.get('attack_card') else []
+    }
+
+    # Persist move to DB for history/idempotency
+    try:
+        player_record = get_player_by_user_id(user_id)
+        last_seq = db.session.query(db.func.max(Move.seq_num)).filter_by(bet_session_id=room.bet_session_id).scalar() or 0
+        seq_num = int(last_seq) + 1
+        move = Move(
+            bet_session_id=room.bet_session_id,
+            game_session_id=room.game_id if isinstance(room.game_id, int) else None,
+            seq_num=seq_num,
+            player_id=player_record.id if player_record else None,
+            action_type=action_type,
+            action_payload=json.dumps(action_data),
+            result_snapshot=json.dumps(state),
+            idempotency_key=None
+        )
+        db.session.add(move)
+        db.session.commit()
+    except Exception as exc:
+        print(f"[MULTIPLAYER] Failed to persist auto-play move: {exc}")
+        db.session.rollback()
+
+    # Advance the turn + refresh the deadline
+    room.current_turn_player = room.player1_id if state['attacker'] == 0 else room.player2_id
+    room.turn_deadline = datetime.utcnow() + timedelta(seconds=room.turn_duration_seconds)
+    db.session.commit()
+
+    # Tell both clients what happened (and which card was auto-played)
+    auto_played_card = None
+    if action_type == 'attack':
+        auto_played_card = state.get('attack_card')
+    elif action_type == 'rule8_drop':
+        auto_played_card = action_data.get('value')
+    try:
+        socketio.emit('turn_timeout', {
+            'message': f'Player {player_index + 1} ran out of time - auto-played',
+            'player_index': player_index,
+            'accepted': False,
+            'action': action_type,
+            'auto_played_card': auto_played_card
+        }, room=room.room_code)
+    except Exception as exc:
+        print(f"[MULTIPLAYER] Failed to emit turn_timeout: {exc}")
+
+    if state.get('game_over'):
+        handle_game_over(room, state, socketio)
+        return
+
+    # Broadcast masked state to both players (mirrors handle_game_action)
+    p1_hand = state.get('hands', {}).get(0, [])
+    p2_hand = state.get('hands', {}).get(1, [])
+
+    transformed_p1 = dict(base_state)
+    transformed_p1['players'] = [{'hand': p1_hand}, {'hand_count': len(p2_hand)}]
+    transformed_p2 = dict(base_state)
+    transformed_p2['players'] = [{'hand_count': len(p1_hand)}, {'hand': p2_hand}]
+
+    for pid, transformed in [(room.player1_id, transformed_p1), (room.player2_id, transformed_p2)]:
+        if not pid:
+            continue
+        pidx = 0 if pid == room.player1_id else 1
+        is_my_turn = transformed['attacker'] == pidx or transformed['defender'] == pidx
+        print(f"[MULTIPLAYER] Broadcasting auto-play game_update to user_{pid} (player_index={pidx})")
+        socketio.emit('game_update', {
+            'game_state': transformed,
+            'player_index': pidx,
+            'actor_index': player_index,
+            'is_my_turn': is_my_turn,
+            'action': action_type,
+            'result': result.get_json() if hasattr(result, 'get_json') else result,
+            'turn_deadline': room.turn_deadline.isoformat(),
+            'bet_total': (room.bet_amount or 0) * 2
+        }, room=f"user_{pid}")
+
+def process_expired_room_turns(socketio, game_manager, grace_seconds=60):
+    """Background worker: auto-play for rooms whose turn deadline has passed.
+
+    Called periodically from the app-level scheduler thread (see app.py). A
+    grace period prevents robbing a player who reconnects just after their
+    deadline and sends a move -- handle_game_action accepts those late moves,
+    and the sweep only fires when NO action arrived at all.
+
+    Auto-play rules (only for genuinely absent players):
+      - DEFENSE         -> draw
+      - ATTACK          -> attack with the first card
+      - RULE_8 attacker -> drop their lowest-value card
+      - RULE_8 defender -> default to NOT crashing the trail
+    """
+    if socketio is None or game_manager is None:
+        return
+    now = datetime.utcnow()
+    cutoff = now - timedelta(seconds=grace_seconds)
+    rooms = GameRoom.query.filter(
+        GameRoom.status == 'in_progress',
+        GameRoom.turn_deadline.isnot(None),
+        GameRoom.turn_deadline <= cutoff,
+    ).all()
+
+    for room in rooms:
+        try:
+            _auto_play_expired_room(socketio, game_manager, room, now)
+        except Exception as exc:
+            print(f"[MULTIPLAYER] Auto-play sweep error for room {room.room_code}: {exc}")
+            # Push the deadline out so we don't hot-loop a broken room.
+            try:
+                room.turn_deadline = now + timedelta(seconds=room.turn_duration_seconds or 300)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()

@@ -71,6 +71,55 @@ def ensure_tournament_schema():
     #         db.session.execute(text(index_sql))
 
 
+def ensure_user_account_schema():
+    """Add user-account / KYC columns to an existing ``users`` table.
+
+    ``db.create_all()`` never alters existing tables, so databases created
+    before these columns existed need ALTER TABLE (SQLite path shown; the
+    users table is small so this runs at startup inside init_db).
+    """
+    if db.engine is None:
+        return
+    if db.engine.name != 'sqlite':
+        return
+
+    user_columns = [
+        ('country', 'VARCHAR(50)'),
+        ('address', 'VARCHAR(200)'),
+        ('date_of_birth', 'DATE'),
+        ('id_number', 'VARCHAR(50)'),
+        ('kyc_document_path', 'VARCHAR(255)'),
+        ('id_photo_path', 'VARCHAR(255)'),
+        ('id_photo_back_path', 'VARCHAR(255)'),
+        ('kyc_status', "VARCHAR(20) DEFAULT 'not_submitted'"),
+        ('kyc_submitted_at', 'DATETIME'),
+    ]
+    with db.session.begin():
+        for column_name, column_definition in user_columns:
+            if not _table_has_column('users', column_name):
+                db.session.execute(text(f'ALTER TABLE users ADD COLUMN {column_name} {column_definition}'))
+
+
+def ensure_payment_schema():
+    """Add payment-related columns to existing tables (SQLite path).
+
+    Legacy databases created before ``external_ref_id`` existed need the column
+    added via ALTER TABLE; the index is created with IF NOT EXISTS so startup
+    stays idempotent.
+    """
+    if db.engine is None:
+        return
+    if db.engine.name != 'sqlite':
+        return
+    with db.session.begin():
+        if not _table_has_column('transactions', 'external_ref_id'):
+            db.session.execute(text('ALTER TABLE transactions ADD COLUMN external_ref_id VARCHAR(64)'))
+        db.session.execute(text(
+            'CREATE INDEX IF NOT EXISTS idx_transactions_external_ref_id '
+            'ON transactions (external_ref_id)'
+        ))
+
+
 def init_db(app):
     """Initialize database with Flask app"""
     # SQLite configuration (will switch to MySQL later)
@@ -83,6 +132,8 @@ def init_db(app):
     with app.app_context():
         db.create_all()
         ensure_tournament_schema()
+        ensure_user_account_schema()
+        ensure_payment_schema()
         print("[DATABASE] Database initialized successfully")
 
 
@@ -102,6 +153,17 @@ class User(db.Model):
     
     # Profile
     full_name = db.Column(db.String(100))
+    country = db.Column(db.String(50))
+    address = db.Column(db.String(200))
+    date_of_birth = db.Column(db.Date)
+    id_number = db.Column(db.String(50))
+
+    # KYC / identity verification
+    kyc_document_path = db.Column(db.String(255))       # proof of address / KYC doc
+    id_photo_path = db.Column(db.String(255))           # ID / passport photo (front)
+    id_photo_back_path = db.Column(db.String(255))      # ID / passport photo (back)
+    kyc_status = db.Column(db.String(20), default='not_submitted')  # not_submitted/pending_review/verified/rejected
+    kyc_submitted_at = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
     is_admin = db.Column(db.Boolean, default=False)
     is_super_admin = db.Column(db.Boolean, default=False)  # CLI-bootstrap-only role (promotes/demotes admins)
@@ -471,6 +533,7 @@ class Transaction(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     player_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=False)
+    external_ref_id = db.Column(db.String(64), nullable=True, index=True)  # strong UUID ref sent to the gateway
     
     transaction_type = db.Column(db.String(50), nullable=False)  # see TX_* constants above
     amount = db.Column(db.Float, nullable=False)
@@ -806,13 +869,14 @@ class MatchRoll(db.Model):
 # HELPER FUNCTIONS
 # ========================================
 
-def create_user(username, email, password, phone=None, full_name=None):
+def create_user(username, email, password, phone=None, full_name=None, country=None):
     """Create a new user and associated player"""
     user = User(
         username=username,
         email=email,
         phone=phone,
-        full_name=full_name
+        full_name=full_name,
+        country=country,
     )
     user.set_password(password)
     

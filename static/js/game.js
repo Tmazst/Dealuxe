@@ -305,6 +305,65 @@ text.innerText = `Defend against ${attackCard}. Choose two or three cards whose 
 }
 
 /* -----------------------------
+   TURN COUNTDOWN TIMER + NOTICES
+----------------------------- */
+
+let turnCountdownTimer = null;
+
+function startTurnCountdown(deadlineIso, isMyTurn) {
+    stopTurnCountdown();
+    const el = document.getElementById('turn-timer');
+    if (!el) return;
+    if (!isMyTurn || !deadlineIso) {
+        el.style.display = 'none';
+        return;
+    }
+    const deadline = new Date(deadlineIso).getTime();
+    if (isNaN(deadline)) { el.style.display = 'none'; return; }
+    el.style.display = 'inline-flex';
+    const tick = () => {
+        const msLeft = deadline - Date.now();
+        if (msLeft <= 0) {
+            el.textContent = '⏰ Time expired';
+            el.classList.add('urgent');
+            stopTurnCountdown();
+            return;
+        }
+        const totalSec = Math.ceil(msLeft / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        el.textContent = '⏱ ' + m + ':' + (s < 10 ? '0' : '') + s;
+        el.classList.toggle('urgent', totalSec <= 10);
+    };
+    tick();
+    turnCountdownTimer = setInterval(tick, 1000);
+}
+
+function stopTurnCountdown() {
+    if (turnCountdownTimer) {
+        clearInterval(turnCountdownTimer);
+        turnCountdownTimer = null;
+    }
+}
+
+function showTurnTimeoutBanner(message) {
+    const el = document.getElementById('turn-timeout-banner');
+    if (!el) return;
+    el.textContent = message;
+    el.style.display = 'block';
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, 7000);
+}
+
+function showSocketReconnectNotice() {
+    const el = document.getElementById('turn-timeout-banner');
+    if (el) {
+        el.textContent = '🔌 Connection lost — reconnecting… Your move was not sent.';
+        el.style.display = 'block';
+    }
+}
+
+/* -----------------------------
    GAME ACTIONS
 ----------------------------- */
 
@@ -335,7 +394,14 @@ async function attack(index) {
     const cards = getHandCards();
     const cardEl = cards[index];
 
-    if (cardEl) {
+    const isMultiplayer = !!(getMultiplayerRoomCode() && window.socket);
+
+    // Single-player: optimistic move/remove is fine (the local engine is
+    // authoritative). Multiplayer: the server is authoritative, so we must NOT
+    // optimistically move/remove the clicked card -- the server may play a
+    // different card (e.g. if the turn had already expired) and the subsequent
+    // game_update render shows the attacker exactly what the server played.
+    if (cardEl && !isMultiplayer) {
         animateCardToAttackPile(cardEl);
         // play attack sound on user attack
         try { playAttackSound(); } catch (e) {}
@@ -343,17 +409,31 @@ async function attack(index) {
 
     try {
         // If we're in a multiplayer session, emit socket action instead of REST
-        if (getMultiplayerRoomCode() && window.socket) {
+        if (isMultiplayer) {
+            if (window.socket && window.socket.connected === false) {
+                console.warn("[FRONTEND] Socket disconnected - attack NOT sent");
+                if (typeof showSocketReconnectNotice === 'function') showSocketReconnectNotice();
+                isRequestInProgress = false;
+                return;
+            }
+            // brief pulse so the user sees their click registered; the
+            // authoritative card lands in the pile via the server game_update
+            if (cardEl) {
+                cardEl.classList.add('playing');
+                try { playAttackSound(); } catch (e) {}
+            }
             window.socket.emit('game_action', {
                 room_code: getMultiplayerRoomCode(),
                 action: 'attack',
                 data: { index: index }
             });
 
-            // keep local animations and optimistic UI; server will send authoritative update
             focusedCardIndex = null;
-            // Delay to allow animation then rely on server 'game_update'
-            setTimeout(() => { isRequestInProgress = false; }, 450);
+            // Small delay before re-enabling; the server game_update drives UI
+            setTimeout(() => {
+                isRequestInProgress = false;
+                if (cardEl) cardEl.classList.remove('playing');
+            }, 450);
             return;
         }
 
@@ -583,25 +663,12 @@ function animateUserDefense(values) {
     const pileRect = pile.getBoundingClientRect();
 
     // normalize values so we have objects with {rank, suit}
-    const cards = values.map(v => {
-        if (typeof v === 'string') {
-            const s = v.replace(/\s*icon$/i, '').trim();
-            const m = s.match(/^([0-9]{1,2}|[AJQK])([a-zA-Z]+)$/i);
-            if (m) return { rank: m[1], suit: m[2] };
-            const alt = s.match(/^(.+?)([a-zA-Z]+)$/);
-            if (alt) return { rank: alt[1], suit: alt[2] };
-            return { rank: s, suit: '' };
-        } else if (v && typeof v === 'object') {
-            return { rank: v.rank, suit: v.suit };
-        } else {
-            return { rank: String(v), suit: '' };
-        }
-    });
+    const cards = values.map(v => parseCardString(v));
 
     // Create flying ghost cards from bottom (user's position)
     cards.forEach((card, i) => {
         const ghost = document.createElement("div");
-        ghost.className = "card ghost player-card entering";
+        ghost.className = "card ghost player-card entering" + blackSuitClass(card.suit);
         ghost.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
@@ -660,7 +727,7 @@ function animateUserDefense(values) {
 
     cards.forEach((card, i) => {
         const el = document.createElement('div');
-        el.className = 'card pile-defense player-card entering';
+        el.className = 'card pile-defense player-card entering' + blackSuitClass(card.suit);
         el.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
@@ -687,25 +754,12 @@ function animateOpponentDefense(values) {
     const pileRect = pile.getBoundingClientRect();
 
     // normalize values so we have objects with {rank, suit}
-    const cards = values.map(v => {
-        if (typeof v === 'string') {
-            const s = v.replace(/\s*icon$/i, '').trim();
-            const m = s.match(/^([0-9]{1,2}|[AJQK])([a-zA-Z]+)$/i);
-            if (m) return { rank: m[1], suit: m[2] };
-            const alt = s.match(/^(.+?)([a-zA-Z]+)$/);
-            if (alt) return { rank: alt[1], suit: alt[2] };
-            return { rank: s, suit: '' };
-        } else if (v && typeof v === 'object') {
-            return { rank: v.rank, suit: v.suit };
-        } else {
-            return { rank: String(v), suit: '' };
-        }
-    });
+    const cards = values.map(v => parseCardString(v));
 
     // Create flying ghost cards from top
     cards.forEach((card, i) => {
         const ghost = document.createElement("div");
-        ghost.className = "card ghost opponent-card entering";
+        ghost.className = "card ghost opponent-card entering" + blackSuitClass(card.suit);
         ghost.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
@@ -763,7 +817,7 @@ function animateOpponentDefense(values) {
 
     cards.forEach((card, i) => {
         const el = document.createElement('div');
-        el.className = 'card pile-defense opponent-card entering';
+        el.className = 'card pile-defense opponent-card entering' + blackSuitClass(card.suit);
         el.innerHTML = `
             <div class="rank">${card.rank}</div>
             <div class="center">${card.suit}</div>
@@ -869,6 +923,20 @@ async function renderState(state) {
                     pendingOpponentAttack = state.attack_card;
                     showAttackConfirmModal();
                 }
+            }
+        }
+        // If the LOCAL player attacked, re-render the pile from the server's
+        // authoritative attack_card. This guarantees the attacker sees exactly
+        // the card the server played (they can differ when the turn had already
+        // expired server-side). Without this, the attacker is left looking at
+        // whatever the optimistic click animation placed in the pile, even when
+        // the engine played something else.
+        if (state.attack_card && state.attacker === localPlayerIndex && state.attack_card !== lastDisplayedAttack) {
+            try {
+                renderAttackerPileFromServer(state.attack_card);
+                lastDisplayedAttack = state.attack_card;
+            } catch (e) {
+                console.warn('[FRONTEND] Failed to render attacker pile from server state', e);
             }
         }
         // Update draw button visibility/state
@@ -1172,6 +1240,48 @@ function parseCardString(s) {
     return { rank: str, suit: '' };
 }
 
+// Real-deck coloring helper: returns ' black-suit' for clubs & spades (black ink).
+function blackSuitClass(suit) {
+    return (suit === "♠" || suit === "♣") ? " black-suit" : "";
+}
+
+// Render the attacker's own pile card from authoritative server state.
+// Unlike animateCardToAttackPile (optimistic; removes the clicked card from
+// the hand), this builds the pile card from the value the SERVER actually
+// played, so the attacker is never left looking at a different card than the
+// engine played (e.g. after a turn-expiry auto-play).
+function renderAttackerPileFromServer(value) {
+    const pile = document.getElementById('attack-pile');
+    if (!pile || !value) return;
+    pile.querySelectorAll('.pile-attack').forEach(el => el.remove());
+    pile.querySelectorAll('.pile-defense').forEach(el => el.remove());
+
+    const pileRect = pile.getBoundingClientRect();
+    const card = parseCardString(value);
+    const maxCardsAcross = 3;
+    const cardMargin = 6;
+    const cardWidth = Math.max(40, Math.floor((pileRect.width - (cardMargin * (maxCardsAcross + 1))) / maxCardsAcross));
+    const cardHeight = Math.max(56, Math.floor(pileRect.height - 8));
+
+    const el = document.createElement('div');
+    let cls = 'card pile-attack player-card entering';
+    const cardBg = playerCardBgClass(card.rank);
+    if (cardBg) cls += ' player-card-' + cardBg + '-bg';
+    el.className = cls + blackSuitClass(card.suit);
+    el.innerHTML = `
+            <div class="rank">${card.rank}</div>
+            <div class="center">${card.suit}</div>
+            <div class="suit">${card.suit}</div>
+        `;
+    el.style.width = cardWidth + 'px';
+    el.style.height = cardHeight + 'px';
+    el.style.display = 'inline-block';
+    el.style.margin = cardMargin + 'px';
+    el.style.verticalAlign = 'top';
+    pile.appendChild(el);
+    requestAnimationFrame(() => el.classList.remove('entering'));
+}
+
 function appendOpponentAttack(value) {
     const pile = document.getElementById('attack-pile');
     if (!pile) return;
@@ -1189,7 +1299,7 @@ function appendOpponentAttack(value) {
     prevDefense.forEach(el => el.remove());
 
     const el = document.createElement('div');
-    el.className = 'card pile-attack opponent-card entering';
+    el.className = 'card pile-attack opponent-card entering' + blackSuitClass(card.suit);
     el.innerHTML = `\n            <div class="rank">${card.rank}</div>\n            <div class="center">${card.suit}</div>\n            <div class="suit">${card.suit}</div>\n        `;
     el.style.width = cardWidth + 'px';
     el.style.height = cardHeight + 'px';
@@ -1215,7 +1325,7 @@ function animateOpponentGhost(value) {
 
         const card = parseCardString(value);
         const ghost = document.createElement('div');
-        ghost.className = 'card ghost opponent-card entering';
+        ghost.className = 'card ghost opponent-card entering' + blackSuitClass(card.suit);
         ghost.innerHTML = `\n            <div class="rank">${card.rank}</div>\n            <div class="center">${card.suit}</div>\n            <div class="suit">${card.suit}</div>\n        `;
         document.body.appendChild(ghost);
 
@@ -1644,6 +1754,8 @@ function renderCards(cards) {
     cards.forEach((card, index) => {
         const div = document.createElement("div");
         div.className = "card player-card";
+        // Real-deck coloring: clubs & spades are black (hearts/diamonds stay red)
+        if (card.suit === "♠" || card.suit === "♣") div.className += " black-suit";
         div.style.left = `${index * overlap}px`;
         div.style.zIndex = index;
 

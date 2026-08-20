@@ -117,21 +117,25 @@ class MojaPOSService:
     # ENTRY FEE PAYMENT
     # -----------------------------
 
-    def initiate_tournament_entry_payment(self, transaction_id, user_id,
+    def initiate_tournament_entry_payment(self, external_ref_id, user_id,
                                           amount, phone_number, tournament_code):
         """
         Initiate a payment for a tournament entry fee.
 
+        ``external_ref_id`` is the strong per-transaction reference generated
+        by the caller (``Transaction.external_ref_id``). It is used directly as
+        the gateway ``reference`` and echoed back in the callback metadata, so
+        the server can map the result back to the correct transaction WITHOUT
+        relying on the small, guessable internal integer id.
+
         Returns a dict with ``success`` plus either the external IDs/payment
         URL (on success) or an error message (on failure).
         """
-        external_payment_id = f"entry_{transaction_id}_{uuid.uuid4().hex[:8]}"
-
         if self._mock_mode:
             return {
                 'success': True,
-                'external_transaction_id': f"mock_entry_{transaction_id}",
-                'external_payment_id': external_payment_id,
+                'external_transaction_id': f"mock_entry_{external_ref_id}",
+                'external_payment_id': external_ref_id,
                 'payment_url': None,
                 'amount': float(amount),
                 'mock': True,
@@ -143,11 +147,11 @@ class MojaPOSService:
             'currency': 'SZL',
             'phone_number': phone_number,
             'description': f'Tournament Entry - {tournament_code}',
-            'reference': external_payment_id,
+            'reference': external_ref_id,
             'callback_url': self._config('MOJAPOS_CALLBACK_URL', ''),
             'metadata': {
                 'transaction_type': 'tournament_entry',
-                'transaction_id': str(transaction_id),
+                'external_ref_id': external_ref_id,
                 'user_id': str(user_id),
                 'tournament_code': tournament_code,
             },
@@ -158,7 +162,7 @@ class MojaPOSService:
             return {
                 'success': True,
                 'external_transaction_id': response.get('transaction_id'),
-                'external_payment_id': external_payment_id,
+                'external_payment_id': external_ref_id,
                 'payment_url': response.get('payment_url'),
                 'amount': float(amount),
             }

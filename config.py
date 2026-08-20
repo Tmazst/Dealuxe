@@ -9,6 +9,13 @@ from datetime import timedelta
 class GameConfig:
     """Core game configuration"""
     
+    # User account / KYC uploads
+    UPLOAD_FOLDER = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'instance', 'uploads'
+    )
+    MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB max upload
+    ALLOWED_UPLOAD_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf'}
+    
     # Free play settings
     FREE_CASH_MIN = 1000
     FREE_CASH_MAX = 2000
@@ -78,7 +85,7 @@ class PaymentConfig:
     # Publicly reachable callback URL (must be HTTPS in production).
     MOJAPOS_CALLBACK_URL = os.environ.get(
         'MOJAPOS_CALLBACK_URL',
-        'https://dealuxe.app/api/payment/callback'
+        'https://dealuxe.games/api/payment/callback'
     )
 
     # Shared secret used to verify inbound MojaPOS callback signatures.
