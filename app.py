@@ -8,12 +8,23 @@ try:
 except Exception:
     pass
 
-# Load environment variables from a .env file (python-dotenv). This must run
-# before any module reads os.environ (e.g. config.PaymentConfig). Existing
-# process environment variables take precedence over the .env file.
+# Load environment variables from the .env file (python-dotenv). This must run
+# before any module reads os.environ (e.g. config.PaymentConfig).
+#
+# IMPORTANT: the .env file is loaded with an ABSOLUTE path (so the app behaves
+# the same regardless of the process working directory) and with override=True
+# (so values in .env are authoritative). Without override, a stale process- or
+# OS-level variable would silently beat .env -- e.g. an old
+# `MOJAPOS_MOCK_MODE=true` kept the entire payment system on the mock/sandbox
+# path even after .env was switched to false.
+import os
+
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'),
+        override=True,
+    )
 except Exception:
     pass
 
@@ -53,6 +64,24 @@ app.config['TOURNAMENT_TEST_BOTS_ENABLED'] = os.environ.get(
 # -----------------------------
 
 app.config.from_object(PaymentConfig)
+
+# Startup sanity check: log the effective MojaPOS mode so it is impossible to
+# silently test against the mock path (or accidentally hit the live gateway).
+if app.config.get('MOJAPOS_MOCK_MODE'):
+    print("[APP] MojaPOS mode: MOCK (local wallet debit / sandbox) - real gateway is OFF")
+else:
+    missing = [
+        key for key in (
+            'MOJAPOS_API_KEY',
+            'MOJAPOS_MERCHANT_ID',
+            'MOJAPOS_SECRET_KEY',
+            'MOJAPOS_WEBHOOK_SECRET',
+        ) if not app.config.get(key)
+    ]
+    if missing:
+        print(f"[APP] ⚠️  MojaPOS mode: REAL gateway ENABLED but missing config: {', '.join(missing)}")
+    else:
+        print("[APP] MojaPOS mode: REAL gateway ENABLED (credentials present)")
 
 # -----------------------------
 # SOCKETIO INITIALIZATION
@@ -497,10 +526,18 @@ def _handle_prize_payout_callback(payload):
 
 
 def _handle_wallet_topup_callback(payload):
-    """Process a wallet-topup callback (credit the player's wallet)."""
+    """Process a wallet-topup callback (credit the player's wallet).
+
+    New payments map to the pending Transaction via ``metadata.external_ref_id``
+    (the same reference sent to the gateway) and are idempotent -- a retried or
+    duplicate callback can never credit the wallet twice. Legacy callbacks
+    without an external_ref_id keep the old user_id-only credit behaviour but
+    are still logged for audit.
+    """
     status = payload.get('status')
     amount = payload.get('amount') or 0
     metadata = payload.get('metadata') or {}
+    external_ref_id = metadata.get('external_ref_id')
 
     try:
         user_id = int(metadata.get('user_id'))
@@ -508,10 +545,48 @@ def _handle_wallet_topup_callback(payload):
         print("[PAYMENT] Topup callback missing user_id")
         return
 
-    if status == 'completed':
-        player = Player.query.filter_by(user_id=user_id).first()
-        if player is not None and amount > 0:
-            player.real_balance += amount
+    if status != 'completed':
+        db.session.commit()
+        return
+
+    transaction = None
+    if external_ref_id:
+        transaction = Transaction.query.filter_by(external_ref_id=external_ref_id).first()
+        if transaction is None:
+            print(f"[PAYMENT] Topup callback: no pending transaction for external_ref_id={external_ref_id} - ignoring")
+            db.session.commit()
+            return
+        if transaction.status == 'completed':
+            print(f"[PAYMENT] Topup callback: external_ref_id={external_ref_id} already processed - ignoring duplicate")
+            db.session.commit()
+            return
+        if transaction.status == 'failed':
+            print(f"[PAYMENT] Topup callback: external_ref_id={external_ref_id} marked failed - ignoring")
+            db.session.commit()
+            return
+
+    player = Player.query.filter_by(user_id=user_id).first()
+    if player is not None and amount > 0:
+        balance_before = player.real_balance
+        player.real_balance += amount
+
+        if transaction is not None:
+            transaction.status = 'completed'
+            transaction.balance_before = balance_before
+            transaction.balance_after = player.real_balance
+            transaction.description = payload.get('transaction_id') or transaction.description
+        else:
+            # Legacy callback without a transaction record -- log it for audit.
+            from database import log_transaction, TX_WALLET_TOPUP
+            log_transaction(
+                player_id=player.id,
+                transaction_type=TX_WALLET_TOPUP,
+                amount=amount,
+                balance_type='real',
+                balance_before=balance_before,
+                balance_after=player.real_balance,
+                description='Wallet top-up (gateway callback, legacy)',
+            )
 
     db.session.commit()
 

@@ -114,6 +114,8 @@ def ensure_payment_schema():
     with db.session.begin():
         if not _table_has_column('transactions', 'external_ref_id'):
             db.session.execute(text('ALTER TABLE transactions ADD COLUMN external_ref_id VARCHAR(64)'))
+        if not _table_has_column('transactions', 'status'):
+            db.session.execute(text("ALTER TABLE transactions ADD COLUMN status VARCHAR(20) DEFAULT 'pending'"))
         db.session.execute(text(
             'CREATE INDEX IF NOT EXISTS idx_transactions_external_ref_id '
             'ON transactions (external_ref_id)'
@@ -534,6 +536,7 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     player_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=False)
     external_ref_id = db.Column(db.String(64), nullable=True, index=True)  # strong UUID ref sent to the gateway
+    status = db.Column(db.String(20), default='pending')  # pending/completed/failed
     
     transaction_type = db.Column(db.String(50), nullable=False)  # see TX_* constants above
     amount = db.Column(db.Float, nullable=False)

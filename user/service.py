@@ -155,14 +155,41 @@ def initiate_topup(user, amount):
         return {'success': True, 'mock': True, 'new_balance': player.real_balance}
 
     from services.payment_service import payment_service
+
+    # Create a pending transaction so the gateway callback can be mapped back
+    # idempotently via external_ref_id (same pattern as tournament entry).
+    external_ref_id = uuid.uuid4().hex[:12]
+    pending = Transaction(
+        player_id=player.id,
+        transaction_type=TX_WALLET_TOPUP,
+        amount=amount,
+        balance_type='real',
+        balance_before=player.real_balance,
+        balance_after=player.real_balance,
+        external_ref_id=external_ref_id,
+        description='Wallet top-up (pending)',
+    )
+    db.session.add(pending)
+    db.session.flush()
+
     result = payment_service.initiate_wallet_topup(
-        user.id, amount, user.phone or ''
+        external_ref_id=external_ref_id,
+        user_id=user.id,
+        amount=amount,
+        phone_number=user.phone or '',
     )
     if not result.get('success'):
+        pending.status = 'failed'
+        db.session.commit()
         return {'success': False, 'error': result.get('error', 'Topup initiation failed')}
+
+    # Record the gateway's own transaction id for idempotency on callbacks.
+    pending.description = result.get('external_transaction_id') or pending.description
+    db.session.commit()
     return {
         'success': True,
         'payment_url': result.get('payment_url'),
         'external_transaction_id': result.get('external_transaction_id'),
+        'external_ref_id': external_ref_id,
     }
 

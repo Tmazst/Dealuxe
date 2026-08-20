@@ -335,39 +335,28 @@ def claim_free_cash():
 @auth_bp.route('/player/deposit', methods=['POST'])
 @login_required
 def deposit():
-    """Deposit real money (placeholder - integrate payment gateway)"""
-    data = request.json
+    """Deposit / top up the wallet.
+
+    Gateway-aware: mock/sandbox mode credits locally (development); real mode
+    initiates a MojaPOS payment and the wallet is credited only via the gateway
+    callback. This never credits real balance without payment when the real
+    gateway is enabled.
+    """
+    data = request.json or {}
     amount = data.get('amount', 0)
-    
-    if amount <= 0:
-        return jsonify({'error': 'Invalid amount'}), 400
-    
-    player = get_player_by_user_id(session['user_id'])
-    if not player:
-        return jsonify({'error': 'Player profile not found'}), 404
-    
-    # TODO: Integrate with payment gateway
-    # For now, just add to balance (REMOVE IN PRODUCTION!)
-    balance_before = player.real_balance
-    player.real_balance += amount
-    db.session.commit()
-    
-    # Log transaction
-    from database import log_transaction, TX_WALLET_TOPUP
-    log_transaction(
-        player_id=player.id,
-        transaction_type=TX_WALLET_TOPUP,
-        amount=amount,
-        balance_type='real',
-        balance_before=balance_before,
-        balance_after=player.real_balance,
-        description='Real money wallet top-up'
-    )
-    
-    return jsonify({
-        'message': 'Deposit successful',
-        'new_balance': player.real_balance
-    })
+
+    user = User.query.get(session['user_id'])
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    from user.service import initiate_topup
+    result = initiate_topup(user, amount)
+    if not result.get('success'):
+        return jsonify({'error': result.get('error', 'Deposit failed')}), 400
+
+    response = {'message': 'Deposit initiated successfully'}
+    response.update(result)
+    return jsonify(response)
 
 
 @auth_bp.route('/leaderboard', methods=['GET'])
