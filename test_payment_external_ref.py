@@ -36,6 +36,7 @@ class TestPaymentExternalRef(unittest.TestCase):
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         app.config['MOJAPOS_MOCK_MODE'] = False  # boolean False (string 'false' is truthy)
         app.config['MOJAPOS_WEBHOOK_SECRET'] = 'test-secret'
+        app.config['MOJAPOS_VERIFY_WEBHOOK_SIGNATURE'] = True  # exercise the full verification path
         self.app_context = app.app_context()
         self.app_context.push()
         db.drop_all()
@@ -110,7 +111,7 @@ class TestPaymentExternalRef(unittest.TestCase):
         self.assertFalse(tx.external_ref_id.isdigit())
 
         payload = captured['data']
-        self.assertEqual(captured['endpoint'], '/payments')
+        self.assertEqual(captured['endpoint'], '/payments/pay')
         self.assertEqual(payload['metadata']['externalId'], tx.external_ref_id)
         self.assertNotIn('reference', payload)
         self.assertNotIn('transaction_id', payload['metadata'])
@@ -170,7 +171,7 @@ class TestPaymentExternalRef(unittest.TestCase):
 
         self.assertTrue(paid)
         self.assertTrue(charge_result['payment_required'])
-        self.assertEqual(called, ['/payments'], "gateway must be called when the wallet is short")
+        self.assertEqual(called, ['/payments/pay'], "gateway must be called when the wallet is short")
 
         # The wallet is NOT debited until the gateway callback confirms.
         db.session.refresh(player)
@@ -337,7 +338,7 @@ class TestPaymentExternalRef(unittest.TestCase):
         self.assertEqual(tx.status, 'pending')
 
         payload = captured['data']
-        self.assertEqual(captured['endpoint'], '/payments')
+        self.assertEqual(captured['endpoint'], '/payments/pay')
         self.assertEqual(payload['metadata']['externalId'], ref)
         self.assertNotIn('reference', payload)
         self.assertNotIn('user_id', payload['metadata'])

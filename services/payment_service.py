@@ -60,7 +60,9 @@ class MojaPOSService:
 
     @property
     def _mock_mode(self):
-        return bool(current_app.config.get('MOJAPOS_MOCK_MODE', True))
+        # REAL by default -- mock only when explicitly enabled. This ensures a
+        # server that cannot read .env never silently falls back to mock.
+        return bool(current_app.config.get('MOJAPOS_MOCK_MODE', False))
 
     def _config(self, key, default=None):
         return current_app.config.get(key, default)

@@ -349,14 +349,21 @@ def payment_callback():
     """
     try:
         payload = request.get_json(silent=True) or {}
-        signature = request.headers.get('X-Signature')
+        if not payload:
+            return jsonify({'error': 'Missing payload'}), 400
 
-        if not payload or not signature:
-            return jsonify({'error': 'Missing payload or signature'}), 400
-
-        # if not payment_service.verify_callback_signature(payload, signature): Temporal closed. YET to confirm if mojapos have the signature 
-        #     print("[PAYMENT] Invalid callback signature - rejected")
-        #     return jsonify({'error': 'Invalid signature'}), 401
+        # Webhook signature verification is OFF until MojaPOS's webhook auth is
+        # confirmed (signing scheme/secret still TBD). Enable it with
+        # MOJAPOS_VERIFY_WEBHOOK_SIGNATURE=true + MOJAPOS_WEBHOOK_SECRET once known.
+        if app.config.get('MOJAPOS_VERIFY_WEBHOOK_SIGNATURE', False):
+            signature = request.headers.get('X-Signature')
+            if not signature:
+                return jsonify({'error': 'Missing signature'}), 400
+            if not payment_service.verify_callback_signature(payload, signature):
+                print("[PAYMENT] Invalid callback signature - rejected")
+                return jsonify({'error': 'Invalid signature'}), 401
+        else:
+            print("[PAYMENT] Webhook signature verification disabled (MOJAPOS_VERIFY_WEBHOOK_SIGNATURE not enabled)")
 
         mojapos_txn_id = payload.get('transactionId') or payload.get('transaction_id')
         status = str(payload.get('status') or '').lower()

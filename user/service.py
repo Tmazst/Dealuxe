@@ -139,7 +139,9 @@ def initiate_topup(user, amount):
     if amount <= 0:
         return {'success': False, 'error': 'Invalid amount'}
 
-    if current_app.config.get('MOJAPOS_MOCK_MODE', True):
+    # REAL by default -- mock topup only when MOJAPOS_MOCK_MODE is explicitly
+    # enabled. A server that cannot read .env must never fall back to mock.
+    if current_app.config.get('MOJAPOS_MOCK_MODE', False):
         balance_before = player.real_balance
         player.real_balance += amount
         db.session.commit()

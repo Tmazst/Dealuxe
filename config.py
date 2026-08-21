@@ -91,8 +91,15 @@ class PaymentConfig:
     # Shared secret used to verify inbound MojaPOS callback signatures.
     MOJAPOS_WEBHOOK_SECRET = os.environ.get('MOJAPOS_WEBHOOK_SECRET', '')
 
-    # Local-debit mock path toggle. When True, tournament entry is charged
-    # directly from the wallet (sandbox/mock) instead of the real gateway.
-    MOJAPOS_MOCK_MODE = os.environ.get('MOJAPOS_MOCK_MODE', 'true').lower() in (
+    # Verify inbound webhook signatures. OFF until MojaPOS's webhook signing
+    # scheme is confirmed; set true (with MOJAPOS_WEBHOOK_SECRET) when known.
+    MOJAPOS_VERIFY_WEBHOOK_SIGNATURE = os.environ.get(
+        'MOJAPOS_VERIFY_WEBHOOK_SIGNATURE', 'false'
+    ).lower() in ('1', 'true', 'yes', 'on')
+
+    # Local-debit mock path toggle. REAL by default: mock mode only runs when
+    # this is EXPLICITLY set to true (e.g. MOJAPOS_MOCK_MODE=true). Any unset /
+    # false value (or a VPS that cannot read .env) goes straight to the gateway.
+    MOJAPOS_MOCK_MODE = os.environ.get('MOJAPOS_MOCK_MODE', 'false').lower() in (
         '1', 'true', 'yes', 'on'
     )

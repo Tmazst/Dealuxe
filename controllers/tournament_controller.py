@@ -249,12 +249,16 @@ ROLL_COUNTDOWN_SECONDS = 600  # 10 minutes for the no-show roll game
 
 
 def _is_payment_mock_mode():
-    """Return True when the local-debit (sandbox/mock) path should be used."""
+    """Return True only when mock mode is EXPLICITLY enabled.
+
+    REAL by default -- a server that cannot read .env must never silently fall
+    back to the local-debit sandbox path.
+    """
     try:
         from flask import current_app
-        return bool(current_app.config.get('MOJAPOS_MOCK_MODE', True))
+        return bool(current_app.config.get('MOJAPOS_MOCK_MODE', False))
     except Exception:
-        return True
+        return False
 
 
 def _local_debit_entry(player, amount, tournament_id):
