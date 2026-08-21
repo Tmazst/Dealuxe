@@ -1999,23 +1999,37 @@ pre{
     position:fixed;
     right:20px;
     bottom:20px;
-    width:64px;
-    height:64px;
-    border-radius:999px;
+    width:92px;
+    height:118px;            /* keeps draw-card-bg.png aspect ratio (277x355) */
+    border-radius:12px;
     z-index:3000;
     display:flex;
     align-items:center;
     justify-content:center;
-    background:linear-gradient(180deg,#ffd54d,#ffb84d);
-    color:#111;
-    box-shadow:0 18px 50px rgba(255,184,77,0.18), 0 6px 18px rgba(0,0,0,0.35);
+    padding:0;
+    background:url('/static/images/draw-card-bg.png') center / cover no-repeat;
     border:1px solid rgba(255,255,255,0.12);
+    box-shadow:0 18px 50px rgba(255,184,77,0.18), 0 6px 18px rgba(0,0,0,0.35);
     cursor:pointer;
     font-weight:800;
 }
 .draw-button-wrapper{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:3000}
 .draw-label{display:none;font-size:12px;color:var(--muted);background:rgba(0,0,0,0.22);padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
-.draw-button .icon{font-size:20px}
+/* The yellow round "Draw" circle sits centred ON TOP of the card image */
+.draw-button .icon{
+    position:relative;
+    z-index:1;
+    width:46px;
+    height:46px;
+    border-radius:999px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:20px;
+    color:#111;
+    background:linear-gradient(180deg,#ffd54d,#ffb84d);
+    box-shadow:0 6px 16px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.55);
+}
 .draw-button.flash{animation:draw-flash 1800ms ease-in-out infinite}
 .draw-button.disabled{opacity:0.5;pointer-events:none;transform:scale(0.98)}
 .mode-key{

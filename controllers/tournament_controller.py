@@ -304,10 +304,19 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
         ok, err = _local_debit_entry(player, amount, tournament_id)
         return ok, {'payment_required': False, 'error': err}
 
-    # ---- Real MojaPOS path: create a pending transaction and initiate ----
-    if player.real_balance < amount:
-        return False, 'Insufficient balance'
+    # ---- Real MojaPOS path ----
+    # WALLET-FIRST: if the wallet already covers the entry fee, debit it
+    # directly and never touch the gateway. The gateway is only approached as a
+    # fallback when the wallet cannot cover the fee.
+    if player.real_balance >= amount:
+        print(f"[PAYMENT] Entry fee: user {user_id} wallet E{player.real_balance:.2f} covers E{amount:.2f} "
+              f"- debiting wallet, NO gateway call")
+        ok, err = _local_debit_entry(player, amount, tournament_id)
+        return ok, {'payment_required': False, 'error': err}
 
+    # Wallet insufficient -> approach the gateway to pay the entry fee. The
+    # wallet is only debited (and the participant registered) after the gateway
+    # confirms via callback.
     from services.payment_service import payment_service
 
     # Reserve the funds (hold) as a pending transaction; full debit happens on
@@ -338,6 +347,7 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
         amount=amount,
         phone_number=phone_number,
         tournament_code=tournament_code or '',
+        txn=transaction
     )
 
     if not result.get('success'):

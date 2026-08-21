@@ -177,6 +177,7 @@ def initiate_topup(user, amount):
         user_id=user.id,
         amount=amount,
         phone_number=user.phone or '',
+        txn=pending,
     )
     if not result.get('success'):
         pending.status = 'failed'

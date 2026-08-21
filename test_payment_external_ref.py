@@ -78,12 +78,17 @@ class TestPaymentExternalRef(unittest.TestCase):
             captured['endpoint'] = endpoint
             captured['data'] = data
             return {
-                'status': 'success',
-                'transaction_id': 'mojapos_txn_123',
-                'payment_url': 'https://pay.example/x',
+                'status': 'PENDING',
+                'transactionId': '52346890-e826-4093-b371-8503b0b50a19',
+                'providerReference': 'b0b88df5-1bdb-40c9-9e9d-89db811ba00a',
             }
 
         payment_service._make_request = fake_make_request
+
+        # Wallet-FIRST rule: the gateway is only reached when the wallet is short.
+        player = get_player_by_user_id(self.user.id)
+        player.real_balance = 5.0
+        db.session.commit()
 
         tournament = self._make_tournament()
         paid, charge_result = _charge_tournament_entry(
@@ -92,7 +97,8 @@ class TestPaymentExternalRef(unittest.TestCase):
 
         self.assertTrue(paid)
         self.assertTrue(charge_result['payment_required'])
-        self.assertEqual(charge_result['external_transaction_id'], 'mojapos_txn_123')
+        self.assertEqual(charge_result['external_transaction_id'], '52346890-e826-4093-b371-8503b0b50a19')
+        self.assertIsNone(charge_result['payment_url'])  # MTN MoMo USSD push - no hosted page
 
         tx = Transaction.query.filter_by(
             tournament_id=tournament.id, transaction_type=TX_ENTRY_FEE
@@ -104,14 +110,79 @@ class TestPaymentExternalRef(unittest.TestCase):
         self.assertFalse(tx.external_ref_id.isdigit())
 
         payload = captured['data']
-        self.assertEqual(captured['endpoint'], '/payments/initiate')
-        self.assertEqual(payload['reference'], tx.external_ref_id)
-        self.assertEqual(payload['metadata']['external_ref_id'], tx.external_ref_id)
+        self.assertEqual(captured['endpoint'], '/payments')
+        self.assertEqual(payload['metadata']['externalId'], tx.external_ref_id)
+        self.assertNotIn('reference', payload)
         self.assertNotIn('transaction_id', payload['metadata'])
 
         # The gateway's own txn id is stored for idempotency.
         db.session.refresh(tx)
-        self.assertEqual(tx.description, 'mojapos_txn_123')
+        self.assertEqual(tx.description, '52346890-e826-4093-b371-8503b0b50a19')
+
+    def test_charge_wallet_covers_fee_debits_locally_no_gateway(self):
+        """Wallet-first: enough balance means local debit, no gateway call."""
+        player = get_player_by_user_id(self.user.id)
+        player.real_balance = 50.0
+        db.session.commit()
+
+        called = []
+
+        def fake_make_request(endpoint, method='POST', data=None):
+            called.append(endpoint)
+            return {'transactionId': 'x', 'status': 'PENDING'}
+
+        payment_service._make_request = fake_make_request
+
+        tournament = self._make_tournament()
+        paid, charge_result = _charge_tournament_entry(
+            self.user.id, tournament.entry_fee, tournament.id, tournament.tournament_code
+        )
+
+        self.assertTrue(paid)
+        self.assertFalse(charge_result['payment_required'])
+        self.assertEqual(called, [], "gateway must NOT be called when the wallet covers the fee")
+
+        db.session.refresh(player)
+        self.assertEqual(player.real_balance, 40.0)  # E10 debited locally
+
+    def test_charge_insufficient_balance_calls_gateway(self):
+        """Wallet-first: short balance -> approach the gateway, hold the fee."""
+        player = get_player_by_user_id(self.user.id)
+        player.real_balance = 5.0
+        db.session.commit()
+
+        called = []
+
+        def fake_make_request(endpoint, method='POST', data=None):
+            called.append(endpoint)
+            return {
+                'status': 'PENDING',
+                'transactionId': '52346890-e826-4093-b371-8503b0b50a19',
+                'providerReference': 'b0b88df5-1bdb-40c9-9e9d-89db811ba00a',
+            }
+
+        payment_service._make_request = fake_make_request
+
+        tournament = self._make_tournament()
+        paid, charge_result = _charge_tournament_entry(
+            self.user.id, tournament.entry_fee, tournament.id, tournament.tournament_code
+        )
+
+        self.assertTrue(paid)
+        self.assertTrue(charge_result['payment_required'])
+        self.assertEqual(called, ['/payments'], "gateway must be called when the wallet is short")
+
+        # The wallet is NOT debited until the gateway callback confirms.
+        db.session.refresh(player)
+        self.assertEqual(player.real_balance, 5.0)
+
+        # A pending transaction was recorded with a strong external ref.
+        tx = Transaction.query.filter_by(
+            tournament_id=tournament.id, transaction_type=TX_ENTRY_FEE
+        ).first()
+        self.assertIsNotNone(tx)
+        self.assertIsNotNone(tx.external_ref_id)
+        self.assertEqual(tx.status, 'pending')
 
     # -------------------------
     # Callback mapping
@@ -148,17 +219,16 @@ class TestPaymentExternalRef(unittest.TestCase):
         db.session.commit()
 
         payload = {
-            'transaction_id': 'mojapos_txn_abc',
-            'reference': ref,
-            'status': 'completed',
+            'transactionId': 'mojapos_txn_abc',
+            'status': 'COMPLETED',
             'amount': 10.0,
-            'phone_number': '+26876000000',
-            'timestamp': '2026-01-01T00:00:00',
+            'currency': 'SZL',
+            'providerReference': 'b0b88df5-1bdb-40c9-9e9d-89db811ba00a',
+            # Real payload only echoes metadata.externalId -- user and tournament
+            # must be derived from the transaction row.
             'metadata': {
                 'transaction_type': 'tournament_entry',
-                'external_ref_id': ref,
-                'user_id': str(self.user.id),
-                'tournament_code': tournament.tournament_code,
+                'externalId': ref,
             },
         }
         r = self._post_callback(payload)
@@ -195,9 +265,8 @@ class TestPaymentExternalRef(unittest.TestCase):
         db.session.commit()
 
         payload = {
-            'transaction_id': 'mojapos_txn_legacy',
-            'reference': 'entry_legacy',
-            'status': 'completed',
+            'transactionId': 'mojapos_txn_legacy',
+            'status': 'COMPLETED',
             'amount': 10.0,
             'metadata': {
                 'transaction_type': 'tournament_entry',
@@ -216,12 +285,12 @@ class TestPaymentExternalRef(unittest.TestCase):
     def test_callback_rejects_bad_signature(self):
         tournament = self._make_tournament()
         payload = {
-            'transaction_id': 'mojapos_txn_x',
-            'status': 'completed',
+            'transactionId': 'mojapos_txn_x',
+            'status': 'COMPLETED',
             'amount': 10.0,
             'metadata': {
                 'transaction_type': 'tournament_entry',
-                'external_ref_id': uuid.uuid4().hex[:12],
+                'externalId': uuid.uuid4().hex[:12],
                 'user_id': str(self.user.id),
                 'tournament_code': tournament.tournament_code,
             },
@@ -246,9 +315,9 @@ class TestPaymentExternalRef(unittest.TestCase):
             captured['endpoint'] = endpoint
             captured['data'] = data
             return {
-                'status': 'success',
-                'transaction_id': 'mojapos_topup_txn',
-                'payment_url': 'https://pay.example/topup',
+                'status': 'PENDING',
+                'transactionId': 'mojapos_topup_txn',
+                'providerReference': 'b0b88df5-1bdb-40c9-9e9d-89db811ba00a',
             }
 
         payment_service._make_request = fake_make_request
@@ -257,7 +326,7 @@ class TestPaymentExternalRef(unittest.TestCase):
 
         self.assertTrue(result['success'])
         self.assertEqual(result['external_transaction_id'], 'mojapos_topup_txn')
-        self.assertEqual(result['payment_url'], 'https://pay.example/topup')
+        self.assertIsNone(result['payment_url'])  # MTN MoMo USSD push - no hosted page
         self.assertIn('external_ref_id', result)
 
         ref = result['external_ref_id']
@@ -265,12 +334,13 @@ class TestPaymentExternalRef(unittest.TestCase):
         self.assertIsNotNone(tx)
         self.assertEqual(tx.transaction_type, 'wallet_topup')
         self.assertEqual(tx.amount, 25.0)
+        self.assertEqual(tx.status, 'pending')
 
         payload = captured['data']
-        self.assertEqual(captured['endpoint'], '/payments/initiate')
-        self.assertEqual(payload['reference'], ref)
-        self.assertEqual(payload['metadata']['external_ref_id'], ref)
-        self.assertEqual(payload['metadata']['user_id'], str(self.user.id))
+        self.assertEqual(captured['endpoint'], '/payments')
+        self.assertEqual(payload['metadata']['externalId'], ref)
+        self.assertNotIn('reference', payload)
+        self.assertNotIn('user_id', payload['metadata'])
 
         db.session.refresh(tx)
         self.assertEqual(tx.description, 'mojapos_topup_txn')
@@ -294,15 +364,14 @@ class TestPaymentExternalRef(unittest.TestCase):
         db.session.add(tx)
         db.session.commit()
 
+        # Real payload only echoes metadata.externalId -- no user_id.
         payload = {
-            'transaction_id': 'mojapos_topup_abc',
-            'reference': ref,
-            'status': 'completed',
+            'transactionId': 'mojapos_topup_abc',
+            'status': 'COMPLETED',
             'amount': 25.0,
             'metadata': {
                 'transaction_type': 'wallet_topup',
-                'external_ref_id': ref,
-                'user_id': str(self.user.id),
+                'externalId': ref,
             },
         }
 
@@ -323,14 +392,12 @@ class TestPaymentExternalRef(unittest.TestCase):
 
     def test_wallet_topup_callback_unknown_ref_does_not_credit(self):
         payload = {
-            'transaction_id': 'mojapos_topup_unknown',
-            'reference': uuid.uuid4().hex[:12],
-            'status': 'completed',
+            'transactionId': 'mojapos_topup_unknown',
+            'status': 'COMPLETED',
             'amount': 25.0,
             'metadata': {
                 'transaction_type': 'wallet_topup',
-                'external_ref_id': uuid.uuid4().hex[:12],
-                'user_id': str(self.user.id),
+                'externalId': uuid.uuid4().hex[:12],
             },
         }
         r = self._post_callback(payload)

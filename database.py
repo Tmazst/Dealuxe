@@ -536,7 +536,7 @@ class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     player_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=False)
     external_ref_id = db.Column(db.String(64), nullable=True, index=True)  # strong UUID ref sent to the gateway
-    status = db.Column(db.String(20), default='pending')  # pending/completed/failed
+    status = db.Column(db.String(20), default='initiated')  # pending/completed/failed
     
     transaction_type = db.Column(db.String(50), nullable=False)  # see TX_* constants above
     amount = db.Column(db.Float, nullable=False)

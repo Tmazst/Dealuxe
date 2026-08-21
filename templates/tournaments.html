@@ -453,6 +453,9 @@
                 if (res.status === 401) { window.location.href = '/login'; return; }
                 if (!res.ok) { alert(result.error || 'Unable to create tournament'); return; }
                 if (result.payment && result.payment.payment_url) { window.location.href = result.payment.payment_url; return; }
+                if (result.payment && result.payment.payment_required) {
+                    alert('Payment initiated \u2014 check your phone (MTN MoMo) to approve. You will be joined automatically once the payment is confirmed.');
+                }
                 const tournamentId = result.tournament && result.tournament.id;
                 window.location.href = tournamentId ? `/tournaments/${tournamentId}` : '/tournaments';
             } catch (err) {

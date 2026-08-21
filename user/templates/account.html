@@ -330,7 +330,7 @@
                     } else if (data.payment_url) {
                         window.location.href = data.payment_url;
                     } else {
-                        result.textContent = '✓ Initiated. Reference: ' + (data.external_transaction_id || '');
+                        result.textContent = '✓ Payment initiated — check your phone (MTN MoMo) to approve. Wallet is credited automatically on confirmation.';
                     }
                 } catch (e) {
                     result.textContent = '⚠️ Network error. Try again.';

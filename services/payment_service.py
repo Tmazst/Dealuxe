@@ -13,6 +13,13 @@ Configuration values are read from the Flask app config (see
 `config.PaymentConfig`). In mock mode (`MOJAPOS_MOCK_MODE=true`) the service
 returns a synthetic success without calling the real gateway, so the rest of
 the system can be developed/tested locally against a sandbox path.
+
+curl -X POST \
+  "https://mojapos.com/api/payments/pay" \
+  -H "Authorization: Bearer pk_live_f4f8be6a58de21195be9f9b2" \
+  -H "Content-Type: application/json" \
+  -d '{   "provider": "MTN_MOMO",   "amount": 1,   "currency": "SZL",   "phoneNumber": "26876412255",   "metadata": {     "externalId": "TXN-12345",     "payerMessage": "Payment for order",     "payeeNote": "Order payment"   } }'
+
 """
 import hmac
 import hashlib
@@ -23,6 +30,12 @@ from datetime import datetime
 import requests
 
 from flask import current_app
+
+
+# MojaPOS resource path appended to `MOJAPOS_API_URL` to initiate a payment.
+# Full URL used at runtime: `{MOJAPOS_API_URL}{PAYMENT_INITIATE_ENDPOINT}`.
+# Per the MojaPOS docs curl this should resolve to the documented initiate URL.
+PAYMENT_INITIATE_ENDPOINT = '/payments'
 
 
 class MojaPOSError(Exception):
@@ -83,7 +96,15 @@ class MojaPOSService:
     # -----------------------------
 
     def _make_request(self, endpoint, method='POST', data=None):
-        """Perform an authenticated request to the MojaPOS API."""
+        """
+        Perform an authenticated request to the MojaPOS API.
+        curl -X POST \
+        "https://mojapos.com/api/payments/pay" \
+        -H "Authorization: Bearer pk_live_f4f8be6a58de21195be9f9b2" \
+        -H "Content-Type: application/json" \
+        -d '{   "provider": "MTN_MOMO",   "amount": 1,   "currency": "SZL",   "phoneNumber": "26876412255",   "metadata": {     "externalId": "TXN-12345",     "payerMessage": "Payment for order",     "payeeNote": "Order payment"   } }'
+
+        """
         api_url = self._config('MOJAPOS_API_URL', 'https://sandbox.mojapos.com/v1')
         api_key = self._config('MOJAPOS_API_KEY', '')
         merchant_id = self._config('MOJAPOS_MERCHANT_ID', '')
@@ -92,12 +113,16 @@ class MojaPOSService:
         headers = {
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {api_key}',
-            'X-Merchant-ID': merchant_id,
-            'User-Agent': 'Dealuxe/2.0',
+            # 'X-Merchant-ID': merchant_id,
+            # 'User-Agent': 'Dealuxe/2.0',
         }
 
-        if data:
-            headers['X-Signature'] = self._generate_signature(data)
+        # if data:
+        #     headers['X-Signature'] = self._generate_signature(data)
+
+        print(f"[PAYMENT] MojaPOS PAYLOAD: {data}")
+        print(f"[PAYMENT] MojaPOS HEADERS: {headers}")
+        print(f"[PAYMENT] MojaPOS URL: {url}")
 
         try:
             if method == 'POST':
@@ -118,18 +143,19 @@ class MojaPOSService:
     # -----------------------------
 
     def initiate_tournament_entry_payment(self, external_ref_id, user_id,
-                                          amount, phone_number, tournament_code):
+                                          amount, phone_number, tournament_code, txn=None):
         """
         Initiate a payment for a tournament entry fee.
 
         ``external_ref_id`` is the strong per-transaction reference generated
-        by the caller (``Transaction.external_ref_id``). It is used directly as
-        the gateway ``reference`` and echoed back in the callback metadata, so
-        the server can map the result back to the correct transaction WITHOUT
-        relying on the small, guessable internal integer id.
+        by the caller (``Transaction.external_ref_id``). It is sent as
+        ``metadata.externalId`` and echoed back in the callback so the server can
+        map the result back to the correct transaction. ``txn`` is the optional
+        pending Transaction row whose status is advanced when the gateway accepts
+        the payment.
 
-        Returns a dict with ``success`` plus either the external IDs/payment
-        URL (on success) or an error message (on failure).
+        Returns a dict with ``success`` plus the gateway transaction id
+        (``transactionId``) or an error message on failure.
         """
         if self._mock_mode:
             return {
@@ -142,29 +168,31 @@ class MojaPOSService:
             }
 
         payload = {
-            'merchant_id': self._config('MOJAPOS_MERCHANT_ID', ''),
+            "provider": "MTN_MOMO", 
             'amount': float(amount),
             'currency': 'SZL',
-            'phone_number': phone_number,
-            'description': f'Tournament Entry - {tournament_code}',
-            'reference': external_ref_id,
-            'callback_url': self._config('MOJAPOS_CALLBACK_URL', ''),
+            "phoneNumber": phone_number,
             'metadata': {
-                'transaction_type': 'tournament_entry',
-                'external_ref_id': external_ref_id,
-                'user_id': str(user_id),
-                'tournament_code': tournament_code,
+                "externalId": external_ref_id,
+                "payerMessage": f"Tournament Entry Fee Payment for Tournament {tournament_code}",
+                "payeeNote": "Dealuxe Payment" 
             },
         }
 
-        response = self._make_request('/payments/initiate', data=payload)
-        if response and response.get('status') == 'success':
+        response = self._make_request(PAYMENT_INITIATE_ENDPOINT, data=payload)
+        # A successful initiate returns HTTP 2xx with a `transactionId` and
+        # status "PENDING" (MTN MoMo USSD push -- there is NO hosted payment_url).
+        if response and response.get('transactionId'):
+            if txn is not None and txn.status != 'completed':
+                txn.status = 'pending'
             return {
                 'success': True,
-                'external_transaction_id': response.get('transaction_id'),
+                'external_transaction_id': response.get('transactionId'),
+                'provider_reference': response.get('providerReference'),
                 'external_payment_id': external_ref_id,
-                'payment_url': response.get('payment_url'),
+                'payment_url': None,
                 'amount': float(amount),
+                'status': response.get('status'),
             }
         return {
             'success': False,
@@ -193,28 +221,25 @@ class MojaPOSService:
             }
 
         payload = {
-            'merchant_id': self._config('MOJAPOS_MERCHANT_ID', ''),
+            "provider": "MTN_MOMO", 
             'amount': float(amount),
             'currency': 'SZL',
-            'phone_number': mobile_number,
-            'type': 'payout',
-            'description': f'Tournament Prize Payout - Tournament #{tournament_id}',
-            'reference': external_txn_id,
-            'callback_url': self._config('MOJAPOS_CALLBACK_URL', ''),
+            "phoneNumber": mobile_number,
             'metadata': {
-                'transaction_type': 'prize_payout',
-                'withdrawal_request_id': str(withdrawal_request_id),
-                'user_id': str(user_id),
-                'tournament_id': str(tournament_id),
+                "externalId": external_txn_id,
+                "payerMessage": f"Tournament Entry Fee Payment for Tournament {tournament_id}",
+                "payeeNote": "Dealuxe Payment" 
             },
         }
 
-        response = self._make_request('/payouts/initiate', data=payload)
-        if response and response.get('status') == 'success':
+        response = self._make_request(PAYMENT_INITIATE_ENDPOINT, data=payload)
+        if response and response.get('transactionId'):
             return {
                 'success': True,
-                'external_transaction_id': response.get('transaction_id'),
+                'external_transaction_id': response.get('transactionId'),
+                'provider_reference': response.get('providerReference'),
                 'error': None,
+                'status': response.get('status'),
             }
         return {
             'success': False,
@@ -225,13 +250,15 @@ class MojaPOSService:
     # WALLET TOPUP
     # -----------------------------
 
-    def initiate_wallet_topup(self, external_ref_id, user_id, amount, phone_number):
+    def initiate_wallet_topup(self, external_ref_id, user_id, amount, phone_number, txn=None):
         """Initiate a player loading funds into their wallet.
 
         ``external_ref_id`` is the strong per-transaction reference generated by
-        the caller (``Transaction.external_ref_id``). It is used as the gateway
-        ``reference`` and echoed back in the callback metadata so the server can
-        map the result back to the correct transaction idempotently.
+        the caller (``Transaction.external_ref_id``). It is sent as
+        ``metadata.externalId`` and echoed back in the callback so the server can
+        map the result back to the correct transaction idempotently. ``txn`` is
+        the optional pending Transaction row whose status is advanced when the
+        gateway accepts the payment.
         """
         if self._mock_mode:
             return {
@@ -243,27 +270,28 @@ class MojaPOSService:
             }
 
         payload = {
-            'merchant_id': self._config('MOJAPOS_MERCHANT_ID', ''),
+            "provider": "MTN_MOMO",
             'amount': float(amount),
             'currency': 'SZL',
-            'phone_number': phone_number,
-            'description': 'Dealuxe Wallet Topup',
-            'reference': external_ref_id,
-            'callback_url': self._config('MOJAPOS_CALLBACK_URL', ''),
+            "phoneNumber": phone_number,
             'metadata': {
-                'transaction_type': 'wallet_topup',
-                'external_ref_id': external_ref_id,
-                'user_id': str(user_id),
+                "externalId": external_ref_id,
+                "payerMessage": f"Topup Wallet for User {user_id}",
+                "payeeNote": "Dealuxe Topup Payment"
             },
         }
 
-        response = self._make_request('/payments/initiate', data=payload)
-        if response and response.get('status') == 'success':
+        response = self._make_request(PAYMENT_INITIATE_ENDPOINT, data=payload)
+        if response and response.get('transactionId'):
+            if txn is not None and txn.status != 'completed':
+                txn.status = 'pending'
             return {
                 'success': True,
-                'external_transaction_id': response.get('transaction_id'),
+                'external_transaction_id': response.get('transactionId'),
+                'provider_reference': response.get('providerReference'),
                 'external_payment_id': external_ref_id,
-                'payment_url': response.get('payment_url'),
+                'payment_url': None,
+                'status': response.get('status'),
             }
         return {
             'success': False,
