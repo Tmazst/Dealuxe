@@ -391,6 +391,64 @@ class TestPaymentExternalRef(unittest.TestCase):
         player2 = get_player_by_user_id(self.user.id)
         self.assertEqual(player2.real_balance, 125.0)
 
+    def test_real_mojapos_enveloped_callback_topup(self):
+        """Replays the exact captured live MojaPOS webhook (enveloped, no metadata)."""
+        ref = uuid.uuid4().hex[:12]
+        tx = Transaction(
+            player_id=self.user.player.id,
+            transaction_type='wallet_topup',
+            amount=1.0,
+            balance_type='real',
+            balance_before=100.0,
+            balance_after=100.0,
+            external_ref_id=ref,
+            description='Wallet top-up (pending)',
+        )
+        db.session.add(tx)
+        db.session.commit()
+
+        payload = {
+            'id': '87b92361-5b8e-4342-9d31-169f68d2e3ba',
+            'event': 'payment.success',
+            'created_at': '2026-08-21T15:00:09.882Z',
+            'environment': 'LIVE',
+            'data': {
+                'transactionId': 'd744e19b-90b9-435b-a13e-cc7bfb360cd1',
+                'reference': None,
+                'status': 'COMPLETED',
+                'amount': '1.00',
+                'currency': 'SZL',
+                'providerReference': '7eb94442-806a-4c8d-a417-9232365ef2f1',
+                'providerResponse': {
+                    'externalId': ref,
+                    'amount': '1',
+                    'currency': 'SZL',
+                    'payer': {'partyIdType': 'MSISDN', 'partyId': '26876412255'},
+                    'payerMessage': 'Topup Wallet for User 1',
+                    'payeeNote': 'Dealuxe Topup Payment',
+                    'status': 'SUCCESSFUL',
+                },
+                'updatedVia': 'polling',
+            },
+        }
+        r = self._post_callback(payload)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()['status'], 'received')
+
+        # Wallet credited exactly once (string amount coerced to float).
+        player = get_player_by_user_id(self.user.id)
+        self.assertEqual(player.real_balance, 101.0)
+
+        db.session.refresh(tx)
+        self.assertEqual(tx.status, 'completed')
+        self.assertEqual(tx.description, 'd744e19b-90b9-435b-a13e-cc7bfb360cd1')
+
+        # Duplicate replay (same transactionId) must NOT credit again.
+        r2 = self._post_callback(payload)
+        self.assertEqual(r2.status_code, 200)
+        player2 = get_player_by_user_id(self.user.id)
+        self.assertEqual(player2.real_balance, 101.0)
+
     def test_wallet_topup_callback_unknown_ref_does_not_credit(self):
         payload = {
             'transactionId': 'mojapos_topup_unknown',
