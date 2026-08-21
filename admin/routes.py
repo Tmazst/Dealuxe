@@ -21,6 +21,7 @@ from admin.service import (
     start_tournament,
     test_bots_enabled,
     update_user,
+    user_activity,
 )
 from database import User
 
@@ -86,6 +87,16 @@ def patch_user(user_id):
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'message': 'User updated', 'user': user_payload})
+
+
+@admin_bp.route('/users/<int:user_id>/activity', methods=['GET'])
+@admin_required
+def user_activity_route(user_id):
+    """Full activity for one user: profile + financial ledger + audit trail."""
+    try:
+        return jsonify(user_activity(user_id))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 404
 
 
 @admin_bp.route('/users/<int:user_id>/credits', methods=['POST'])

@@ -105,7 +105,10 @@
     </div>
 
     <div class="panel">
-        <h2>Audit Log</h2>
+        <div class="controls">
+            <h2 style="margin-right:auto;">Audit Log</h2>
+            <span class="status" id="auditViewing"></span>
+        </div>
         <table id="auditTable">
             <thead>
                 <tr>
@@ -120,12 +123,34 @@
         </table>
     </div>
 
+    <div class="panel" id="transactionsPanel" style="display:none;">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Transactions</h2>
+            <span class="status" id="txnStatus"></span>
+        </div>
+        <table id="transactionsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Amount</th>
+                    <th>Balance Before → After</th>
+                    <th>Status</th>
+                    <th>Description</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
     <script>
         const statusEl = document.getElementById('status');
         const usersTableBody = document.querySelector('#usersTable tbody');
         const tournamentsTableBody = document.querySelector('#tournamentsTable tbody');
         const searchInput = document.getElementById('searchInput');
         const summaryGrid = document.getElementById('summaryGrid');
+        let currentAuditUserId = null;
 
         async function fetchDashboard() {
             const response = await fetch('/api/admin/dashboard', { credentials: 'same-origin' });
@@ -155,6 +180,11 @@
             const data = await response.json();
             renderUsers(data.users || []);
             statusEl.textContent = `Loaded ${data.users.length} users.`;
+            // When a search uniquely identifies one user, load their activity
+            // (audit log + transactions) so the admin can review them quickly.
+            if (search && data.users.length === 1) {
+                await viewUserActivity(data.users[0].id);
+            }
         }
 
         async function fetchTournaments() {
@@ -180,6 +210,7 @@
                     <td><input type="number" step="0.01" value="${user.real_balance ?? 0}" data-field="real_balance"></td>
                     <td><input type="number" step="0.01" value="${user.fake_balance ?? 0}" data-field="fake_balance"></td>
                     <td>
+                        <button data-action="viewActivity" data-id="${user.id}">View</button>
                         <button data-action="toggleActive" data-id="${user.id}">${user.is_active ? 'Disable' : 'Enable'}</button>
                         <button data-action="saveBalances" data-id="${user.id}">Save</button>
                         <button data-action="awardCredits" data-id="${user.id}">Award Credits</button>
@@ -281,6 +312,76 @@
             });
         }
 
+        async function viewUserActivity(userId) {
+            const response = await fetch(`/api/admin/users/${userId}/activity`, { credentials: 'same-origin' });
+            if (!response.ok) {
+                const error = await response.json();
+                statusEl.textContent = 'Error: ' + (error.error || response.statusText);
+                return;
+            }
+            const data = await response.json();
+            currentAuditUserId = userId;
+            const u = data.user || {};
+
+            const viewing = document.getElementById('auditViewing');
+            if (viewing) {
+                viewing.innerHTML = `Viewing: <strong>${escapeHtml(u.username || '?')}</strong> (id ${u.id}) ` +
+                    `<button data-action="showAllLogs">Show all logs</button>`;
+            }
+
+            // Financial ledger (transactions table)
+            const txnPanel = document.getElementById('transactionsPanel');
+            const txnBody = document.querySelector('#transactionsTable tbody');
+            const txnStatus = document.getElementById('txnStatus');
+            if (txnPanel) txnPanel.style.display = 'block';
+            if (txnBody) {
+                txnBody.innerHTML = '';
+                (data.transactions || []).forEach(tx => {
+                    const row = document.createElement('tr');
+                    const sign = tx.amount >= 0 ? '+' : '';
+                    const color = tx.amount >= 0 ? '#15803d' : '#b91c1c';
+                    row.innerHTML = `
+                        <td>${tx.id}</td>
+                        <td>${escapeHtml(tx.transaction_type || '')}</td>
+                        <td style="color:${color}">${sign}E${Number(tx.amount).toFixed(2)}</td>
+                        <td>${tx.balance_before != null ? 'E' + Number(tx.balance_before).toFixed(2) : '—'} → ${tx.balance_after != null ? 'E' + Number(tx.balance_after).toFixed(2) : '—'}</td>
+                        <td>${escapeHtml(tx.status || '')}</td>
+                        <td>${escapeHtml(tx.description || '')}</td>
+                        <td>${escapeHtml(tx.created_at || '')}</td>
+                    `;
+                    txnBody.appendChild(row);
+                });
+            }
+            if (txnStatus) txnStatus.textContent = `${(data.transactions || []).length} transaction(s).`;
+
+            // Audit log (user-specific: admin actions that touched this user)
+            const body = document.querySelector('#auditTable tbody');
+            if (body) {
+                body.innerHTML = '';
+                (data.audit_logs || []).forEach(log => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${escapeHtml(log.created_at || '')}</td>
+                        <td>${escapeHtml(log.admin_username || '')}</td>
+                        <td>${escapeHtml(log.action)}</td>
+                        <td>${escapeHtml(log.summary || '')}</td>
+                        <td>${escapeHtml(log.details || '')}</td>
+                    `;
+                    body.appendChild(row);
+                });
+            }
+            statusEl.textContent = `Showing activity for ${u.username || 'user'} (id ${u.id}).`;
+        }
+
+        async function showAllLogs() {
+            currentAuditUserId = null;
+            const viewing = document.getElementById('auditViewing');
+            if (viewing) viewing.innerHTML = '';
+            const txnPanel = document.getElementById('transactionsPanel');
+            if (txnPanel) txnPanel.style.display = 'none';
+            await fetchAuditLogs();
+        }
+
         async function sendUserUpdate(userId, payload) {
             const response = await fetch(`/api/admin/users/${userId}`, {
                 method: 'PATCH',
@@ -352,11 +453,19 @@
                         body: { status, resolution: resolution.trim() || undefined },
                     });
                 }
+                if (action === 'viewActivity') {
+                    await viewUserActivity(userId);
+                    return;
+                }
+                if (action === 'showAllLogs') {
+                    await showAllLogs();
+                    return;
+                }
                 await fetchDashboard();
                 await fetchUsers(searchInput.value.trim());
                 await fetchTournaments();
                 await fetchDisputes();
-                await fetchAuditLogs();
+                if (currentAuditUserId) { await viewUserActivity(currentAuditUserId); } else { await fetchAuditLogs(); }
             } catch (err) {
                 statusEl.textContent = 'Update failed: ' + err.message;
             }

@@ -13,6 +13,7 @@ from database import (
     AdminAuditLog,
     Dispute,
     WalletAdjustment,
+    Transaction,
     add_tournament_participant,
     create_tournament_record,
     get_player_by_user_id,
@@ -309,22 +310,76 @@ def get_tournament_detail(tournament_id):
     }
 
 
+def _serialize_audit_log(log):
+    return {
+        'id': log.id,
+        'admin_user_id': log.admin_user_id,
+        'admin_username': _username(log.admin_user_id),
+        'action': log.action,
+        'entity_type': log.entity_type,
+        'entity_id': log.entity_id,
+        'summary': log.summary,
+        'details': log.details,
+        'created_at': log.created_at.isoformat() if log.created_at else None,
+    }
+
+
 def list_audit_logs(limit=100):
     logs = AdminAuditLog.query.order_by(AdminAuditLog.created_at.desc()).limit(limit).all()
-    return [
-        {
-            'id': log.id,
-            'admin_user_id': log.admin_user_id,
-            'admin_username': _username(log.admin_user_id),
-            'action': log.action,
-            'entity_type': log.entity_type,
-            'entity_id': log.entity_id,
-            'summary': log.summary,
-            'details': log.details,
-            'created_at': log.created_at.isoformat() if log.created_at else None,
-        }
-        for log in logs
-    ]
+    return [_serialize_audit_log(log) for log in logs]
+
+
+# -----------------------------
+# USER ACTIVITY (financial ledger + audit trail for ONE user)
+# -----------------------------
+
+def _serialize_transaction(tx):
+    return {
+        'id': tx.id,
+        'transaction_type': tx.transaction_type,
+        'amount': tx.amount,
+        'balance_type': tx.balance_type,
+        'balance_before': tx.balance_before,
+        'balance_after': tx.balance_after,
+        'description': tx.description,
+        'status': getattr(tx, 'status', None),
+        'external_ref_id': tx.external_ref_id,
+        'tournament_id': tx.tournament_id,
+        'created_at': tx.created_at.isoformat() if tx.created_at else None,
+    }
+
+
+def list_user_transactions(user_id, limit=200):
+    """All wallet transactions for a user (via their player row)."""
+    player = get_player_by_user_id(user_id)
+    if player is None:
+        return []
+    txs = Transaction.query.filter_by(player_id=player.id)\
+        .order_by(Transaction.id.desc()).limit(limit).all()
+    return [_serialize_transaction(tx) for tx in txs]
+
+
+def list_user_audit_logs(user_id, limit=200):
+    """Admin audit entries that directly affected a user (user updates, wallet adjusts)."""
+    logs = AdminAuditLog.query.filter(
+        or_(
+            (AdminAuditLog.entity_type == 'user') & (AdminAuditLog.entity_id == user_id),
+            (AdminAuditLog.entity_type == 'wallet') & (AdminAuditLog.entity_id == user_id),
+        )
+    ).order_by(AdminAuditLog.created_at.desc()).limit(limit).all()
+    return [_serialize_audit_log(log) for log in logs]
+
+
+def user_activity(user_id):
+    """Full admin activity view for one user: profile + financial ledger + audit trail."""
+    user = User.query.get(user_id)
+    if user is None:
+        raise ValueError('User not found')
+    return {
+        'user': _serialize_user(user),
+        'transactions': list_user_transactions(user_id),
+        'audit_logs': list_user_audit_logs(user_id),
+    }
 
 
 # -----------------------------

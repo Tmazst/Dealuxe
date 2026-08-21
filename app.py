@@ -365,6 +365,8 @@ def payment_callback():
         else:
             print("[PAYMENT] Webhook signature verification disabled (MOJAPOS_VERIFY_WEBHOOK_SIGNATURE not enabled)")
 
+        print("[PAYMENT][CAPTURE CALLBACK PAYLOAD]: ",payload)
+
         mojapos_txn_id = payload.get('transactionId') or payload.get('transaction_id')
         status = str(payload.get('status') or '').lower()
         metadata = payload.get('metadata') or {}

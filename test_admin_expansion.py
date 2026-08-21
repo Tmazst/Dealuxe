@@ -9,6 +9,8 @@ from database import (
     User,
     Player,
     Tournament,
+    Transaction,
+    TX_WALLET_TOPUP,
     AdminAuditLog,
     Dispute,
     WalletAdjustment,
@@ -58,6 +60,49 @@ class TestAdminExpansion(unittest.TestCase):
         self.assertEqual(r.status_code, 403)
         r = self.client.get('/api/admin/audit-logs')
         self.assertEqual(r.status_code, 403)
+
+    def test_user_activity_requires_admin(self):
+        self._login(self.regular)
+        r = self.client.get(f'/api/admin/users/{self.admin.id}/activity')
+        self.assertEqual(r.status_code, 403)
+
+    def test_user_activity_returns_ledger_and_audit(self):
+        self._login(self.admin)
+        # A wallet adjustment records an audit entry for the user.
+        r = self.client.post(f'/api/admin/wallets/{self.regular.id}/adjust', json={
+            'balance_type': 'real',
+            'delta': 25.0,
+            'reason': 'Goodwill credit',
+        })
+        self.assertEqual(r.status_code, 200)
+
+        # A financial transaction row on the user's player ledger.
+        player = get_player_by_user_id(self.regular.id)
+        tx = Transaction(
+            player_id=player.id,
+            transaction_type=TX_WALLET_TOPUP,
+            amount=25.0,
+            balance_type='real',
+            balance_before=50.0,
+            balance_after=75.0,
+            description='Test topup',
+            status='completed',
+        )
+        db.session.add(tx)
+        db.session.commit()
+
+        r = self.client.get(f'/api/admin/users/{self.regular.id}/activity')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data['user']['username'], 'player1')
+        self.assertEqual(len(data['transactions']), 1)
+        self.assertEqual(data['transactions'][0]['transaction_type'], 'wallet_topup')
+        self.assertTrue(any(log['action'] == 'wallet.adjust' for log in data['audit_logs']))
+
+    def test_user_activity_unknown_user_404(self):
+        self._login(self.admin)
+        r = self.client.get('/api/admin/users/999999/activity')
+        self.assertEqual(r.status_code, 404)
 
     def test_wallet_adjust_credits_and_audits(self):
         self._login(self.admin)
