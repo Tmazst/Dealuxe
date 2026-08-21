@@ -35,7 +35,7 @@ from flask import current_app
 # MojaPOS resource path appended to `MOJAPOS_API_URL` to initiate a payment.
 # Full URL used at runtime: `{MOJAPOS_API_URL}{PAYMENT_INITIATE_ENDPOINT}`.
 # Per the MojaPOS docs curl this should resolve to the documented initiate URL.
-PAYMENT_INITIATE_ENDPOINT = '/payments'
+PAYMENT_INITIATE_ENDPOINT = '/payments/pay' #Please do not change this endpoint without approval. the api is always ; https://mojapos.com/api/payments/pay for initiating payment
 
 
 class MojaPOSError(Exception):
