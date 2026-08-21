@@ -103,3 +103,10 @@ class PaymentConfig:
     MOJAPOS_MOCK_MODE = os.environ.get('MOJAPOS_MOCK_MODE', 'false').lower() in (
         '1', 'true', 'yes', 'on'
     )
+
+
+class LogConfig:
+    """Backend print-log capture settings (viewable in the admin dashboard)."""
+    LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+    PRINT_LOG_FILE = os.path.join(LOG_DIR, 'print_logs.txt')
+    PRINT_LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB cap; file is truncated when exceeded

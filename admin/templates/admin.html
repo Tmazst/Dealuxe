@@ -144,6 +144,29 @@
         </table>
     </div>
 
+    <div class="panel">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Backend Logs</h2>
+            <label>
+                Filter:
+                <input type="text" id="logSearch" placeholder="e.g. PAYMENT, ERROR, MULTIPLAYER" style="padding:4px 8px;">
+            </label>
+            <label>
+                Tail:
+                <select id="logTail">
+                    <option value="100">100</option>
+                    <option value="300" selected>300</option>
+                    <option value="1000">1000</option>
+                    <option value="3000">3000</option>
+                </select>
+            </label>
+            <button id="logRefreshBtn">Refresh</button>
+            <button id="logClearBtn">Clear</button>
+            <label><input type="checkbox" id="logAutoRefresh"> Auto (3s)</label>
+        </div>
+        <pre id="logViewer" style="max-height:420px;overflow:auto;background:#0b0f1a;color:#c9d4f0;padding:12px;border-radius:8px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-all;">Loading...</pre>
+    </div>
+
     <script>
         const statusEl = document.getElementById('status');
         const usersTableBody = document.querySelector('#usersTable tbody');
@@ -382,6 +405,53 @@
             await fetchAuditLogs();
         }
 
+        // -------------------------
+        // Backend print-log viewer
+        // -------------------------
+        const logViewer = document.getElementById('logViewer');
+        let logAutoRefreshTimer = null;
+
+        async function fetchBackendLogs() {
+            if (!logViewer) return;
+            const tail = document.getElementById('logTail').value;
+            const search = document.getElementById('logSearch').value.trim();
+            const url = `/api/admin/logs?tail=${tail}` + (search ? `&search=${encodeURIComponent(search)}` : '');
+            try {
+                const response = await fetch(url, { credentials: 'same-origin' });
+                if (!response.ok) return;
+                const data = await response.json();
+                const lines = data.lines || [];
+                logViewer.textContent = lines.length ? lines.join('\n') : '(no matching log lines)';
+            } catch (e) { /* keep last view */ }
+        }
+
+        function bindLogControls() {
+            const refreshBtn = document.getElementById('logRefreshBtn');
+            const clearBtn = document.getElementById('logClearBtn');
+            const auto = document.getElementById('logAutoRefresh');
+            const searchInput = document.getElementById('logSearch');
+            const tailSel = document.getElementById('logTail');
+            if (refreshBtn) refreshBtn.addEventListener('click', fetchBackendLogs);
+            if (searchInput) searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') fetchBackendLogs(); });
+            if (tailSel) tailSel.addEventListener('change', fetchBackendLogs);
+            if (auto) {
+                auto.addEventListener('change', () => {
+                    clearInterval(logAutoRefreshTimer);
+                    if (auto.checked) {
+                        fetchBackendLogs();
+                        logAutoRefreshTimer = setInterval(fetchBackendLogs, 3000);
+                    }
+                });
+            }
+            if (clearBtn) {
+                clearBtn.addEventListener('click', async () => {
+                    if (!confirm('Clear the backend print log file?')) return;
+                    await fetch('/api/admin/logs/clear', { method: 'POST', credentials: 'same-origin' });
+                    fetchBackendLogs();
+                });
+            }
+        }
+
         async function sendUserUpdate(userId, payload) {
             const response = await fetch(`/api/admin/users/${userId}`, {
                 method: 'PATCH',
@@ -486,6 +556,8 @@
         fetchTournaments();
         fetchDisputes();
         fetchAuditLogs();
+        bindLogControls();
+        fetchBackendLogs();
     </script>
 </body>
 </html>

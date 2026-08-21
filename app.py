@@ -42,7 +42,7 @@ from database import db, init_db, Tournament, User
 from database import Player
 from werkzeug.middleware.proxy_fix import ProxyFix
 from jinja2 import ChoiceLoader, FileSystemLoader
-from config import PaymentConfig
+from config import PaymentConfig, LogConfig
 import os
 
 app = Flask(__name__)
@@ -64,6 +64,23 @@ app.config['TOURNAMENT_TEST_BOTS_ENABLED'] = os.environ.get(
 # -----------------------------
 
 app.config.from_object(PaymentConfig)
+app.config.from_object(LogConfig)
+
+# -----------------------------
+# BACKEND PRINT LOG CAPTURE
+# (every backend print() also goes to logs/print_logs.txt, viewable in the
+#  admin dashboard under "Backend Logs")
+# -----------------------------
+
+try:
+    from services.log_capture import install_print_log_capture
+    _print_log_path = install_print_log_capture(
+        app.config.get('PRINT_LOG_FILE'),
+        app.config.get('PRINT_LOG_MAX_BYTES'),
+    )
+    print(f"[APP] Backend print log -> {_print_log_path}")
+except Exception as exc:
+    print(f"[APP] Backend print-log capture disabled: {exc}")
 
 # Startup log: show the effective MojaPOS mode so it is never ambiguous which
 # payment path the server is actually using (mock vs real gateway).

@@ -152,3 +152,7 @@ __pycache__/test_lock_consensus.cpython-311.pyc
 __pycache__/test_super_admin_cli.cpython-311.pyc
 __pycache__/test_tournament_auto_start.cpython-311.pyc
 __pycache__/test_tournament_match_flow.cpython-311.pyc
+
+# Backend print-log capture
+logs/
+

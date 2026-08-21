@@ -1,4 +1,5 @@
 from datetime import datetime
+import os
 
 from flask import current_app
 
@@ -380,6 +381,58 @@ def user_activity(user_id):
         'transactions': list_user_transactions(user_id),
         'audit_logs': list_user_audit_logs(user_id),
     }
+
+
+# -----------------------------
+# BACKEND PRINT LOG VIEWER
+# -----------------------------
+
+def _print_log_path():
+    configured = current_app.config.get('PRINT_LOG_FILE')
+    if configured:
+        return configured
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        'logs', 'print_logs.txt',
+    )
+
+
+def read_backend_logs(tail=200, search=None):
+    """Return the last `tail` lines of the backend print log (optionally filtered)."""
+    path = _print_log_path()
+    if not os.path.exists(path):
+        return {'log_file': path, 'lines': [], 'total': 0}
+
+    lines = []
+    try:
+        # Read the last ~1 MB so the tail stays cheap even for large files.
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            start = max(0, size - (1024 * 1024))
+            f.seek(start)
+            data = f.read()
+        lines = data.splitlines()
+        if start > 0 and lines:
+            lines = lines[1:]  # drop the partial line when we seeked mid-line
+        if search:
+            needle = search.lower()
+            lines = [ln for ln in lines if needle in ln.lower()]
+    except Exception as exc:
+        return {'log_file': path, 'lines': [], 'total': 0, 'error': str(exc)}
+
+    lines = lines[-int(tail):]
+    return {'log_file': path, 'lines': lines, 'total': len(lines)}
+
+
+def clear_backend_logs():
+    """Truncate the backend print log file."""
+    path = _print_log_path()
+    try:
+        open(path, 'w').close()
+        return {'cleared': True, 'log_file': path}
+    except Exception as exc:
+        return {'cleared': False, 'log_file': path, 'error': str(exc)}
 
 
 # -----------------------------

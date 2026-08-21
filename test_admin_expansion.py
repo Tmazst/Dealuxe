@@ -104,6 +104,27 @@ class TestAdminExpansion(unittest.TestCase):
         r = self.client.get('/api/admin/users/999999/activity')
         self.assertEqual(r.status_code, 404)
 
+    def test_backend_logs_requires_admin(self):
+        self._login(self.regular)
+        r = self.client.get('/api/admin/logs')
+        self.assertEqual(r.status_code, 403)
+
+    def test_backend_logs_endpoint(self):
+        self._login(self.admin)
+        r = self.client.get('/api/admin/logs?tail=50&search=PAYMENT')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertIn('lines', data)
+        self.assertIn('log_file', data)
+        self.assertIsInstance(data['lines'], list)
+
+    def test_backend_logs_clear(self):
+        self._login(self.admin)
+        r = self.client.post('/api/admin/logs/clear')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data.get('cleared'))
+
     def test_wallet_adjust_credits_and_audits(self):
         self._login(self.admin)
         r = self.client.post(f'/api/admin/wallets/{self.regular.id}/adjust', json={

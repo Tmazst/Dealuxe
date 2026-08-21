@@ -22,6 +22,8 @@ from admin.service import (
     test_bots_enabled,
     update_user,
     user_activity,
+    read_backend_logs,
+    clear_backend_logs,
 )
 from database import User
 
@@ -174,6 +176,25 @@ def complete_tournament_route(tournament_id):
 @admin_required
 def cancel_tournament_route(tournament_id):
     return jsonify(cancel_tournament(tournament_id, session['user_id']))
+
+
+@admin_bp.route('/logs', methods=['GET'])
+@admin_required
+def backend_logs():
+    """Tail of the backend print log (optional ?tail=N and ?search=...)."""
+    try:
+        tail = int(request.args.get('tail', 200))
+    except (TypeError, ValueError):
+        tail = 200
+    search = (request.args.get('search') or '').strip() or None
+    return jsonify(read_backend_logs(tail=tail, search=search))
+
+
+@admin_bp.route('/logs/clear', methods=['POST'])
+@admin_required
+def clear_backend_logs_route():
+    """Truncate the backend print log file."""
+    return jsonify(clear_backend_logs())
 
 
 @admin_bp.route('/audit-logs', methods=['GET'])
