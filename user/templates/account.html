@@ -176,7 +176,7 @@
                     <div class="form-group">
                         <label class="form-label">{{ profile_form.phone.label.text }}</label>
                         {{ profile_form.phone(class="form-control", placeholder="e.g. +268 76 000 000 (mobile money)") }}
-                        <div style="font-size:.75rem; color: var(--muted); margin-top:4px;">Required for payments and prize payouts via MojaPOS.</div>
+                        <div style="font-size:.75rem; color: var(--muted); margin-top:4px;">{% if config.PILOT_MODE %}Identity verification is not required for the current promotional-credit pilot. No cash payout is offered for ordinary pilot tournaments.{% else %}Required for payments and prize payouts via MojaPOS.{% endif %}</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">{{ profile_form.country.label.text }}</label>

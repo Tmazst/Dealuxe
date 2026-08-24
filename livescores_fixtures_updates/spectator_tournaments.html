@@ -39,6 +39,7 @@
     <script>
       const searchInput = document.getElementById('searchInput');
       const list = document.getElementById('tournament-list');
+      const pilotMode = {{ config.PILOT_MODE|tojson }};
       const empty = document.getElementById('empty-state');
 
       async function loadTournaments() {
@@ -65,9 +66,9 @@
               <div class="meta">
                 Code: ${t.tournament_code}<br>
                 Type: ${t.tournament_type}<br>
-                Entry fee: ${t.entry_fee}<br>
+                ${pilotMode ? `Promotional entry: E${t.entry_fee} credit` : `Entry fee: ${t.entry_fee}`}<br>
                 Players: ${t.current_player_count}/${t.max_players}<br>
-                Prize pool: ${t.prize_pool_amount}
+                ${pilotMode ? 'Pilot reward: Position 1 Cup qualification' : `Prize pool: ${t.prize_pool_amount}`}
               </div>
               <button onclick="location.href='/spectators/tournaments/${t.id}'">View Fixtures</button>
               <button class="secondary" onclick="location.href='/spectators/tournaments/${t.id}/bracket'">View Bracket</button>

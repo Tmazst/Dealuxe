@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Join uMshova Deluxe tournaments, compete in live matches, and claim the prize pool.">
+    <meta name="description" content="{% if config.PILOT_MODE %}Practice, learn and qualify through uMshova Deluxe pilot tournaments.{% else %}Join uMshova Deluxe tournaments, compete in live matches, and claim the prize pool.{% endif %}">
     <title>uMshova Deluxe | Tournament Arena</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -155,15 +155,34 @@
         <section class="hero" aria-labelledby="hero-title">
             <div>
                 <div class="eyebrow"><i class="fa-solid fa-circle"></i> Tournament arena is open</div>
+                {% if config.PILOT_MODE %}
+                <h1 id="hero-title">Practice. Learn. <span>Qualify.</span></h1>
+                <p class="hero-copy">Build your tournament skills in live knockout brackets. Placements are recorded, and Position 1 earns qualification for the uMshova Cup.</p>
+                {% else %}
                 <h1 id="hero-title">4 Ways to Win Your <span>Game</span></h1>
                 <p class="hero-copy">Enter a uMshova Deluxe knockout tournament. Win positions 1, 2 & 3. Mind Games Challenges. We keep money flowing to every hand.</p>
+                {% endif %}
                 <div class="hero-actions">
                     <a class="button button-primary" href="#tournaments"><i class="fa-solid fa-trophy"></i> Join a tournament</a>
                     <a class="button button-secondary" href="#how-to-play"><i class="fa-regular fa-circle-play"></i> Learn the game</a>
                 </div>
-                <p class="hero-note"><i class="fa-solid fa-shield-halved"></i> E10.00 entry fee. Live knockout tournament brackets. Winners prices are paid instantly.</p>
+                {% if config.PILOT_MODE %}
+                <p class="hero-note"><i class="fa-solid fa-shield-halved"></i> Entry uses E10 non-withdrawable promotional credit. Ordinary pilot brackets do not award cash prizes.</p>
+                {% else %}
+                <p class="hero-note"><i class="fa-solid fa-shield-halved"></i> E10.00 entry fee. Live knockout tournament brackets. Winners prizes are paid instantly.</p>
+                {% endif %}
             </div>
-            <aside class="prize-board" aria-label="Tournament prize breakdown">
+            <aside class="prize-board" aria-label="{% if config.PILOT_MODE %}Pilot qualification path{% else %}Tournament prize breakdown{% endif %}">
+                {% if config.PILOT_MODE %}
+                <div class="board-top"><span class="board-title">Your pilot path</span><span class="live-pill"><i class="fa-solid fa-circle"></i> LIVE GAMES</span></div>
+                <img src="{{ url_for('static', filename='images/3_cards.png') }}" alt="uMshova Deluxe tournament arena" style="width: 100%; max-width: 70px; height:auto; ">
+                <div class="prize-total"><span>Play to</span><strong>QUALIFY</strong><small>for the uMshova Cup</small></div>
+                <div class="prize-ladder">
+                    <div class="ladder-row"><i class="fa-solid fa-chess-knight"></i><span>Practice</span><strong>Learn the bracket</strong></div>
+                    <div class="ladder-row"><i class="fa-solid fa-ranking-star"></i><span>Place</span><strong>Results recorded</strong></div>
+                    <div class="ladder-row"><i class="fa-solid fa-trophy"></i><span>Position 1</span><strong>Cup qualification</strong></div>
+                </div>
+                {% else %}
                 <div class="board-top"><span class="board-title">Prize pool breakdown</span><span class="live-pill"><i class="fa-solid fa-circle"></i> LIVE GAMES</span></div>
                 <img src="{{ url_for('static', filename='images/3_cards.png') }}" alt="uMshova Deluxe tournament arena" style="width: 100%; max-width: 70px; height:auto; ">
                 <div class="prize-total"><span>Win up to</span><strong>E80.00</strong><small>per tournament</small></div>
@@ -172,18 +191,19 @@
                     <div class="ladder-row"><img class="tournament_badge" src="/static/images/premium.png" alt="badge"><span>Premium - 8 Players</span><strong>E40</strong></div>
                     <div class="ladder-row"><img class="tournament_badge" src="/static/images/standard.png" alt="badge"><span>Standard - 4 Players</span><strong>E20</strong></div>
                 </div>
+                {% endif %}
             </aside>
         </section>
 
         <section class="prize-strip" aria-label="Tournament highlights">
-            <article><i class="fa-solid fa-ticket"></i><div><span>Entry</span><strong>E10 per player</strong></div></article>
+            <article><i class="fa-solid fa-ticket"></i><div><span>Entry</span><strong>{% if config.PILOT_MODE %}E10 promotional credit{% else %}E10 per player{% endif %}</strong></div></article>
             <article><i class="fa-solid fa-users"></i><div><span>Formats</span><strong>4, 8 &amp; 16-player brackets</strong></div></article>
-            <article><i class="fa-solid fa-ranking-star"></i><div><span>Reward</span><strong>Live results and prize placements</strong></div></article>
+            <article><i class="fa-solid fa-ranking-star"></i><div><span>Reward</span><strong>{% if config.PILOT_MODE %}Placement progress and Cup qualification{% else %}Live results and prize placements{% endif %}</strong></div></article>
         </section>
 
         <section class="section" id="tournaments" aria-labelledby="tournaments-title">
             <div class="section-head">
-                <div><div class="eyebrow"><i class="fa-solid fa-circle"></i> Choose your table</div><h2 id="tournaments-title">Tournament board</h2><p>Pick an open bracket, reserve your seat and play for the pool.</p></div>
+                <div><div class="eyebrow"><i class="fa-solid fa-circle"></i> Choose your table</div><h2 id="tournaments-title">Tournament board</h2><p>{% if config.PILOT_MODE %}Pick an open bracket, use promotional credit and play to qualify.{% else %}Pick an open bracket, reserve your seat and play for the pool.{% endif %}</p></div>
                 <div class="filters" aria-label="Tournament filters">
                     <button class="filter active" type="button" data-filter="all">All</button>
                     <button class="filter" type="button" data-filter="open">Open</button>
@@ -192,17 +212,17 @@
                 </div>
             </div>
             <div class="tournaments-grid" id="tournaments-grid" aria-live="polite">
-                <div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><h3>Loading the tournament board</h3><p>Finding the latest brackets and prize pools.</p></div>
+                <div class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><h3>Loading the tournament board</h3><p>{% if config.PILOT_MODE %}Finding the latest pilot brackets and qualification results.{% else %}Finding the latest brackets and prize pools.{% endif %}</p></div>
             </div>
         </section>
 
         <section class="how-to-play" id="how-to-play" aria-labelledby="how-title">
             <div class="how-grid">
-                <div class="how-copy"><div class="eyebrow"><i class="fa-solid fa-book-open"></i> New to the table?</div><h2 id="how-title">Three moves to your first tournament.</h2><p>uMshova Deluxe rewards thoughtful play. Start with a smaller bracket, learn the rhythm of a live match, then come back for larger prize pools.</p><a class="button button-secondary" href="/lobby" style="margin-top:22px"><i class="fa-solid fa-gamepad"></i> Explore versus play</a></div>
+                <div class="how-copy"><div class="eyebrow"><i class="fa-solid fa-book-open"></i> New to the table?</div><h2 id="how-title">Three moves to your first tournament.</h2><p>{% if config.PILOT_MODE %}Start with a smaller bracket, learn the rhythm of a live match and work toward Position 1 qualification.{% else %}uMshova Deluxe rewards thoughtful play. Start with a smaller bracket, learn the rhythm of a live match, then come back for larger prize pools.{% endif %}</p><a class="button button-secondary" href="/lobby" style="margin-top:22px"><i class="fa-solid fa-gamepad"></i> Explore versus play</a></div>
                 <div class="steps">
-                    <article class="step"><i class="fa-solid fa-magnifying-glass"></i><span>01</span><strong>Choose a bracket</strong><p>Compare entry fees, seats and prize pools.</p></article>
+                    <article class="step"><i class="fa-solid fa-magnifying-glass"></i><span>01</span><strong>Choose a bracket</strong><p>{% if config.PILOT_MODE %}Compare bracket sizes and available seats.{% else %}Compare entry fees, seats and prize pools.{% endif %}</p></article>
                     <article class="step"><i class="fa-solid fa-chess-knight"></i><span>02</span><strong>Play your match</strong><p>Win your round to move through the bracket.</p></article>
-                    <article class="step"><i class="fa-solid fa-trophy"></i><span>03</span><strong>Claim your place</strong><p>Finish on the podium to earn your share.</p></article>
+                    <article class="step"><i class="fa-solid fa-trophy"></i><span>03</span><strong>Claim your place</strong><p>{% if config.PILOT_MODE %}Finish Position 1 to qualify for the uMshova Cup.{% else %}Finish on the podium to earn your share.{% endif %}</p></article>
                 </div>
             </div>
         </section>
@@ -212,22 +232,22 @@
                 <div class="modal-head">
                     <div>
                         <h3 id="createModalTitle"><i class="fa-solid fa-trophy" style="color:var(--gold); margin-right:8px;"></i>Create a tournament</h3>
-                        <p>Choose a bracket size and pay the E10.00 entry fee to reserve your seat.</p>
+                        <p>{% if config.PILOT_MODE %}Choose a bracket size and use E10 promotional credit to reserve your seat.{% else %}Choose a bracket size and pay the E10.00 entry fee to reserve your seat.{% endif %}</p>
                     </div>
                     <button class="modal-close" type="button" id="createModalClose" aria-label="Close">&times;</button>
                 </div>
                 <div class="type-grid" id="typeGrid">
                     <button class="type-option selected" type="button" data-type="standard" data-max="4">
                         <img src="/static/images/standard.png" alt="Standard">
-                        <strong>Standard</strong><small>4 players &middot; E20 top prize</small>
+                        <strong>Standard</strong><small>4 players &middot; {% if config.PILOT_MODE %}Position 1 qualifies{% else %}E20 top prize{% endif %}</small>
                     </button>
                     <button class="type-option" type="button" data-type="premium" data-max="8">
                         <img src="/static/images/premium.png" alt="Premium">
-                        <strong>Premium</strong><small>8 players &middot; E40 top prize</small>
+                        <strong>Premium</strong><small>8 players &middot; {% if config.PILOT_MODE %}Position 1 qualifies{% else %}E40 top prize{% endif %}</small>
                     </button>
                     <button class="type-option" type="button" data-type="deluxe" data-max="16">
                         <img src="/static/images/deluxe.png" alt="Deluxe">
-                        <strong>Deluxe</strong><small>16 players &middot; E80 top prize</small>
+                        <strong>Deluxe</strong><small>16 players &middot; {% if config.PILOT_MODE %}Position 1 qualifies{% else %}E80 top prize{% endif %}</small>
                     </button>
                 </div>
                 <div class="form-field">
@@ -267,7 +287,7 @@
                 </div>
                 <div class="modal-actions">
                     <button class="button button-secondary" type="button" id="createCancelBtn">Cancel</button>
-                    <button class="button button-primary" type="button" id="createSubmitBtn" style="background: linear-gradient(135deg, rgb(216, 8, 8), #b91c1c);"><i class="fa-solid fa-bolt"></i> Create &amp; pay E10.00</button>
+                    <button class="button button-primary" type="button" id="createSubmitBtn" style="background: linear-gradient(135deg, rgb(216, 8, 8), #b91c1c);"><i class="fa-solid fa-bolt"></i> {% if config.PILOT_MODE %}Create with E10 credit{% else %}Create &amp; pay E10.00{% endif %}</button>
                 </div>
             </div>
         </div>
@@ -276,6 +296,7 @@
     <script src="/static/js/socket.io.min.js"></script>
     <script>
         const socket = io({ transports: {{ config.SOCKET_TRANSPORTS|tojson }} });
+        const pilotMode = {{ config.PILOT_MODE|tojson }};
         let currentFilter = 'all';
         let tournamentsData = [];
         const grid = document.getElementById('tournaments-grid');
@@ -306,6 +327,7 @@
                 return;
             }
             grid.innerHTML = tournamentsData.map((tournament) => {
+                const cashPrizesEnabled = !pilotMode && tournament.cash_prizes_enabled !== false;
                 const prizePool = TOP_PRIZE_BY_TYPE[tournament.type] ?? (amount(tournament.prize_pool) * 0.5);
                 const current = amount(tournament.current_players);
                 const maximum = Math.max(amount(tournament.max_players), 1);
@@ -317,7 +339,8 @@
                 const podiumHtml = podium && podium.length ? `<div class="card-podium">${[1, 2, 3].map((p) => {
                     const entry = podium.find((e) => Number(e.placement) === p) || {};
                     const medal = p === 1 ? '🥇' : p === 2 ? '🥈' : '🥉';
-                    return `<div class="podium-row podium-${p}"><span class="podium-medal">${medal}</span><span class="podium-name">${escapeHtml(entry.username || '—')}</span><strong class="podium-prize">E${amount(entry.amount).toFixed(2)}</strong></div>`;
+                    const resultLabel = cashPrizesEnabled ? `E${amount(entry.amount).toFixed(2)}` : (p === 1 ? 'Cup qualifier' : `Position ${p}`);
+                    return `<div class="podium-row podium-${p}"><span class="podium-medal">${medal}</span><span class="podium-name">${escapeHtml(entry.username || '—')}</span><strong class="podium-prize">${resultLabel}</strong></div>`;
                 }).join('')}</div>` : null;
                 const badge =tournament.tournament_type === "standard"
                         ? "standard"
@@ -330,7 +353,9 @@
                 const resultBody = isComplete
                     ? (podiumHtml || '<div class="card-prize completed-note"><span>Tournament finished</span><strong>🎊</strong></div>')
                         + '<div class="slots completed-note"><span>🔒 No new joinings — bracket closed</span></div>'
-                    : `<div class="card-prize"><span>Win</span><strong>E${prizePool.toFixed(2)}</strong></div>`
+                    : (cashPrizesEnabled
+                        ? `<div class="card-prize"><span>Win</span><strong>E${prizePool.toFixed(2)}</strong></div>`
+                        : '<div class="card-prize"><span>Pilot goal</span><strong>QUALIFY</strong></div>')
                         + `<div class="slots"><span><i class="fa-solid fa-users"></i> <strong>${current}</strong> Currently joined</span><span>${Math.max(maximum - current, 0)} left</span></div>`
                         + `<div class="progress"><span style="width:${progress}%"></span></div>`;
                 return `<article class="tournament-card">
@@ -340,7 +365,7 @@
                     <div class="card-meta"><span class="type-badge ${escapeHtml(tournament.type)}">${escapeHtml(labelForType(tournament.type))}</span><span class="status ${escapeHtml(tournament.status)}">${escapeHtml(labelForStatus(tournament.status))}</span></div>
                     <h3>${escapeHtml(tournament.name)}</h3><p class="creator"><i class="fa-solid fa-user"></i>Hosted by ${escapeHtml(tournament.creator || 'uMshova')}</p>
                     ${resultBody}
-                    <div class="card-actions">${canJoin ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})"><i class="fa-solid fa-bolt"></i> Join for E${amount(tournament.entry_fee).toFixed(2)}</button>` : `<button class="button button-primary" type="button" onclick="viewBracket(${Number(tournament.id)})"><i class="fa-solid ${isComplete ? 'fa-trophy' : 'fa-gamepad'}"></i> ${isComplete ? 'View results' : 'Go to game'}</button>`}<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-arrow-right"></i> Details</button></div>
+                    <div class="card-actions">${canJoin ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})"><i class="fa-solid fa-bolt"></i> ${pilotMode ? `Join with E${amount(tournament.entry_fee).toFixed(2)} credit` : `Join for E${amount(tournament.entry_fee).toFixed(2)}`}</button>` : `<button class="button button-primary" type="button" onclick="viewBracket(${Number(tournament.id)})"><i class="fa-solid ${isComplete ? 'fa-trophy' : 'fa-gamepad'}"></i> ${isComplete ? 'View results' : 'Go to game'}</button>`}<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-arrow-right"></i> Details</button></div>
                 </article>`;
             }).join('');
         }

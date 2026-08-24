@@ -209,6 +209,17 @@ def _serialize_tournament(tournament):
     }
 
 
+def _serialize_tournament_detail(tournament):
+    """Add economy presentation metadata to the detailed tournament contract."""
+    detail = tournament.to_dict()
+    promotional_entry = _is_promotional_tournament(tournament)
+    detail.update({
+        'entry_balance_type': 'promotional' if promotional_entry else 'real',
+        'cash_prizes_enabled': not promotional_entry,
+    })
+    return detail
+
+
 def _emit_tournament_updated(tournament):
     """Broadcast a public tournament summary when the real-time layer exists."""
     if _socketio is not None:
@@ -1419,7 +1430,7 @@ def tournament_overview(tournament_id):
     recent_results = [m for m in matches if m.status == 'completed']
 
     return jsonify({
-        'tournament': tournament.to_dict(),
+        'tournament': _serialize_tournament_detail(tournament),
         'participants': [_serialize_participant(p) for p in participants],
         'rounds': _build_rounds(tournament),
         'matches': [_serialize_match(m) for m in matches],
@@ -1873,6 +1884,6 @@ def get_tournament(tournament_id):
     tournament = Tournament.query.get_or_404(tournament_id)
     participants = TournamentParticipant.query.filter_by(tournament_id=tournament.id).all()
     return jsonify({
-        'tournament': tournament.to_dict(),
+        'tournament': _serialize_tournament_detail(tournament),
         'participants': [_serialize_participant(p) for p in participants],
     })

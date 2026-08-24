@@ -104,6 +104,36 @@ class TestPilotTournamentEconomy(unittest.TestCase):
         self.assertEqual(transaction.balance_type, 'promotional')
         self.assertFalse(response.get_json()['tournament']['cash_prizes_enabled'])
 
+    def test_public_pilot_pages_use_credit_and_qualification_messaging(self):
+        tournament_id = self._create().get_json()['tournament']['id']
+
+        arena = self.client.get('/tournaments').get_data(as_text=True)
+        waiting_room = self.client.get(f'/tournaments/{tournament_id}').get_data(as_text=True)
+        bracket = self.client.get(f'/tournaments/{tournament_id}/bracket').get_data(as_text=True)
+        spectator = self.client.get(
+            f'/spectators/tournaments/{tournament_id}'
+        ).get_data(as_text=True)
+
+        self.assertIn('Practice. Learn.', arena)
+        self.assertIn('E10 promotional credit', arena)
+        self.assertIn('Create with E10 credit', arena)
+        self.assertNotIn('Prize pool breakdown', arena)
+        self.assertNotIn('Create &amp; pay E10.00', arena)
+        self.assertIn('Cup qualifier', waiting_room)
+        self.assertNotIn('Total Prize Pool', waiting_room)
+        self.assertIn('Cup qualifier', bracket)
+        self.assertIn('Pilot reward', spectator)
+
+    def test_tournament_detail_api_exposes_pilot_presentation_contract(self):
+        tournament_id = self._create().get_json()['tournament']['id']
+
+        response = self.client.get(f'/api/tournaments/{tournament_id}/overview')
+        tournament = response.get_json()['tournament']
+
+        self.assertEqual(tournament['entry_balance_type'], 'promotional')
+        self.assertFalse(tournament['cash_prizes_enabled'])
+        self.assertEqual(tournament['prize_pool_amount'], 0.0)
+
     def test_duplicate_join_does_not_charge_twice(self):
         response = self._create()
         tournament_id = response.get_json()['tournament']['id']

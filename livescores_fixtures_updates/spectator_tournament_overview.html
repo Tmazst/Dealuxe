@@ -54,8 +54,8 @@
               <span id="player-count">–</span>
             </div>
             <div class="stat">
-              <strong>Prize pool</strong>
-              <span id="prize-pool">–</span>
+              <strong>{% if config.PILOT_MODE %}Pilot reward{% else %}Prize pool{% endif %}</strong>
+              <span id="prize-pool">{% if config.PILOT_MODE %}Cup qualification{% else %}–{% endif %}</span>
             </div>
             <div class="stat">
               <strong>Matches</strong>
@@ -93,6 +93,7 @@
     </div>
     <script>
       const tournamentId = Number(window.location.pathname.split('/').filter(Boolean).pop());
+      const pilotMode = {{ config.PILOT_MODE|tojson }};
       const bracketLink = document.getElementById('bracket-link');
       bracketLink.href = `/spectators/tournaments/${tournamentId}/bracket`;
 
@@ -117,7 +118,10 @@
         document.getElementById('tournament-name').textContent = tournament.tournament_name;
         document.getElementById('tournament-meta').textContent = `Type: ${tournament.tournament_type} • Created: ${new Date(tournament.created_at).toLocaleDateString()}`;
         document.getElementById('player-count').textContent = data.stats.participant_count;
-        document.getElementById('prize-pool').textContent = tournament.prize_pool_amount;
+        document.getElementById('prize-pool').textContent =
+          (pilotMode || tournament.cash_prizes_enabled === false)
+            ? 'Position 1 qualifies for the uMshova Cup'
+            : tournament.prize_pool_amount;
         document.getElementById('match-summary').textContent = `${data.stats.completed_matches}/${data.stats.total_matches} completed`;
         const statusChip = document.getElementById('status-chip');
         statusChip.textContent = tournament.status.replace('_', ' ');

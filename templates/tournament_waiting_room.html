@@ -565,33 +565,33 @@
                         <div class="info-box-value" id="tournament-type">STANDARD</div>
                     </div>
                     <div class="info-box">
-                        <div class="info-box-label">Entry Fee</div>
-                        <div class="info-box-value">E10</div>
+                        <div class="info-box-label">{% if config.PILOT_MODE %}Promotional Entry{% else %}Entry Fee{% endif %}</div>
+                        <div class="info-box-value">{% if config.PILOT_MODE %}E10 credit{% else %}E10{% endif %}</div>
                     </div>
                     <div class="info-box">
                         <div class="info-box-label">Max Players</div>
                         <div class="info-box-value" id="max-players">4</div>
                     </div>
                     <div class="info-box">
-                        <div class="info-box-label">Total Prize Pool</div>
-                        <div class="info-box-value" id="prize-pool">E40</div>
+                        <div class="info-box-label">{% if config.PILOT_MODE %}Pilot Goal{% else %}Total Prize Pool{% endif %}</div>
+                        <div class="info-box-value" id="prize-pool">{% if config.PILOT_MODE %}QUALIFY{% else %}E40{% endif %}</div>
                     </div>
                 </div>
 
                 <!-- Prize Distribution -->
                 <div class="prize-table">
-                    <h4>💰 Prize Distribution</h4>
+                    <h4>{% if config.PILOT_MODE %}🏆 Placement &amp; Qualification{% else %}💰 Prize Distribution{% endif %}</h4>
                     <div class="prize-item">
                         <span><span class="prize-medal">🥇</span> 1st Place</span>
-                        <span class="prize-amount" id="prize-1st">E20</span>
+                        <span class="prize-amount" id="prize-1st">{% if config.PILOT_MODE %}Cup qualifier{% else %}E20{% endif %}</span>
                     </div>
                     <div class="prize-item">
                         <span><span class="prize-medal">🥈</span> 2nd Place</span>
-                        <span class="prize-amount" id="prize-2nd">E5</span>
+                        <span class="prize-amount" id="prize-2nd">{% if config.PILOT_MODE %}Placement recorded{% else %}E5{% endif %}</span>
                     </div>
                     <div class="prize-item">
                         <span><span class="prize-medal">🥉</span> 3rd Place</span>
-                        <span class="prize-amount" id="prize-3rd">E2.40</span>
+                        <span class="prize-amount" id="prize-3rd">{% if config.PILOT_MODE %}Placement recorded{% else %}E2.40{% endif %}</span>
                     </div>
                 </div>
             </div>
@@ -656,6 +656,7 @@
 
         let tournamentCode = '{{ tournament_code }}';
         let isAdmin = {{ is_admin|lower|default('false') }};
+        const pilotMode = {{ config.PILOT_MODE|tojson }};
         let countdownInterval = null;
 
         socket.on('connect', () => {
@@ -714,15 +715,20 @@
             document.getElementById('tournament-type').textContent = (data.tournament_type || 'STANDARD').toUpperCase();
             document.getElementById('current-players').textContent = data.current_players || 1;
             document.getElementById('max-players-count').textContent = data.max_players || 4;
-            // Prizes are based on the chosen bracket type (same contract as the
-            // arena cards): total pool = max seats x E10; 1st = 50%, 2nd = 12.5%,
-            // 3rd = 6% of that FULL pool - not the live (partially-filled) pool.
-            const FULL_POT_BY_TYPE = { standard: 40, premium: 80, deluxe: 160 };
-            const fullPot = FULL_POT_BY_TYPE[data.tournament_type] ?? (data.prize_pool || 40);
-            document.getElementById('prize-pool').textContent = 'E' + fullPot.toFixed(2);
-            document.getElementById('prize-1st').textContent = 'E' + (fullPot * 0.5).toFixed(2);
-            document.getElementById('prize-2nd').textContent = 'E' + (fullPot * 0.125).toFixed(2);
-            document.getElementById('prize-3rd').textContent = 'E' + (fullPot * 0.06).toFixed(2);
+            if (pilotMode || data.cash_prizes_enabled === false) {
+                document.getElementById('prize-pool').textContent = 'QUALIFY';
+                document.getElementById('prize-1st').textContent = 'Cup qualifier';
+                document.getElementById('prize-2nd').textContent = 'Placement recorded';
+                document.getElementById('prize-3rd').textContent = 'Placement recorded';
+            } else {
+                // Version 2 full-bracket prize presentation.
+                const FULL_POT_BY_TYPE = { standard: 40, premium: 80, deluxe: 160 };
+                const fullPot = FULL_POT_BY_TYPE[data.tournament_type] ?? (data.prize_pool || 40);
+                document.getElementById('prize-pool').textContent = 'E' + fullPot.toFixed(2);
+                document.getElementById('prize-1st').textContent = 'E' + (fullPot * 0.5).toFixed(2);
+                document.getElementById('prize-2nd').textContent = 'E' + (fullPot * 0.125).toFixed(2);
+                document.getElementById('prize-3rd').textContent = 'E' + (fullPot * 0.06).toFixed(2);
+            }
 
             // Update lock controls based on lock mode + consensus votes (D3)
             const lockInfo = data.lock || {};

@@ -593,19 +593,19 @@
                     <div class="medal-icon">🥇</div>
                     <div class="medal-placement">1st Place</div>
                     <div class="medal-player" id="winner-name">---</div>
-                    <div class="medal-prize" id="winner-prize">E0</div>
+                    <div class="medal-prize" id="winner-prize">{% if config.PILOT_MODE %}Cup qualifier{% else %}E0{% endif %}</div>
                 </div>
                 <div class="medal-card">
                     <div class="medal-icon">🥈</div>
                     <div class="medal-placement">2nd Place</div>
                     <div class="medal-player" id="runner-up-name">---</div>
-                    <div class="medal-prize" id="runner-up-prize">E0</div>
+                    <div class="medal-prize" id="runner-up-prize">{% if config.PILOT_MODE %}Placement recorded{% else %}E0{% endif %}</div>
                 </div>
                 <div class="medal-card">
                     <div class="medal-icon">🥉</div>
                     <div class="medal-placement">3rd Place</div>
                     <div class="medal-player" id="third-place-name">---</div>
-                    <div class="medal-prize" id="third-place-prize">E0</div>
+                    <div class="medal-prize" id="third-place-prize">{% if config.PILOT_MODE %}Placement recorded{% else %}E0{% endif %}</div>
                 </div>
             </div>
         </div>
@@ -627,6 +627,7 @@
         const socket = io({
             transports: {{ config.SOCKET_TRANSPORTS|tojson }}
         });
+        const pilotMode = {{ config.PILOT_MODE|tojson }};
 
         let tournamentData = {};
         const tournamentCode = '{{ tournament_code }}';
@@ -888,9 +889,11 @@
             const matchByBracket = new Map(matches.map((match) => [match.bracket_id, match]));
             const prizes = tournamentData.prizes || [];
             const prizeByUser = {};
-            prizes.forEach((p) => {
-                if (p && p.user_id != null && Number(p.amount) > 0) prizeByUser[p.user_id] = Number(p.amount);
-            });
+            if (!pilotMode && tournament.cash_prizes_enabled !== false) {
+                prizes.forEach((p) => {
+                    if (p && p.user_id != null && Number(p.amount) > 0) prizeByUser[p.user_id] = Number(p.amount);
+                });
+            }
             const statusLabel = (status) => ({
                 scheduled: 'Ready to play', in_progress: 'Live now', completed: 'Completed', pending: 'Waiting'
             }[status] || status);
@@ -1004,7 +1007,11 @@
                 const nameEl = document.getElementById(nameId);
                 const prizeEl = document.getElementById(prizeId);
                 if (nameEl) nameEl.textContent = entry.username || '—';
-                if (prizeEl) prizeEl.textContent = `E${Number(entry.amount || 0).toFixed(2)}`;
+                if (prizeEl) {
+                    prizeEl.textContent = (pilotMode || t.cash_prizes_enabled === false)
+                        ? (placement === 1 ? 'Cup qualifier' : 'Placement recorded')
+                        : `E${Number(entry.amount || 0).toFixed(2)}`;
+                }
             };
             fill('winner-name', 'winner-prize', 1);
             fill('runner-up-name', 'runner-up-prize', 2);
