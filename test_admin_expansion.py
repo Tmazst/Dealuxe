@@ -1,4 +1,5 @@
 import os
+import time
 import unittest
 
 os.environ['ENV'] = 'development'
@@ -9,12 +10,16 @@ from database import (
     User,
     Player,
     Tournament,
+    TournamentParticipant,
     Transaction,
     TX_WALLET_TOPUP,
     AdminAuditLog,
     Dispute,
     WalletAdjustment,
     CupQualification,
+    TournamentBracket,
+    TournamentMatch,
+    TournamentPrizePool,
     create_tournament_record,
     add_tournament_participant,
     get_player_by_user_id,
@@ -26,6 +31,8 @@ class TestAdminExpansion(unittest.TestCase):
         app.config['TESTING'] = True
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         app.config['MOJAPOS_MOCK_MODE'] = 'true'
+        app.config['CUP_ENABLED'] = False
+        app.config['CUP_CASH_PAYOUTS_ENABLED'] = False
         self.app_context = app.app_context()
         self.app_context.push()
         db.drop_all()
@@ -62,6 +69,8 @@ class TestAdminExpansion(unittest.TestCase):
         r = self.client.get('/api/admin/audit-logs')
         self.assertEqual(r.status_code, 403)
         r = self.client.get('/api/admin/cup-qualifications')
+        self.assertEqual(r.status_code, 403)
+        r = self.client.get('/api/admin/cup-tournaments/1/placements')
         self.assertEqual(r.status_code, 403)
 
     def _seed_cup_roster(self):
@@ -174,6 +183,264 @@ class TestAdminExpansion(unittest.TestCase):
         )
         self.assertEqual(revoke.status_code, 200)
         self.assertEqual(revoke.get_json()['qualification']['status'], 'revoked')
+
+    def _add_cup_qualifiers(self, count):
+        event_key = app.config['CUP_EVENT_KEY']
+        for index in range(count):
+            user = User(
+                username=f'cup_player_{index:02d}',
+                email=f'cup_player_{index:02d}@test.com',
+                password_hash='not-used',
+            )
+            db.session.add(user)
+            db.session.flush()
+            source = create_tournament_record(
+                creator_id=self.admin.id,
+                tournament_type='standard',
+                tournament_name=f'Cup Qualifier {index + 1}',
+                entry_fee=10.0,
+                max_players=4,
+            )
+            db.session.add(CupQualification(
+                source_tournament_id=source.id,
+                user_id=user.id,
+                season=app.config['CUP_SEASON'],
+                event_key=event_key,
+                status='checked_in' if index % 2 else 'qualified',
+                seat_key=f'{event_key}:{user.id}',
+            ))
+        db.session.commit()
+
+    def test_admin_creates_payout_free_64_player_cup_from_active_roster(self):
+        app.config['CUP_ENABLED'] = True
+        self._add_cup_qualifiers(64)
+        self._login(self.admin)
+
+        started_at = time.perf_counter()
+        response = self.client.post('/api/admin/cup-tournaments', json={
+            'tournament_name': '2026 Pilot Cup',
+        })
+        elapsed = time.perf_counter() - started_at
+        self.assertEqual(response.status_code, 201, response.get_json())
+        self.assertLess(elapsed, 5.0)
+        payload = response.get_json()['cup']
+        self.assertEqual(payload['players'], 64)
+        self.assertEqual(payload['bracket_slots'], 64)
+        self.assertFalse(payload['cash_prizes_enabled'])
+
+        cup = Tournament.query.get(payload['tournament_id'])
+        self.assertEqual(cup.tournament_type, 'cup')
+        self.assertEqual(cup.max_players, 64)
+        self.assertEqual(cup.current_player_count, 64)
+        self.assertEqual(cup.status, 'in_progress')
+        self.assertEqual(cup.entry_fee, 0.0)
+        self.assertEqual(cup.prize_pool_amount, 0.0)
+        participants = TournamentParticipant.query.filter_by(
+            tournament_id=cup.id
+        ).all()
+        self.assertEqual(len(participants), 64)
+        self.assertEqual(
+            {participant.payment_method for participant in participants},
+            {'cup_qualification'},
+        )
+
+        brackets = TournamentBracket.query.filter_by(tournament_id=cup.id).all()
+        self.assertEqual(len(brackets), 64)
+        round_one = [row for row in brackets if row.round_number == 1]
+        self.assertEqual(len(round_one), 32)
+        self.assertEqual({row.round_name for row in round_one}, {'Round of 64'})
+        self.assertEqual(
+            TournamentMatch.query.filter_by(tournament_id=cup.id).count(), 32
+        )
+        self.assertTrue(all(
+            row.prize_amount == 0.0
+            for row in TournamentPrizePool.query.filter_by(tournament_id=cup.id).all()
+        ))
+        self.assertIsNotNone(AdminAuditLog.query.filter_by(
+            action='cup_tournament.create', entity_id=cup.id
+        ).first())
+
+        duplicate = self.client.post('/api/admin/cup-tournaments', json={})
+        self.assertEqual(duplicate.status_code, 400)
+
+    def test_cup_creation_requires_feature_flag_and_exact_roster(self):
+        self._add_cup_qualifiers(63)
+        self._login(self.admin)
+
+        disabled = self.client.post('/api/admin/cup-tournaments', json={})
+        self.assertEqual(disabled.status_code, 400)
+        self.assertIn('CUP_ENABLED', disabled.get_json()['error'])
+
+        app.config['CUP_ENABLED'] = True
+        incomplete = self.client.post('/api/admin/cup-tournaments', json={})
+        self.assertEqual(incomplete.status_code, 400)
+        self.assertIn('exactly 64', incomplete.get_json()['error'])
+        self.assertEqual(Tournament.query.filter_by(tournament_type='cup').count(), 0)
+
+    def _seed_cup_placement_state(self):
+        app.config['CUP_ENABLED'] = True
+        self._add_cup_qualifiers(64)
+        self._login(self.admin)
+        created = self.client.post('/api/admin/cup-tournaments', json={})
+        self.assertEqual(created.status_code, 201, created.get_json())
+        cup_id = created.get_json()['cup']['tournament_id']
+        participants = TournamentParticipant.query.filter_by(
+            tournament_id=cup_id
+        ).order_by(TournamentParticipant.user_id.asc()).all()
+        quarter_finalists = participants[:8]
+        manual_candidates = participants[8:10]
+        for participant in manual_candidates:
+            participant.status = 'eliminated'
+
+        quarter_final_brackets = TournamentBracket.query.filter_by(
+            tournament_id=cup_id, round_name='Quarter-Final'
+        ).order_by(TournamentBracket.match_number.asc()).all()
+        losers = []
+        for index, bracket in enumerate(quarter_final_brackets):
+            winner = quarter_finalists[index * 2]
+            loser = quarter_finalists[index * 2 + 1]
+            bracket.player1_id = winner.user_id
+            bracket.player2_id = loser.user_id
+            bracket.winner_id = winner.user_id
+            bracket.status = 'completed'
+            winner.status = 'active'
+            loser.status = 'eliminated'
+            match = TournamentMatch(
+                tournament_id=cup_id,
+                bracket_id=bracket.id,
+                player1_id=winner.user_id,
+                player2_id=loser.user_id,
+                winner_id=winner.user_id,
+                loser_id=loser.user_id,
+                status='completed',
+                card_count=6,
+                bet_amount=0.0,
+            )
+            db.session.add(match)
+            db.session.flush()
+            bracket.match_id = match.id
+            losers.append(loser.user_id)
+        db.session.commit()
+        return cup_id, losers, [item.user_id for item in manual_candidates], quarter_finalists
+
+    def test_admin_orders_cup_positions_5_to_10_with_audit(self):
+        cup_id, losers, manual_candidates, quarter_finalists = (
+            self._seed_cup_placement_state()
+        )
+
+        placement_state = self.client.get(
+            f'/api/admin/cup-tournaments/{cup_id}/placements'
+        )
+        self.assertEqual(placement_state.status_code, 200)
+        self.assertTrue(placement_state.get_json()['quarter_finals_complete'])
+        self.assertEqual(
+            {item['user_id'] for item in placement_state.get_json()['eligible_5_8']},
+            set(losers),
+        )
+
+        invalid = self.client.patch(
+            f'/api/admin/cup-tournaments/{cup_id}/placements/5-8',
+            json={
+                'ordered_user_ids': losers[:3] + [quarter_finalists[0].user_id],
+                'reason': 'Invalid attempt',
+            },
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+        missing_reason = self.client.patch(
+            f'/api/admin/cup-tournaments/{cup_id}/placements/5-8',
+            json={'ordered_user_ids': losers},
+        )
+        self.assertEqual(missing_reason.status_code, 400)
+
+        ordered_losers = list(reversed(losers))
+        positions_5_8 = self.client.patch(
+            f'/api/admin/cup-tournaments/{cup_id}/placements/5-8',
+            json={
+                'ordered_user_ids': ordered_losers,
+                'reason': 'Approved Cup tie-break ordering',
+            },
+        )
+        self.assertEqual(positions_5_8.status_code, 200, positions_5_8.get_json())
+
+        invalid_manual = self.client.patch(
+            f'/api/admin/cup-tournaments/{cup_id}/placements/9-10',
+            json={
+                'ordered_user_ids': [manual_candidates[0], quarter_finalists[0].user_id],
+                'reason': 'Invalid quarter-finalist selection',
+            },
+        )
+        self.assertEqual(invalid_manual.status_code, 400)
+
+        positions_9_10 = self.client.patch(
+            f'/api/admin/cup-tournaments/{cup_id}/placements/9-10',
+            json={
+                'ordered_user_ids': manual_candidates,
+                'reason': 'Administrator wild-card placement decision',
+            },
+        )
+        self.assertEqual(positions_9_10.status_code, 200, positions_9_10.get_json())
+        assignments = positions_9_10.get_json()['assignments']
+        for placement, user_id in enumerate(ordered_losers, start=5):
+            self.assertEqual(assignments[str(placement)]['user_id'], user_id)
+        self.assertEqual(assignments['9']['user_id'], manual_candidates[0])
+        self.assertEqual(assignments['10']['user_id'], manual_candidates[1])
+
+        actions = {
+            log.action for log in AdminAuditLog.query.filter_by(
+                entity_type='tournament', entity_id=cup_id
+            ).all()
+        }
+        self.assertIn('cup_placement.order_5_8', actions)
+        self.assertIn('cup_placement.select_9_10', actions)
+
+    def test_cup_finalization_assigns_fourth_place_without_cash(self):
+        cup_id, _, _, quarter_finalists = self._seed_cup_placement_state()
+        cup = Tournament.query.get(cup_id)
+        cup.winner_id = quarter_finalists[0].user_id
+        cup.runner_up_id = quarter_finalists[2].user_id
+        cup.third_place_id = quarter_finalists[4].user_id
+        fourth_id = quarter_finalists[6].user_id
+        third_bracket = TournamentBracket.query.filter_by(
+            tournament_id=cup_id, round_name='Third-Place'
+        ).first()
+        third_match = TournamentMatch(
+            tournament_id=cup_id,
+            bracket_id=third_bracket.id,
+            player1_id=cup.third_place_id,
+            player2_id=fourth_id,
+            winner_id=cup.third_place_id,
+            loser_id=fourth_id,
+            status='completed',
+            card_count=6,
+            bet_amount=0.0,
+        )
+        db.session.add(third_match)
+        db.session.flush()
+        third_bracket.match_id = third_match.id
+        third_bracket.status = 'completed'
+
+        from controllers.tournament_controller import _finalize_tournament
+        _finalize_tournament(cup)
+        db.session.commit()
+
+        placements = {
+            participant.final_placement: participant.user_id
+            for participant in TournamentParticipant.query.filter_by(
+                tournament_id=cup_id
+            ).all()
+            if participant.final_placement is not None
+        }
+        self.assertEqual(placements[1], cup.winner_id)
+        self.assertEqual(placements[2], cup.runner_up_id)
+        self.assertEqual(placements[3], cup.third_place_id)
+        self.assertEqual(placements[4], fourth_id)
+        self.assertTrue(all(
+            participant.prize_awarded == 0.0
+            for participant in TournamentParticipant.query.filter_by(
+                tournament_id=cup_id
+            ).all()
+        ))
 
     def test_user_activity_requires_admin(self):
         self._login(self.regular)

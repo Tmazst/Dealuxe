@@ -630,7 +630,11 @@ class Tournament(db.Model):
     __tablename__ = 'tournaments'
     __table_args__ = (
         db.CheckConstraint('entry_fee >= 0', name='ck_tournaments_entry_fee_nonnegative'),
-        db.CheckConstraint('max_players IN (4, 8, 16)', name='ck_tournaments_max_players_allowed'),
+        db.CheckConstraint(
+            "(tournament_type = 'cup' AND max_players = 64) OR "
+            "(tournament_type != 'cup' AND max_players IN (4, 8, 16))",
+            name='ck_tournaments_max_players_allowed',
+        ),
         db.Index('idx_tournaments_status', 'status'),
         db.Index('idx_tournaments_tournament_type', 'tournament_type'),
         db.Index('idx_tournaments_creator_id', 'creator_id'),
@@ -639,7 +643,7 @@ class Tournament(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tournament_code = db.Column(db.String(20), unique=True, nullable=False, index=True)
     tournament_name = db.Column(db.String(255), nullable=False)
-    tournament_type = db.Column(db.String(20), nullable=False)  # standard, premium, deluxe
+    tournament_type = db.Column(db.String(20), nullable=False)  # standard, premium, deluxe, cup
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     entry_fee = db.Column(db.Float, nullable=False, default=10.0)
     prize_pool_amount = db.Column(db.Float, nullable=False, default=0.0)
@@ -1069,7 +1073,9 @@ def log_transaction(player_id, transaction_type, amount, balance_type, balance_b
 def create_tournament_record(creator_id, tournament_type, tournament_name=None, entry_fee=10.0, max_players=None, is_auto_lock=False, locked_player_count=None):
     """Create a basic tournament record and return it."""
     if max_players is None:
-        max_players = {'standard': 4, 'premium': 8, 'deluxe': 16}.get(tournament_type, 4)
+        max_players = {
+            'standard': 4, 'premium': 8, 'deluxe': 16, 'cup': 64,
+        }.get(tournament_type, 4)
 
     # A UUID-backed code avoids collisions when two tournaments are created in
     # the same second (common in tests, admin tools and future pilot traffic).

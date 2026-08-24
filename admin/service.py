@@ -567,6 +567,7 @@ def list_cup_qualifications(event_key=None, status=''):
     return {
         'event_key': event_key,
         'season': current_app.config.get('CUP_SEASON'),
+        'cup_enabled': bool(current_app.config.get('CUP_ENABLED', False)),
         'capacity': capacity,
         'active_seats': len(active_records),
         'remaining_seats': max(capacity - len(active_records), 0),
@@ -577,6 +578,291 @@ def list_cup_qualifications(event_key=None, status=''):
             for record in records
         ],
     }
+
+
+def create_cup_tournament(admin_user_id, tournament_name=None, event_key=None):
+    """Lock the approved 64-seat roster into one payout-free Cup bracket."""
+    if not current_app.config.get('CUP_ENABLED', False):
+        raise ValueError('Cup tournament creation is disabled by CUP_ENABLED')
+    if current_app.config.get('CUP_CASH_PAYOUTS_ENABLED', False):
+        raise ValueError('Cup cash payouts are not available in Version 3')
+
+    configured_event = (current_app.config.get('CUP_EVENT_KEY') or '').strip()
+    event_key = (event_key or configured_event).strip()
+    if not event_key or event_key != configured_event:
+        raise ValueError('Cup creation is limited to the configured pilot event')
+
+    capacity = int(current_app.config.get('CUP_CAPACITY', 64))
+    if capacity != 64:
+        raise ValueError('Version 3 Cup capacity must remain fixed at 64')
+    existing = Tournament.query.filter_by(tournament_type='cup').first()
+    if existing is not None:
+        raise ValueError('A Cup tournament has already been created for this pilot')
+
+    roster = CupQualification.query.filter(
+        CupQualification.event_key == event_key,
+        CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES),
+    ).order_by(CupQualification.qualified_at.asc(), CupQualification.id.asc()).all()
+    if len(roster) != capacity:
+        raise ValueError(
+            f'Cup requires exactly {capacity} approved active qualifiers; '
+            f'{len(roster)} are currently available'
+        )
+    if len({qualification.user_id for qualification in roster}) != capacity:
+        raise ValueError('Cup roster contains a duplicate active player')
+    if any(not qualification.seat_key for qualification in roster):
+        raise ValueError('Every approved Cup qualifier must hold an active seat')
+
+    tournament = create_tournament_record(
+        creator_id=admin_user_id,
+        tournament_type='cup',
+        tournament_name=(tournament_name or '').strip() or 'uMshova Cup',
+        entry_fee=0.0,
+        max_players=capacity,
+        is_auto_lock=True,
+        locked_player_count=capacity,
+    )
+    tournament.prize_pool_amount = 0.0
+    tournament.current_player_count = capacity
+    tournament.status = 'locked'
+    tournament.locked_at = datetime.utcnow()
+    tournament.notes = json.dumps({
+        'event_key': event_key,
+        'season': current_app.config.get('CUP_SEASON'),
+        'qualification_ids': [qualification.id for qualification in roster],
+        'cash_payouts_enabled': False,
+    })
+
+    for qualification in roster:
+        participant = add_tournament_participant(
+            tournament.id,
+            qualification.user_id,
+            payment_status='completed',
+            paid_amount=0.0,
+            payment_method='cup_qualification',
+        )
+        participant.payment_completed_at = datetime.utcnow()
+        participant.notes = f'Cup qualification #{qualification.id}'
+
+    log_admin_action(
+        admin_user_id,
+        'cup_tournament.create',
+        entity_type='tournament',
+        entity_id=tournament.id,
+        summary=f'Created 64-player Cup for {event_key}',
+        details=json.dumps({'qualification_ids': [item.id for item in roster]}),
+    )
+
+    # Bracket construction is shared with ordinary tournaments and commits the
+    # complete Cup, participant roster, audit entry and 64-match bracket.
+    from controllers.tournament_controller import _build_bracket
+    brackets = _build_bracket(tournament)
+    return {
+        'tournament_id': tournament.id,
+        'tournament_code': tournament.tournament_code,
+        'event_key': event_key,
+        'status': tournament.status,
+        'players': capacity,
+        'bracket_slots': len(brackets),
+        'cash_prizes_enabled': False,
+    }
+
+
+def _require_cup_tournament(tournament_id):
+    tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type != 'cup':
+        raise ValueError('Placement administration is available only for the Cup')
+    return tournament
+
+
+def _cup_quarter_final_context(tournament):
+    brackets = TournamentBracket.query.filter_by(
+        tournament_id=tournament.id, round_name='Quarter-Final'
+    ).order_by(TournamentBracket.match_number.asc()).all()
+    matches = []
+    for bracket in brackets:
+        match = TournamentMatch.query.filter_by(bracket_id=bracket.id).first()
+        if match is not None:
+            matches.append(match)
+    ready = (
+        len(brackets) == 4
+        and len(matches) == 4
+        and all(match.status == 'completed' and match.loser_id for match in matches)
+    )
+    quarter_finalists = {
+        user_id
+        for bracket in brackets
+        for user_id in (bracket.player1_id, bracket.player2_id)
+        if user_id is not None
+    }
+    losers = [match.loser_id for match in matches] if ready else []
+    return ready, quarter_finalists, losers
+
+
+def _cup_placement_player(participant):
+    return {
+        'user_id': participant.user_id,
+        'username': _username(participant.user_id),
+        'status': participant.status,
+        'placement': participant.final_placement,
+    }
+
+
+def get_cup_placements(tournament_id):
+    tournament = _require_cup_tournament(tournament_id)
+    ready, quarter_finalists, quarter_final_losers = _cup_quarter_final_context(
+        tournament
+    )
+    participants = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id
+    ).order_by(TournamentParticipant.user_id.asc()).all()
+    by_user = {participant.user_id: participant for participant in participants}
+    assignments = {
+        participant.final_placement: _cup_placement_player(participant)
+        for participant in participants
+        if participant.final_placement is not None
+        and 1 <= participant.final_placement <= 10
+    }
+    eligible_9_10 = [
+        _cup_placement_player(participant)
+        for participant in participants
+        if participant.status == 'eliminated'
+        and participant.user_id not in quarter_finalists
+        and (participant.final_placement is None or participant.final_placement in {9, 10})
+    ]
+    return {
+        'tournament_id': tournament.id,
+        'tournament_name': tournament.tournament_name,
+        'status': tournament.status,
+        'quarter_finals_complete': ready,
+        'eligible_5_8': [
+            _cup_placement_player(by_user[user_id])
+            for user_id in quarter_final_losers
+            if user_id in by_user
+        ],
+        'eligible_9_10': eligible_9_10,
+        'assignments': {
+            str(placement): player
+            for placement, player in sorted(assignments.items())
+        },
+    }
+
+
+def assign_cup_positions_5_to_8(
+    tournament_id, ordered_user_ids, admin_user_id, reason
+):
+    tournament = _require_cup_tournament(tournament_id)
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValueError('A placement-order reason is required')
+    try:
+        ordered_user_ids = [int(user_id) for user_id in ordered_user_ids]
+    except (TypeError, ValueError):
+        raise ValueError('Positions 5-8 require four valid player IDs')
+    if len(ordered_user_ids) != 4 or len(set(ordered_user_ids)) != 4:
+        raise ValueError('Positions 5-8 require four distinct players')
+
+    ready, _, quarter_final_losers = _cup_quarter_final_context(tournament)
+    if not ready:
+        raise ValueError('All four Cup quarter-finals must be completed first')
+    if set(ordered_user_ids) != set(quarter_final_losers):
+        raise ValueError('Positions 5-8 must contain exactly the four quarter-final losers')
+
+    participants = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id
+    ).all()
+    by_user = {participant.user_id: participant for participant in participants}
+    previous = {
+        str(participant.final_placement): participant.user_id
+        for participant in participants
+        if participant.final_placement in {5, 6, 7, 8}
+    }
+    for participant in participants:
+        if participant.final_placement in {5, 6, 7, 8}:
+            participant.final_placement = None
+    for placement, user_id in enumerate(ordered_user_ids, start=5):
+        by_user[user_id].final_placement = placement
+
+    details = {
+        'previous': previous,
+        'ordered_user_ids': ordered_user_ids,
+        'reason': reason,
+    }
+    log_admin_action(
+        admin_user_id,
+        'cup_placement.order_5_8',
+        entity_type='tournament',
+        entity_id=tournament.id,
+        summary=f'Ordered Cup positions 5-8 for {tournament.tournament_name}',
+        details=json.dumps(details),
+    )
+    db.session.commit()
+    return get_cup_placements(tournament.id)
+
+
+def assign_cup_positions_9_to_10(
+    tournament_id, ordered_user_ids, admin_user_id, reason
+):
+    tournament = _require_cup_tournament(tournament_id)
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValueError('A manual-selection reason is required')
+    try:
+        ordered_user_ids = [int(user_id) for user_id in ordered_user_ids]
+    except (TypeError, ValueError):
+        raise ValueError('Positions 9-10 require two valid player IDs')
+    if len(ordered_user_ids) != 2 or len(set(ordered_user_ids)) != 2:
+        raise ValueError('Positions 9-10 require two distinct players')
+
+    ready, quarter_finalists, _ = _cup_quarter_final_context(tournament)
+    if not ready:
+        raise ValueError('All four Cup quarter-finals must be completed first')
+    selected = TournamentParticipant.query.filter(
+        TournamentParticipant.tournament_id == tournament.id,
+        TournamentParticipant.user_id.in_(ordered_user_ids),
+    ).all()
+    if len(selected) != 2:
+        raise ValueError('Both selected players must belong to this Cup')
+    if any(
+        participant.status != 'eliminated'
+        or participant.user_id in quarter_finalists
+        or participant.final_placement in {1, 2, 3, 4, 5, 6, 7, 8}
+        for participant in selected
+    ):
+        raise ValueError(
+            'Positions 9-10 must be selected from eliminated non-quarter-finalists'
+        )
+
+    participants = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id
+    ).all()
+    by_user = {participant.user_id: participant for participant in participants}
+    previous = {
+        str(participant.final_placement): participant.user_id
+        for participant in participants
+        if participant.final_placement in {9, 10}
+    }
+    for participant in participants:
+        if participant.final_placement in {9, 10}:
+            participant.final_placement = None
+    for placement, user_id in enumerate(ordered_user_ids, start=9):
+        by_user[user_id].final_placement = placement
+
+    details = {
+        'previous': previous,
+        'ordered_user_ids': ordered_user_ids,
+        'reason': reason,
+    }
+    log_admin_action(
+        admin_user_id,
+        'cup_placement.select_9_10',
+        entity_type='tournament',
+        entity_id=tournament.id,
+        summary=f'Selected Cup positions 9-10 for {tournament.tournament_name}',
+        details=json.dumps(details),
+    )
+    db.session.commit()
+    return get_cup_placements(tournament.id)
 
 
 def check_in_cup_qualification(qualification_id, admin_user_id):

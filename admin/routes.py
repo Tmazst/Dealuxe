@@ -24,6 +24,10 @@ from admin.service import (
     user_activity,
     read_backend_logs,
     clear_backend_logs,
+    create_cup_tournament,
+    get_cup_placements,
+    assign_cup_positions_5_to_8,
+    assign_cup_positions_9_to_10,
     check_in_cup_qualification,
     list_cup_qualifications,
     move_cup_qualification_to_reserve,
@@ -222,6 +226,66 @@ def cup_qualification_roster():
         ))
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
+
+
+@admin_bp.route('/cup-tournaments', methods=['POST'])
+@admin_required
+def create_cup_tournament_route():
+    data = request.get_json(silent=True) or {}
+    try:
+        cup = create_cup_tournament(
+            session['user_id'],
+            tournament_name=data.get('tournament_name'),
+            event_key=data.get('event_key'),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': '64-player Cup created and started', 'cup': cup}), 201
+
+
+@admin_bp.route('/cup-tournaments/<int:tournament_id>/placements', methods=['GET'])
+@admin_required
+def cup_placements_route(tournament_id):
+    try:
+        return jsonify(get_cup_placements(tournament_id))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@admin_bp.route(
+    '/cup-tournaments/<int:tournament_id>/placements/5-8', methods=['PATCH']
+)
+@admin_required
+def cup_positions_5_to_8_route(tournament_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        placements = assign_cup_positions_5_to_8(
+            tournament_id,
+            data.get('ordered_user_ids'),
+            session['user_id'],
+            data.get('reason'),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Cup positions 5-8 saved', **placements})
+
+
+@admin_bp.route(
+    '/cup-tournaments/<int:tournament_id>/placements/9-10', methods=['PATCH']
+)
+@admin_required
+def cup_positions_9_to_10_route(tournament_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        placements = assign_cup_positions_9_to_10(
+            tournament_id,
+            data.get('ordered_user_ids'),
+            session['user_id'],
+            data.get('reason'),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Cup positions 9-10 saved', **placements})
 
 
 @admin_bp.route('/cup-qualifications/<int:qualification_id>/check-in', methods=['POST'])

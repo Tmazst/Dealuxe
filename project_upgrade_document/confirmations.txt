@@ -8,6 +8,7 @@ V3-D06 - Cup eligibility:** NO KYC requirements YET, once 64 seats filled cup lo
 V3-D07 - Cup positions 5-10:** the players who have qualified to enter quater finals. other 2 players will selected manualy by admins
 **V3-D08 - Cup prize total:** These should not be hard coded because the prizes will change per cup, these prize will manually entered by admins and the winner prizes allocations
 **V3-D09 - Sponsor and payout:** == later
+MVP scope note (2026-08-24): Sponsored prize configuration, allocation management and payout processing are not required for the Version 3 MVP. The payout-free Cup can launch without them; retain the hard-disable controls and revisit this work in a later approved milestone.
 **V3-D10 - Discovery taxonomy:** == let it per your discreation then i will make amendments later
 V3-D11 - Pilot moderation:** == let it per your discreation then i will make amendments later
 V3-D12 - Pilot success gates:== let it per your discreation then i will make amendments later

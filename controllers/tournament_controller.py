@@ -193,8 +193,11 @@ def _serialize_tournament(tournament):
         'current_players': current_players,
         'entry_fee': tournament.entry_fee,
         'prize_pool': tournament.prize_pool_amount,
-        'entry_balance_type': 'promotional' if promotional_entry else 'real',
-        'cash_prizes_enabled': not promotional_entry,
+        'entry_balance_type': (
+            'qualification' if tournament.tournament_type == 'cup'
+            else 'promotional' if promotional_entry else 'real'
+        ),
+        'cash_prizes_enabled': _cash_prizes_enabled(tournament),
         'creator': _get_username(tournament.creator_id),
         'creator_id': tournament.creator_id,
         'status': tournament.status,
@@ -219,8 +222,11 @@ def _serialize_tournament_detail(tournament):
         source_tournament_id=tournament.id
     ).first()
     detail.update({
-        'entry_balance_type': 'promotional' if promotional_entry else 'real',
-        'cash_prizes_enabled': not promotional_entry,
+        'entry_balance_type': (
+            'qualification' if tournament.tournament_type == 'cup'
+            else 'promotional' if promotional_entry else 'real'
+        ),
+        'cash_prizes_enabled': _cash_prizes_enabled(tournament),
         'cup_qualification': qualification.to_dict() if qualification else None,
     })
     return detail
@@ -287,6 +293,15 @@ def _is_promotional_tournament(tournament):
         tournament_id=tournament.id,
         payment_method='promotional_credit',
     ).first() is not None
+
+
+def _cash_prizes_enabled(tournament):
+    """Cup and promotional pilot tournaments never advertise cash prizes."""
+    if tournament.tournament_type == 'cup':
+        return bool(current_app.config.get('CUP_CASH_PAYOUTS_ENABLED', False))
+    if _is_promotional_tournament(tournament):
+        return False
+    return True
 
 
 def _is_payment_mock_mode():
@@ -505,18 +520,18 @@ def _build_bracket(tournament):
 
     total_rounds = size.bit_length() - 1  # 2 ->1, 4->2, 8->3, 16->4
 
-    # Build round names from the top (Final) backwards.
+    # Use names that stay meaningful as the bracket grows to 64 players.
     round_names = []
-    for r in range(total_rounds, 0, -1):
-        if r == total_rounds:
+    for round_number in range(1, total_rounds + 1):
+        players_remaining = size // (2 ** (round_number - 1))
+        if players_remaining == 2:
             round_names.append('Final')
-        elif r == total_rounds - 1:
+        elif players_remaining == 4:
             round_names.append('Semi-Final')
-        elif r == total_rounds - 2 and total_rounds >= 3:
+        elif players_remaining == 8:
             round_names.append('Quarter-Final')
         else:
-            round_names.append(f'Round {total_rounds - r + 1}')
-    round_names.reverse()
+            round_names.append(f'Round of {players_remaining}')
 
     bracket_rows = {}  # (round_number, match_number) -> TournamentBracket
 
@@ -561,8 +576,6 @@ def _build_bracket(tournament):
                 next_slots[g // 2][1] = w2
             current_slots = next_slots
 
-    db.session.commit()
-
     # Fill playable matches for rounds > 1 whose two players are already known
     # (auto-advanced byes), e.g. a direct into the Final.
     for key, bracket in list(bracket_rows.items()):
@@ -586,8 +599,6 @@ def _build_bracket(tournament):
         )
         db.session.add(third_bracket)
         db.session.flush()
-
-    db.session.commit()
 
     # Authoritative prize recalculation at lock/start.
     _ensure_prize_pool(tournament)
@@ -802,6 +813,17 @@ def _finalize_tournament(tournament):
         2: tournament.runner_up_id,
         3: tournament.third_place_id,
     }
+    if tournament.tournament_type == 'cup':
+        third_place_match = db.session.query(TournamentMatch).join(
+            TournamentBracket,
+            TournamentMatch.bracket_id == TournamentBracket.id,
+        ).filter(
+            TournamentMatch.tournament_id == tournament.id,
+            TournamentBracket.round_name == 'Third-Place',
+            TournamentMatch.status == 'completed',
+        ).first()
+        if third_place_match and third_place_match.loser_id:
+            placements[4] = third_place_match.loser_id
 
     tournament.status = 'completed'
     tournament.completed_at = datetime.utcnow()
