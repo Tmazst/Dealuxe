@@ -12,13 +12,8 @@ Integrates the uMshova Deluxe platform with the MojaPOS payment gateway
 Configuration values are read from the Flask app config (see
 `config.PaymentConfig`). In mock mode (`MOJAPOS_MOCK_MODE=true`) the service
 returns a synthetic success without calling the real gateway, so the rest of
-the system can be developed/tested locally against a sandbox path.
-
-curl -X POST \
-  "https://mojapos.com/api/payments/pay" \
-  -H "Authorization: Bearer pk_live_f4f8be6a58de21195be9f9b2" \
-  -H "Content-Type: application/json" \
-  -d '{   "provider": "MTN_MOMO",   "amount": 1,   "currency": "SZL",   "phoneNumber": "26876412255",   "metadata": {     "externalId": "TXN-12345",     "payerMessage": "Payment for order",     "payeeNote": "Order payment"   } }'
+the system can be developed/tested locally against a sandbox path. Live
+credentials and customer payloads must never appear in source code or logs.
 
 """
 import hmac
@@ -98,19 +93,9 @@ class MojaPOSService:
     # -----------------------------
 
     def _make_request(self, endpoint, method='POST', data=None):
-        """
-        Perform an authenticated request to the MojaPOS API.
-        curl -X POST \
-        "https://mojapos.com/api/payments/pay" \
-        -H "Authorization: Bearer pk_live_f4f8be6a58de21195be9f9b2" \
-        -H "Content-Type: application/json" \
-        -d '{   "provider": "MTN_MOMO",   "amount": 1,   "currency": "SZL",   "phoneNumber": "26876412255",   "metadata": {     "externalId": "TXN-12345",     "payerMessage": "Payment for order",     "payeeNote": "Order payment"   } }'
-
-        """
+        """Perform an authenticated request without logging secrets or PII."""
         api_url = self._config('MOJAPOS_API_URL', 'https://sandbox.mojapos.com/v1')
         api_key = self._config('MOJAPOS_API_KEY', '')
-        merchant_id = self._config('MOJAPOS_MERCHANT_ID', '')
-
         url = f"{api_url}{endpoint}"
         headers = {
             'Content-Type': 'application/json',
@@ -122,9 +107,7 @@ class MojaPOSService:
         # if data:
         #     headers['X-Signature'] = self._generate_signature(data)
 
-        print(f"[PAYMENT] MojaPOS PAYLOAD: {data}")
-        print(f"[PAYMENT] MojaPOS HEADERS: {headers}")
-        print(f"[PAYMENT] MojaPOS URL: {url}")
+        print(f"[PAYMENT] MojaPOS request method={method} endpoint={endpoint}")
 
         try:
             if method == 'POST':
@@ -137,7 +120,7 @@ class MojaPOSService:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as exc:
-            print(f"[PAYMENT] MojaPOS API error: {str(exc)}")
+            print(f"[PAYMENT] MojaPOS API error: {type(exc).__name__}")
             return None
 
     # -----------------------------

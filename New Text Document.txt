@@ -1,0 +1,6 @@
+
+
+[PAYMENT][CAPTURE CALLBACK PAYLOAD]:  {'id': '87b92361-5b8e-4342-9d31-169f68d2e3ba', 'event': 'payment.success', 'created_at': '2026-08-21T15:00:09.882Z', 'environment': 'LIVE',
+ 'data': {'transactionId': 'd744e19b-90b9-435b-a13e-cc7bfb360cd1', 'reference': None, 'status': 'COMPLETED', 'amount': '1.00', 'currency': 'SZL', 'providerReference': '7eb94442-806a-4c8d-a417-9232365ef2f1', 
+'providerResponse': {'financialTransactionId': '2396575648', 'externalId': 'c4b90930da14', 'amount': '1', 'currency': 'SZL', 'payer': 'Id': '2396575648', 'externalId': 'c4b90930da14', 'amount': '1', 'currency': 'SZL', 'payer':
+ {'partyIdType': 'MSISDN', 'partyId': '26876412255'}, 'payerMessage': 'Topup Wallet for User 1', 'payeeNote': 'Dealuxe Topup Payment', 'status': 'SUCCESSFUL'}, 'updatedVia': 'polling'}}

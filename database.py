@@ -5,6 +5,7 @@ SQLAlchemy setup for Dealuxe Card Game
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from sqlalchemy import text
+from sqlalchemy.orm import synonym
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
@@ -205,11 +206,20 @@ class Player(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
     
-    # Wallet balances
+    # Wallet balances. Version 3 reuses the existing fake-wallet columns for
+    # non-withdrawable promotional credits. The physical column names remain
+    # unchanged during the compatibility period so existing databases migrate
+    # without a destructive rename.
     real_balance = db.Column(db.Float, default=0.0)
-    fake_balance = db.Column(db.Float, default=0.0)
-    fake_balance_expires_at = db.Column(db.DateTime)
-    fake_cash_target = db.Column(db.Float, default=0.0)
+    promotional_credit_balance = db.Column('fake_balance', db.Float, default=0.0)
+    promotional_credit_expires_at = db.Column('fake_balance_expires_at', db.DateTime)
+    promotional_credit_target = db.Column('fake_cash_target', db.Float, default=0.0)
+
+    # Backward-compatible Python/API aliases. New Version 3 code must use the
+    # promotional-credit names; remove these only after all clients migrate.
+    fake_balance = synonym('promotional_credit_balance')
+    fake_balance_expires_at = synonym('promotional_credit_expires_at')
+    fake_cash_target = synonym('promotional_credit_target')
     
     # Statistics
     total_games = db.Column(db.Integer, default=0)
@@ -253,24 +263,53 @@ class Player(db.Model):
         if bet_type == GameConfig.BET_TYPE_REAL:
             return self.real_balance >= amount
         elif bet_type == GameConfig.BET_TYPE_FAKE:
-            if not self.is_fake_cash_valid():
+            if not self.has_active_promotional_credits():
                 return False
-            return self.fake_balance >= amount
+            return self.promotional_credit_balance >= amount
         return False
-    
-    def is_fake_cash_valid(self):
-        """Check if fake cash hasn't expired"""
-        if self.fake_balance_expires_at is None:
+
+    def has_active_promotional_credits(self):
+        """Return whether the registered user's promotional credits are active."""
+        if self.promotional_credit_expires_at is None:
             return False
-        return datetime.utcnow() < self.fake_balance_expires_at
-    
-    def award_free_cash(self):
-        """Award free cash for 24 hours"""
+        return datetime.utcnow() < self.promotional_credit_expires_at
+
+    def is_fake_cash_valid(self):
+        """Deprecated compatibility alias for legacy game clients."""
+        return self.has_active_promotional_credits()
+
+    def grant_promotional_credits(self, amount, *, replace=False, commit=True):
+        """Grant non-transferable, nonwithdrawable credits for 30 days."""
         from config import GameConfig
-        self.fake_balance = GameConfig.get_random_free_cash()
-        self.fake_cash_target = GameConfig.get_random_free_target()
-        self.fake_balance_expires_at = datetime.utcnow() + GameConfig.get_free_cash_expiry()
-        db.session.commit()
+
+        amount = round(float(amount), 2)
+        if amount <= 0:
+            raise ValueError('Promotional credit amount must be positive')
+
+        now = datetime.utcnow()
+        current = float(self.promotional_credit_balance or 0.0)
+        if self.promotional_credit_expires_at and self.promotional_credit_expires_at <= now:
+            current = 0.0
+
+        self.promotional_credit_balance = amount if replace else round(current + amount, 2)
+        self.promotional_credit_expires_at = now + GameConfig.get_promotional_credit_expiry()
+        self.promotional_credit_target = 0.0
+        if commit:
+            db.session.commit()
+        return self.promotional_credit_balance
+
+    def grant_registration_promotional_credits(self, *, commit=True):
+        """Apply the approved one-time E10 registration grant."""
+        from config import GameConfig
+        return self.grant_promotional_credits(
+            GameConfig.get_registration_promotional_credit(),
+            replace=True,
+            commit=commit,
+        )
+
+    def award_free_cash(self):
+        """Deprecated registered-wallet alias; grants promotional credits."""
+        return self.grant_registration_promotional_credits()
 
     def _rollover_daily_spending(self):
         """Reset the daily spending accumulator if the 24-hour window has elapsed."""
@@ -300,7 +339,7 @@ class Player(db.Model):
         if bet_type == GameConfig.BET_TYPE_REAL:
             self.real_balance -= amount
         elif bet_type == GameConfig.BET_TYPE_FAKE:
-            self.fake_balance -= amount
+            self.promotional_credit_balance -= amount
         
         self.total_wagered += amount
         db.session.commit()
@@ -312,7 +351,7 @@ class Player(db.Model):
         if bet_type == GameConfig.BET_TYPE_REAL:
             self.real_balance += amount
         elif bet_type == GameConfig.BET_TYPE_FAKE:
-            self.fake_balance += amount
+            self.promotional_credit_balance += amount
         
         self.total_winnings += amount
         db.session.commit()
@@ -339,10 +378,14 @@ class Player(db.Model):
             'user_id': self.user_id,
             'username': self.user.username if self.user else None,
             'real_balance': self.real_balance,
-            'fake_balance': self.fake_balance,
-            'fake_balance_expires_at': self.fake_balance_expires_at.isoformat() if self.fake_balance_expires_at else None,
-            'fake_cash_target': self.fake_cash_target,
-            'is_fake_cash_valid': self.is_fake_cash_valid(),
+            'promotional_credit_balance': self.promotional_credit_balance,
+            'promotional_credit_expires_at': self.promotional_credit_expires_at.isoformat() if self.promotional_credit_expires_at else None,
+            'has_active_promotional_credits': self.has_active_promotional_credits(),
+            # Legacy response aliases for existing game clients.
+            'fake_balance': self.promotional_credit_balance,
+            'fake_balance_expires_at': self.promotional_credit_expires_at.isoformat() if self.promotional_credit_expires_at else None,
+            'fake_cash_target': self.promotional_credit_target,
+            'is_fake_cash_valid': self.has_active_promotional_credits(),
             'total_games': self.total_games,
             'wins': self.wins,
             'losses': self.losses,
@@ -522,7 +565,8 @@ TX_WITHDRAWAL = 'withdrawal'      # Wallet withdrawal / payout
 TX_WALLET_TOPUP = 'wallet_topup'  # Player loaded funds into the wallet
 TX_BET = 'bet'                    # Versus stake (v1 practice)
 TX_WIN = 'win'                    # Versus winnings (v1 practice)
-TX_FREE_CASH = 'free_cash'        # Welcome / promotional free cash
+TX_PROMOTIONAL_CREDIT = 'promotional_credit'
+TX_FREE_CASH = TX_PROMOTIONAL_CREDIT  # Deprecated compatibility name
 
 
 # ========================================

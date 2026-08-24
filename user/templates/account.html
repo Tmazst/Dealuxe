@@ -111,7 +111,7 @@
         .balance-tile .label { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
         .balance-tile .amount { font-size: 1.25rem; font-weight: 900; margin-top: 4px; }
         .balance-tile .amount.real { color: var(--success); }
-        .balance-tile .amount.fake { color: var(--gold); }
+        .balance-tile .amount.promotional { color: var(--gold); }
         .kyc-status { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: .8rem; font-weight: 800; }
         .kyc-status.not_submitted { background: rgba(148, 163, 184, .18); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, .4); }
         .kyc-status.pending_review { background: rgba(245, 158, 11, .15); color: #fcd34d; border: 1px solid rgba(245, 158, 11, .45); }
@@ -207,8 +207,9 @@
                         <div class="amount real">E{{ '%.2f'|format(player.real_balance or 0) }}</div>
                     </div>
                     <div class="balance-tile">
-                        <div class="label">Fake balance</div>
-                        <div class="amount fake">E{{ '%.2f'|format(player.fake_balance or 0) }}</div>
+                        <div class="label">Promotional credits</div>
+                        <div class="amount promotional">E{{ '%.2f'|format(player.promotional_credit_balance or 0) }}</div>
+                        <small>Non-withdrawable · valid for 30 days</small>
                     </div>
                 </div>
                 <div class="info-row"><span>Games played</span><strong>{{ player.total_games or 0 }}</strong></div>
@@ -342,4 +343,3 @@
     </script>
 </body>
 </html>
-

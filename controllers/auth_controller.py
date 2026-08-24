@@ -5,12 +5,29 @@ from flask import Blueprint, request, jsonify, session, render_template, redirec
 from database import (
     db, User, Player, create_user, 
     get_user_by_username, get_user_by_email,
-    get_player_by_user_id
+    get_player_by_user_id, log_transaction, TX_PROMOTIONAL_CREDIT
 )
+from config import GameConfig
 from Forms import LoginForm, RegistrationForm
 from functools import wraps
 
 auth_bp = Blueprint('auth', __name__)
+
+
+def _grant_registration_promotional_credits(player):
+    """Grant and audit the approved one-time registration credit."""
+    balance_before = float(player.promotional_credit_balance or 0.0)
+    amount = GameConfig.get_registration_promotional_credit()
+    player.grant_registration_promotional_credits(commit=False)
+    log_transaction(
+        player_id=player.id,
+        transaction_type=TX_PROMOTIONAL_CREDIT,
+        amount=amount,
+        balance_type='promotional',
+        balance_before=balance_before,
+        balance_after=player.promotional_credit_balance,
+        description='Version 3 registration promotional credit',
+    )
 
 
 def login_required(f):
@@ -76,8 +93,7 @@ def register():
                 country=form.country.data
             )
             
-            # Award welcome bonus (free cash)
-            player.award_free_cash()
+            _grant_registration_promotional_credits(player)
             
             # Log user in
             session['user_id'] = user.id
@@ -122,8 +138,7 @@ def register_api_internal():
             country=data.get('country')
         )
         
-        # Award welcome bonus (free cash)
-        player.award_free_cash()
+        _grant_registration_promotional_credits(player)
         
         # Log user in
         session['user_id'] = user.id
@@ -281,6 +296,10 @@ def get_balance():
     
     return jsonify({
         'real_balance': player.real_balance,
+        'promotional_credit_balance': player.promotional_credit_balance,
+        'promotional_credit_expires_at': player.promotional_credit_expires_at.isoformat() if player.promotional_credit_expires_at else None,
+        'has_active_promotional_credits': player.has_active_promotional_credits(),
+        # Legacy client aliases.
         'fake_balance': player.fake_balance,
         'fake_balance_expires_at': player.fake_balance_expires_at.isoformat() if player.fake_balance_expires_at else None,
         'fake_cash_target': player.fake_cash_target,
@@ -309,27 +328,16 @@ def get_stats():
 @auth_bp.route('/player/free-cash', methods=['POST'])
 @login_required
 def claim_free_cash():
-    """Claim free cash (24hr bonus)"""
+    """Deprecated endpoint; registered credits are granted by approved flows."""
     player = get_player_by_user_id(session['user_id'])
     if not player:
         return jsonify({'error': 'Player profile not found'}), 404
     
-    # Check if player already has valid free cash
-    if player.is_fake_cash_valid():
-        return jsonify({
-            'error': 'You already have active free cash',
-            'expires_at': player.fake_balance_expires_at.isoformat()
-        }), 400
-    
-    # Award free cash
-    player.award_free_cash()
-    
     return jsonify({
-        'message': 'Free cash awarded!',
-        'fake_balance': player.fake_balance,
-        'fake_cash_target': player.fake_cash_target,
-        'expires_at': player.fake_balance_expires_at.isoformat()
-    })
+        'error': 'Self-service credit claims are disabled. Promotional credits are granted through registration, referrals or administrators.',
+        'promotional_credit_balance': player.promotional_credit_balance,
+        'promotional_credit_expires_at': player.promotional_credit_expires_at.isoformat() if player.promotional_credit_expires_at else None,
+    }), 409
 
 
 @auth_bp.route('/player/deposit', methods=['POST'])
@@ -414,8 +422,7 @@ def register_api():
             country=data.get('country')
         )
         
-        # Award welcome bonus (free cash)
-        player.award_free_cash()
+        _grant_registration_promotional_credits(player)
         
         # Log user in
         session['user_id'] = user.id

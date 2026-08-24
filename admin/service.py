@@ -60,6 +60,7 @@ def _serialize_user(user):
         'created_at': user.created_at.isoformat() if user.created_at else None,
         'last_login': user.last_login.isoformat() if user.last_login else None,
         'real_balance': player.real_balance if player else None,
+        'promotional_credit_balance': player.promotional_credit_balance if player else None,
         'fake_balance': player.fake_balance if player else None,
     }
 
@@ -96,16 +97,23 @@ def update_user(user_id, data, admin_user_id=None):
         target_user.is_active = _coerce_bool(data['is_active'])
         changes.append(f"is_active={target_user.is_active}")
 
-    if player is None and any(field in data for field in ('real_balance', 'fake_balance')):
+    if player is None and any(field in data for field in (
+        'real_balance', 'promotional_credit_balance', 'fake_balance'
+    )):
         raise ValueError('Associated player profile not found')
 
-    for field in ('real_balance', 'fake_balance'):
+    for field in ('real_balance', 'promotional_credit_balance', 'fake_balance'):
         if field in data:
+            target_field = (
+                'promotional_credit_balance'
+                if field in ('promotional_credit_balance', 'fake_balance')
+                else field
+            )
             try:
-                setattr(player, field, float(data[field]))
+                setattr(player, target_field, float(data[field]))
             except (TypeError, ValueError) as exc:
                 raise ValueError(f'Invalid value for {field}') from exc
-            changes.append(f"{field}={data[field]}")
+            changes.append(f"{target_field}={data[field]}")
 
     if admin_user_id:
         log_admin_action(
@@ -440,9 +448,11 @@ def clear_backend_logs():
 # -----------------------------
 
 def adjust_wallet(admin_user_id, user_id, balance_type, delta, reason):
-    """Adjust a player's real/fake balance with an audit reason (credits or debits)."""
-    if balance_type not in ('real', 'fake'):
-        raise ValueError('balance_type must be "real" or "fake"')
+    """Adjust real money or promotional credits with an audit reason."""
+    if balance_type == 'fake':
+        balance_type = 'promotional'
+    if balance_type not in ('real', 'promotional'):
+        raise ValueError('balance_type must be "real" or "promotional"')
     delta = float(delta)
     if delta == 0:
         raise ValueError('delta must be non-zero')
@@ -454,7 +464,11 @@ def adjust_wallet(admin_user_id, user_id, balance_type, delta, reason):
     if player is None:
         raise ValueError('Player profile not found')
 
-    current = player.real_balance if balance_type == 'real' else player.fake_balance
+    current = (
+        player.real_balance
+        if balance_type == 'real'
+        else player.promotional_credit_balance
+    )
     new_balance = round(current + delta, 2)
     if new_balance < 0:
         raise ValueError(f'Adjustment would make the balance negative ({new_balance:.2f})')
@@ -462,7 +476,7 @@ def adjust_wallet(admin_user_id, user_id, balance_type, delta, reason):
     if balance_type == 'real':
         player.real_balance = new_balance
     else:
-        player.fake_balance = new_balance
+        player.promotional_credit_balance = new_balance
 
     db.session.add(WalletAdjustment(
         user_id=user_id,
@@ -481,13 +495,13 @@ def adjust_wallet(admin_user_id, user_id, balance_type, delta, reason):
     return {'user_id': user_id, 'balance_type': balance_type, 'new_balance': new_balance}
 
 
-def award_credits(admin_user_id, user_id, amount, balance_type='fake', reason='Free credits awarded'):
-    """Award free credits / promotional funds to a player's wallet."""
+def award_credits(admin_user_id, user_id, amount, balance_type='promotional', reason='Promotional credits awarded'):
+    """Award nonwithdrawable promotional credits to a player's wallet."""
     if float(amount) <= 0:
         raise ValueError('amount must be positive')
     return adjust_wallet(
         admin_user_id, user_id, balance_type, float(amount),
-        reason or 'Free credits awarded',
+        reason or 'Promotional credits awarded',
     )
 
 

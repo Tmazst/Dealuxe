@@ -109,8 +109,8 @@ def award_user_credits(user_id):
         result = award_credits(
             session['user_id'], user_id,
             float(data.get('amount', 0)),
-            data.get('balance_type', 'fake'),
-            data.get('reason', 'Free credits awarded'),
+            data.get('balance_type', 'promotional'),
+            data.get('reason', 'Promotional credits awarded'),
         )
     except (ValueError, TypeError) as exc:
         return jsonify({'error': str(exc)}), 400

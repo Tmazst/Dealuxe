@@ -1,29 +1,34 @@
-try:
-    # Optional: if running under gevent, patch the stdlib to be cooperative.
-    # Doing this before other imports is safest. Wrapped in try/except so
-    # the app still runs when gevent isn't installed locally.
-    from gevent import monkey
-    monkey.patch_all()
-    print("[APP] gevent monkey patched")
-except Exception:
-    pass
+import os
+
+
+# Only the non-local gevent deployment needs cooperative monkey-patching.
+# Applying it during development or tests can deadlock test discovery and is
+# unnecessary when Flask-SocketIO uses the threading async mode.
+_early_environment = str(
+    os.environ.get('APP_ENV')
+    or os.environ.get('FLASK_ENV')
+    or os.environ.get('ENV')
+    or 'development'
+).strip().lower()
+if _early_environment not in {'development', 'dev', 'local', 'test', 'testing'}:
+    try:
+        from gevent import monkey
+        monkey.patch_all()
+        print("[APP] gevent monkey patched")
+    except Exception:
+        pass
 
 # Load environment variables from the .env file (python-dotenv). This must run
 # before any module reads os.environ (e.g. config.PaymentConfig).
 #
 # IMPORTANT: the .env file is loaded with an ABSOLUTE path (so the app behaves
-# the same regardless of the process working directory) and with override=True
-# (so values in .env are authoritative). Without override, a stale process- or
-# OS-level variable would silently beat .env -- e.g. an old
-# `MOJAPOS_MOCK_MODE=true` kept the entire payment system on the mock/sandbox
-# path even after .env was switched to false.
-import os
-
+# the same regardless of the process working directory). It never overrides
+# values injected by the operating system or production service manager.
 try:
     from dotenv import load_dotenv
     load_dotenv(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'),
-        override=True,
+        override=False,
     )
 except Exception:
     pass
@@ -42,11 +47,14 @@ from database import db, init_db, Tournament, User
 from database import Player
 from werkzeug.middleware.proxy_fix import ProxyFix
 from jinja2 import ChoiceLoader, FileSystemLoader
-from config import PaymentConfig, LogConfig
-import os
+from config import PaymentConfig, LogConfig, build_runtime_security_config
+from security import init_security_scaffold
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1,x_proto=1)
+
+runtime_security = build_runtime_security_config()
+app.config.update(runtime_security)
 
 # allow Flask to load spectator templates from the livescores_fixtures_updates folder
 app.jinja_loader = ChoiceLoader([
@@ -54,7 +62,6 @@ app.jinja_loader = ChoiceLoader([
     FileSystemLoader(os.path.join(app.root_path, 'livescores_fixtures_updates')),
 ])
 
-app.config['SECRET_KEY'] = 'fght6hg234g5f6g7h8j9o0p'
 app.config['TOURNAMENT_TEST_BOTS_ENABLED'] = os.environ.get(
     'TOURNAMENT_TEST_BOTS_ENABLED', 'false'
 ).lower() in {'1', 'true', 'yes'}
@@ -65,6 +72,9 @@ app.config['TOURNAMENT_TEST_BOTS_ENABLED'] = os.environ.get(
 
 app.config.from_object(PaymentConfig)
 app.config.from_object(LogConfig)
+
+if app.config.get('SESSION_SECRET_GENERATED'):
+    print('[SECURITY] FLASK_SECRET_KEY is unset; using a temporary local-only session secret')
 
 # -----------------------------
 # BACKEND PRINT LOG CAPTURE
@@ -95,19 +105,25 @@ else:
 
 # local should use threading async mode (polling transport — the Werkzeug dev
 # server cannot upgrade websockets with the threading driver)
-if os.environ.get("ENV") == "development":
-    socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+if app.config.get('IS_LOCAL_ENVIRONMENT'):
+    socketio = SocketIO(
+        app,
+        cors_allowed_origins=app.config['SOCKETIO_ALLOWED_ORIGINS'],
+        async_mode='threading',
+    )
     app.config['SOCKET_TRANSPORTS'] = ['websocket', 'polling']
 else:
     socketio = SocketIO(
         app,
-        cors_allowed_origins="*",
+        cors_allowed_origins=app.config['SOCKETIO_ALLOWED_ORIGINS'],
         async_mode="gevent",
-        message_queue="redis://127.0.0.1:6379/0",  # hardcoded Redis
+        message_queue=app.config['REDIS_URL'],
         logger=True,
         engineio_logger=True
     )
     app.config['SOCKET_TRANSPORTS'] = ['websocket', 'polling']
+
+init_security_scaffold(app, socketio)
 
 # socketio = SocketIO(app, cors_allowed_origins="*",async_mode='threading')
 
@@ -140,7 +156,7 @@ except Exception as exc:
 # GAME MANAGER (GLOBAL)
 # -----------------------------
 
-manager = GameManager()
+manager = GameManager(redis_url=app.config['REDIS_URL'])
 app.extensions['game_manager'] = manager
 
 # -----------------------------
@@ -184,18 +200,20 @@ start_background_scheduler(app, socketio)
 #-------------------
 # Routes Methods
 #-------------------
-def get_player_fake_balance():
+def get_player_promotional_credit_balance():
     # Prefer logged-in DB player
-    from database import get_player_by_user_id, db as _db
+    from database import get_player_by_user_id
     user_id = session.get('user_id')
     if user_id:
         player = get_player_by_user_id(user_id)
         if player:
-            if not player.is_fake_cash_valid() or player.fake_balance <= 0:
-                player.award_free_cash()
-                _db.session.commit()
-            print("[APP] player current balance: ", player.fake_balance)
-            return player.fake_balance
+            balance = (
+                player.promotional_credit_balance
+                if player.has_active_promotional_credits()
+                else 0.0
+            )
+            print("[APP] player promotional credit balance: ", balance)
+            return balance
 
     # No logged-in user: fall back to a per-browser-session practice player
     # (NOT the old shared demo player -- that meant every guest saw and spent
@@ -215,6 +233,11 @@ def get_player_fake_balance():
     except Exception:
         return 0
 
+
+def get_player_fake_balance():
+    """Deprecated compatibility alias for the legacy game client."""
+    return get_player_promotional_credit_balance()
+
 # -----------------------------
 # ROUTES
 # -----------------------------
@@ -227,7 +250,17 @@ def index():
 @app.route("/get_player_fake_balance")
 def get_balance():
     fake_bal = get_player_fake_balance()
-    return jsonify({"player_fake_bal":fake_bal})
+    return jsonify({
+        "promotional_credit_balance": fake_bal,
+        "player_fake_bal": fake_bal,
+    })
+
+
+@app.route('/api/player/promotional-credit-balance')
+def get_promotional_credit_balance():
+    return jsonify({
+        'promotional_credit_balance': get_player_promotional_credit_balance(),
+    })
 
 @app.route("/admin")
 @admin_required
@@ -261,11 +294,11 @@ def lobby():
     if user_id:
         player = get_player_by_user_id(user_id)
         if player:
-            # Auto-award free cash if needed
-            if not player.is_fake_cash_valid() or player.fake_balance <= 0:
-                player.award_free_cash()
-                db.session.commit()
-            user_balance = player.fake_balance
+            user_balance = (
+                player.promotional_credit_balance
+                if player.has_active_promotional_credits()
+                else 0.0
+            )
     
     return render_template("lobby.html", user_balance=user_balance)
 
@@ -385,9 +418,6 @@ def payment_callback():
         if not payload:
             return jsonify({'error': 'Missing payload'}), 400
 
-        # Webhook signature verification is OFF until MojaPOS's webhook auth is
-        # confirmed (signing scheme/secret still TBD). Enable it with
-        # MOJAPOS_VERIFY_WEBHOOK_SIGNATURE=true + MOJAPOS_WEBHOOK_SECRET once known.
         if app.config.get('MOJAPOS_VERIFY_WEBHOOK_SIGNATURE', False):
             signature = request.headers.get('X-Signature')
             if not signature:
@@ -396,9 +426,7 @@ def payment_callback():
                 print("[PAYMENT] Invalid callback signature - rejected")
                 return jsonify({'error': 'Invalid signature'}), 401
         else:
-            print("[PAYMENT] Webhook signature verification disabled (MOJAPOS_VERIFY_WEBHOOK_SIGNATURE not enabled)")
-
-        print("[PAYMENT][CAPTURE CALLBACK PAYLOAD]: ", payload)
+            print('[PAYMENT] Webhook signature verification disabled in local/test mode')
 
         # Unwrap the envelope; legacy callbacks sent the payment fields at the
         # top level (no 'data' wrapper).
@@ -424,6 +452,12 @@ def payment_callback():
             or data.get('externalId')
             or metadata.get('externalId')
             or metadata.get('external_ref_id')
+        )
+
+        safe_transaction_id = str(transaction_id or '')[-8:] or 'unknown'
+        print(
+            f'[PAYMENT] Callback received status={status or "unknown"} '
+            f'transaction_suffix={safe_transaction_id}'
         )
 
         # Idempotency: skip if this gateway transaction was already processed.
@@ -468,9 +502,9 @@ def payment_callback():
 
         return jsonify({'status': 'received'}), 200
 
-    except Exception as e:
-        print(f"[PAYMENT] Callback processing error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+    except Exception as exc:
+        print(f"[PAYMENT] Callback processing error: {type(exc).__name__}")
+        return jsonify({'error': 'Payment callback processing failed'}), 500
 
 
 def _handle_entry_fee_callback(payload, data, transaction, status):

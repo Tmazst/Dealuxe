@@ -1,0 +1,100 @@
+We are updating The multigame peer-to-peer card game into a hybrid marketing platform to bring more value to users.
+They will be playing and marketing/selling at same time.
+This will take place during a game_session between the 2 opponents under a tournament bracket.
+The app will now bridge gaming experience and marketing into one place, while people are winning real cash.
+Currently the tournaments prize pools are funded by the users (E10.00) to contest, we charge a 18% fee for 
+each tournament bracket(game charge fee). about 9% is allocated for service fee(hosting, security,etc). 3-5% is for upcoming exlusive tournaments ie. Umshova Cup, leage.
+
+The section below is the only one currently that will used or upgrade into a marketing/selling/chating feature.
+#game.html(/game)
+<div id="agent-panel" class="agent-panel"><!---We are updating the agent-panel to add a chatting and social marketing/selling feature-->
+            <!--Example-->
+            <!--Slot title: Chat, Sale and Promote your brand-->
+            <!--layout ideas; on the left side : This slot/section will display user profile image, Name(small fonts), category(seeking/selling/love .eg property)-->
+            <i class="fa-solid fa-robot agent-icon"></i>
+            <!---Default Captions Examples(predifined by the app engine);-->
+            <!---1.Second Hand Cars-->
+		<!---2.Open For love-->
+		<!---2.Property Agent-->
+		<!---3.Seeking Residential Flat-->
+		<!---4.Selling Car Part-->
+		<!---5.Seeking Car Part-->
+		<!---6.Selling Cosmetics-->
+            <!---Default: Custom Captions Examples;-->
+            <!---Hi, I Sipho Dlamini I am selling second hand cars-->
+            <!---Hi, I Ncedo Dlamini I am looking a good second hand laptop-->
+            <!---Hi, I Themba Hlatjwako I am looking one room flat, Manzini-->
+            <!---Hi, I Themba Sibeko, 1 room flats are available, Malkerns-->
+<!---Hi, I Cebo Gwebu, I am looking for a business partner in farming-->
+<!---Hi, I Ncedo Dlamini I am selling a good second hand laptop, E3500.00-->
+<!---Hi, I Cebo Mnisi, I am looking for business collaboration partner in engineering-->
+            <!---Hi, I Cynthia Hlatjwako, I am single looking for love......(Love captions are be exclusive only to opponents users who have signed up for the love feature)-->
+
+            <div id="agent-text" class="agent-text">Welcome! I'll guide you through the game.</div>
+        </div>
+
+Algorithm:
+It will display what user are looking for to buy, collaborate or what they are selling.
+This marketing section will both be passive and active. for the passive function the app will display what the users are looking/selling passively to their 
+player patners/opponents. Whilst the active the system will use an algorithm to match the users eg. if a user is looking for property to buy and the other 
+user is selling property, those users will be automatically macthed with each other in that bracket's first round.
+The active config will have 2 levels match matching and Tournament bracket matching. Match matching has a lower propability compared to bracket matching.
+Match matching will match the user withing the bracket, which means the user might be guesing if their customer(s) are inside that bracket they are joining, 
+sometimes they find that it does(the bracket) have the customers they are lookng for and sometimes not. But the advantage is that the passive will always be there(marketing) as a backup.
+In the bracket matching the users who want join open brackets will have privilege to identify brackets that have players who are looking/selling what they need and they can join
+on that specific bracket.
+In love matching feature, a female with younger age is matched with older male. married users not allowed. 
+Please the matchings take place in only in the first round of each tournament, because the other coming rounds are ditermined by winners and losers.
+
+Specifications and preferences:
+The users should have an option to disable chats if they want to in particular game sessions(we are enabling these especially for the love feature)
+In case chats are disabled the app agent feature(<div id="agent-text" class="agent-text">Welcome! I'll guide you through the game.</div>) should defaulty
+broadcast game instructions/comments in that section. 
+The users should have an option in their profiles accounts to opt to write custom captions as its illustrated in the examples above(paid)
+Users looking for love will preferebly be matched with others who looking for love. this is open for users who are single looking for love and above 18.
+Important note: If they are no matching users(whether for love or selling/buyers or other) in the bracket, the app should work as normal, as a gaming platform. The marketing/chat upgrade feature is an addon layers, it should not change how the uMshova multigame platform operating.
+
+Pricing and terms: 
+- Passive marketing should be free. There is no matching (buy and seller) in bracket matching of the dealuxe game. the app will use the (bracket match making of the card games) but their opponents will see what they are selling/seeking in the agent/marketing section
+- Active marketing. This one is buy and seller matching price option. its general price its(E20/week - match matching). but if you boost it you choose the (E40/week - high intelligent matching) it add the actual bracket matching functionality.
+- Love matching. E60/month. (please note that love matching captions will not be visible to users who not signed up for it). The love matching.
+- Users can choose both marketing matcing and love matching at the same time. If a user has chosen a love matching and the opponent they are playing
+has not chosen the love matching the app will fallback to the passive marketing property to display what the user is selling/seeking. The users can upgrade this options anytime but there no refunds.
+- Users can choose to hide their profiles in agents section during a game session, in this case the app shall use the app's current agent's games comments in the opponent's window.
+
+Technical/architecture:
+- Currently I do not plan to save the users chats in the db. We can save chats in json files for 24hrs.
+- The <div id="agent-panel" class="agent-panel"> shall be simple, only display the latest message to save space, since this is a gaming platform and necessarily a chatting app.
+- This section should use the current socketio as a chatting engine.
+- THis upgrade should not make massive refectoring of the original code base as much as we can(that is highly emphasised). If possible we need to use API oriented style to bridge/integrate this marketing/chat and multigaming code structures and seperate the folders explicitly.
+but i think the original/current _bracket_matching codes will be touched or refactored.
+- For the sale/marketing/love matching algorithm we need to create a scalable and upgradable separate engine, whether we regex or other simple ideas. It should be open for future AI integrations.
+- We will need to a seperate model as an addon to the current users table to accomodate the upgrade of chat/marketing/sale/seeking
+- This should not be a heavy upgrade to the current system.
+- For matchings, there shall be labels that indicate matching levels for the users to see their matchings
+
+Milestones Plan:
+I think we can start with the algorithm, followed by the models and athentication, and then UI's agent section and after that we test (it should work without applying pricing first).
+We will then moved on after a successfull test to then incoporate pricing codes and codeflows.
+
+uMshova Real Money Pament Amendments:
+1. Because risks that comes with laws and games regulations with the likes of eswatini gaming board, the player joining fee is subject to be halted
+during the platform pilot/early launch stage.
+2. The uMshova version 03 upgrade of marketing/discovery integration will be currently the only monetization part of the app.
+3. The product pilot will allow users to play with awarded credits into their wallets(Not real money). The E10 credits will be deposited on different
+basis; a. Through referrals, a user who invite a new user to join a tournament bracket/join the app itself will  be rewarded with credits. 
+b. Manual awards from Admins c. New registration bonus (free E10 to participate in a tournament).
+4. The Love matching feature is not going to launch with pilot launch of the platform, because it can also attract unnecessary legal actions.
+uMshova Cup Tournament - E2000 prize (real Cash) - Sponsored by Q-messanger;
+5. Version 3 of the uMshova will launch with a Cup tournament qualification incentive where players who win (position 1 in any of the currently available brackets) will automatically qualify to participate in the Cup.
+6. Amends: The version 3 will disable prizes adverts/labels in the uMshova game that Version 2 showcases to users and winners instead it will showcase winnings to particapate in the Cup.
+7. The currently available brackets during the pilot/early will be showcased as a way to practice/learn the game flow so that players will effectively play the Cup.
+8. The Game should be potrait as a marketing platform through gaming as the info above illustrate the version plan.
+9. The uMshova Cup will adapt the style of the current brackets but it will have 64 participants; 
+Winning Prizes(10 winners); position 1. E1000 cash,2. E500, 3. E250, 4. E100, 5-10. E20.00 each
+10. version 4 will revert the version 2 real money join style in the brackets, after a successfully licence application and approval from gaming board.
+11. version will require us to register with esccom and mtn momo merchant account(because winners in Cup will awarded using the platform, momo disbursement api) and payments of marketing/discovery fees mentioned above.
+
+
+
+

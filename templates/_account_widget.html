@@ -86,14 +86,15 @@
             if (u.is_super_admin) roles += '<span class="account-role">👑 Super Admin</span>';
             if (u.is_admin) roles += '<span class="account-role">🛡️ Admin</span>';
             var real = p.real_balance != null ? 'E' + Number(p.real_balance).toFixed(2) : '—';
-            var fake = p.fake_balance != null ? 'E' + Number(p.fake_balance).toFixed(2) : '—';
+            var promotionalValue = p.promotional_credit_balance != null ? p.promotional_credit_balance : p.fake_balance;
+            var promotional = promotionalValue != null ? 'E' + Number(promotionalValue).toFixed(2) : '—';
 
             body.innerHTML =
                 '<div class="account-row"><span>Username</span><strong>' + esc(u.username) + '</strong></div>' +
                 '<div class="account-row"><span>Email</span><strong>' + esc(u.email || '—') + '</strong></div>' +
                 '<div class="account-row"><span>Phone</span><strong>' + esc(u.phone || '—') + '</strong></div>' +
                 '<div class="account-row"><span>Real balance</span><strong>' + real + '</strong></div>' +
-                '<div class="account-row"><span>Fake balance</span><strong>' + fake + '</strong></div>' +
+                '<div class="account-row"><span>Promotional credits</span><strong>' + promotional + '</strong></div>' +
                 '<div style="padding-top:6px;">' + roles + '</div>' +
                 '<a class="account-manage-btn" href="/account">⚙️ Manage account</a>';
         } catch (e) {
@@ -112,4 +113,3 @@
     loadAccount();
 })();
 </script>
-

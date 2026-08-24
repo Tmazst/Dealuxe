@@ -14,26 +14,27 @@ class GameManager:
     Falls back to in-memory storage if Redis is unavailable (development).
     """
 
-    def __init__(self):
+    def __init__(self, redis_url=None):
         # Try to connect to Redis
         try:
-            redis_host = os.getenv('REDIS_HOST', 'localhost')
-            redis_port = int(os.getenv('REDIS_PORT', 6379))
-            redis_password = os.getenv('secret', None)
-            
-            self.redis_client = redis.Redis(
-                host=redis_host,
-                port=redis_port,
-                password=redis_password,
+            configured_url = redis_url or os.getenv(
+                'REDIS_URL', 'redis://127.0.0.1:6379/0'
+            )
+            self.redis_client = redis.Redis.from_url(
+                configured_url,
                 decode_responses=False,  # We'll use pickle for serialization
-                socket_connect_timeout=2
+                socket_connect_timeout=2,
+                socket_timeout=2,
             )
             # Test connection
             self.redis_client.ping()
             self.use_redis = True
-            print(f"[MANAGER] Connected to Redis at {redis_host}:{redis_port}")
+            print("[MANAGER] Connected to configured Redis service")
         except Exception as e:
-            print(f"[MANAGER] Redis connection failed: {e}. Using in-memory storage.")
+            print(
+                f"[MANAGER] Redis connection failed ({type(e).__name__}). "
+                "Using in-memory storage."
+            )
             self.use_redis = False
             self.games = {}
 

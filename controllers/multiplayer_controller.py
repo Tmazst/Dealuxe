@@ -305,13 +305,9 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             emit('error', {'message': 'Player profile not found'})
             return
         
-        # Auto-award free cash if needed for fake bets
-        if bet_type == 'fake' and (not player.is_fake_cash_valid() or player.fake_balance < bet_amount):
-            player.award_free_cash()
-            db.session.commit()
-        
         if not player.has_sufficient_balance(bet_amount, bet_type):
-            emit('error', {'message': f'Insufficient {bet_type} balance. You have {player.fake_balance if bet_type == "fake" else player.real_balance}'})
+            balance_label = 'promotional credit' if bet_type == 'fake' else bet_type
+            emit('error', {'message': f'Insufficient {balance_label} balance. You have {player.promotional_credit_balance if bet_type == "fake" else player.real_balance}'})
             return
         
         # Create room
@@ -373,13 +369,9 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             emit('error', {'message': 'Player profile not found'})
             return
         
-        # Auto-award free cash if needed for fake bets
-        if room.bet_type == 'fake' and (not player.is_fake_cash_valid() or player.fake_balance < room.bet_amount):
-            player.award_free_cash()
-            db.session.commit()
-        
         if not player.has_sufficient_balance(room.bet_amount, room.bet_type):
-            emit('error', {'message': f'Insufficient {room.bet_type} balance. You have {player.fake_balance if room.bet_type == "fake" else player.real_balance}'})
+            balance_label = 'promotional credit' if room.bet_type == 'fake' else room.bet_type
+            emit('error', {'message': f'Insufficient {balance_label} balance. You have {player.promotional_credit_balance if room.bet_type == "fake" else player.real_balance}'})
             return
         
         # Update room
