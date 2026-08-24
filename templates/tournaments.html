@@ -339,7 +339,10 @@
                 const podiumHtml = podium && podium.length ? `<div class="card-podium">${[1, 2, 3].map((p) => {
                     const entry = podium.find((e) => Number(e.placement) === p) || {};
                     const medal = p === 1 ? '🥇' : p === 2 ? '🥈' : '🥉';
-                    const resultLabel = cashPrizesEnabled ? `E${amount(entry.amount).toFixed(2)}` : (p === 1 ? 'Cup qualifier' : `Position ${p}`);
+                    const qualifierLabel = entry.qualification_status === 'duplicate_win'
+                        ? 'Already qualified'
+                        : 'Cup qualifier';
+                    const resultLabel = cashPrizesEnabled ? `E${amount(entry.amount).toFixed(2)}` : (p === 1 ? qualifierLabel : `Position ${p}`);
                     return `<div class="podium-row podium-${p}"><span class="podium-medal">${medal}</span><span class="podium-name">${escapeHtml(entry.username || '—')}</span><strong class="podium-prize">${resultLabel}</strong></div>`;
                 }).join('')}</div>` : null;
                 const badge =tournament.tournament_type === "standard"

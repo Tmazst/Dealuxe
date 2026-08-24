@@ -14,6 +14,7 @@ from database import (
     TournamentMatch,
     TournamentPrizePool,
     TournamentSchedule,
+    CupQualification,
     MatchRoll,
     Transaction,
     User,
@@ -29,6 +30,7 @@ from services.promotional_credit_service import (
     debit_tournament_entry,
     reverse_tournament_entry,
 )
+from services.cup_qualification_service import award_cup_qualification
 
 
 tournament_bp = Blueprint('tournament', __name__, url_prefix='/api/tournaments')
@@ -213,9 +215,13 @@ def _serialize_tournament_detail(tournament):
     """Add economy presentation metadata to the detailed tournament contract."""
     detail = tournament.to_dict()
     promotional_entry = _is_promotional_tournament(tournament)
+    qualification = CupQualification.query.filter_by(
+        source_tournament_id=tournament.id
+    ).first()
     detail.update({
         'entry_balance_type': 'promotional' if promotional_entry else 'real',
         'cash_prizes_enabled': not promotional_entry,
+        'cup_qualification': qualification.to_dict() if qualification else None,
     })
     return detail
 
@@ -615,12 +621,25 @@ def _serialize_podium(tournament):
             tournament_id=tournament.id
         ).all()
     }
+    qualification = CupQualification.query.filter_by(
+        source_tournament_id=tournament.id
+    ).first()
     return [
         {
             'placement': placement,
             'user_id': user_id,
             'username': _get_username(user_id),
             'amount': round(rows[placement].prize_amount, 2) if placement in rows else 0.0,
+            'qualification_status': (
+                qualification.status
+                if placement == 1 and qualification is not None
+                else None
+            ),
+            'cup_event_key': (
+                qualification.event_key
+                if placement == 1 and qualification is not None
+                else None
+            ),
         }
         for placement, user_id in (
             (1, tournament.winner_id),
@@ -825,6 +844,19 @@ def _finalize_tournament(tournament):
                 description=f'Tournament #{tournament.id} prize (placement {placement})',
                 tournament_id=tournament.id,
             )
+
+    if (
+        current_app.config.get('CUP_QUALIFICATION_ENABLED', False)
+        and tournament.tournament_type in {'standard', 'premium', 'deluxe'}
+        and _is_promotional_tournament(tournament)
+        and tournament.winner_id
+    ):
+        award_cup_qualification(
+            tournament=tournament,
+            user_id=tournament.winner_id,
+            event_key=current_app.config['CUP_EVENT_KEY'],
+            season=current_app.config['CUP_SEASON'],
+        )
 
 
 def _maybe_finalize(tournament):

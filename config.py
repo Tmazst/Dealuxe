@@ -27,6 +27,11 @@ def build_pilot_economy_config(environ=None):
     paid_entry = _env_bool(environ, 'PAID_TOURNAMENT_ENTRY_ENABLED', default=False)
     cash_prizes = _env_bool(environ, 'CASH_PRIZES_ENABLED', default=False)
     pilot_credits = _env_bool(environ, 'PILOT_CREDITS_ENABLED', default=pilot_mode)
+    cup_enabled = _env_bool(environ, 'CUP_ENABLED', default=False)
+    cup_qualification = _env_bool(
+        environ, 'CUP_QUALIFICATION_ENABLED', default=pilot_mode
+    )
+    cup_cash_payouts = _env_bool(environ, 'CUP_CASH_PAYOUTS_ENABLED', default=False)
 
     if pilot_mode and paid_entry:
         raise RuntimeError('Paid tournament entry cannot be enabled in PILOT_MODE')
@@ -34,6 +39,8 @@ def build_pilot_economy_config(environ=None):
         raise RuntimeError('Cash prizes cannot be enabled in PILOT_MODE')
     if pilot_mode and not pilot_credits:
         raise RuntimeError('PILOT_CREDITS_ENABLED is required in PILOT_MODE')
+    if cup_cash_payouts:
+        raise RuntimeError('CUP_CASH_PAYOUTS_ENABLED is not available in Version 3')
 
     return {
         'PILOT_MODE': pilot_mode,
@@ -41,6 +48,11 @@ def build_pilot_economy_config(environ=None):
         'CASH_PRIZES_ENABLED': cash_prizes,
         'PILOT_CREDITS_ENABLED': pilot_credits,
         'PILOT_TOURNAMENT_ENTRY_COST': 10.0,
+        'CUP_ENABLED': cup_enabled,
+        'CUP_QUALIFICATION_ENABLED': cup_qualification,
+        'CUP_CASH_PAYOUTS_ENABLED': cup_cash_payouts,
+        'CUP_EVENT_KEY': str(environ.get('CUP_EVENT_KEY') or 'umshova-cup-pilot').strip(),
+        'CUP_SEASON': str(environ.get('CUP_SEASON') or '2026').strip(),
     }
 
 

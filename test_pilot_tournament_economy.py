@@ -9,6 +9,7 @@ from app import app
 from controllers.tournament_controller import _finalize_tournament, _withdraw_participant
 from database import (
     Player,
+    CupQualification,
     Tournament,
     TournamentParticipant,
     TournamentPrizePool,
@@ -16,6 +17,8 @@ from database import (
     TX_PROMOTIONAL_ENTRY,
     TX_PROMOTIONAL_ENTRY_REVERSAL,
     User,
+    add_tournament_participant,
+    create_tournament_record,
     db,
 )
 from services.payment_service import payment_service
@@ -31,6 +34,11 @@ class TestPilotTournamentEconomy(unittest.TestCase):
                 'PAID_TOURNAMENT_ENTRY_ENABLED',
                 'CASH_PRIZES_ENABLED',
                 'PILOT_TOURNAMENT_ENTRY_COST',
+                'CUP_ENABLED',
+                'CUP_QUALIFICATION_ENABLED',
+                'CUP_CASH_PAYOUTS_ENABLED',
+                'CUP_EVENT_KEY',
+                'CUP_SEASON',
             )
         }
         app.config.update(
@@ -41,6 +49,11 @@ class TestPilotTournamentEconomy(unittest.TestCase):
             PAID_TOURNAMENT_ENTRY_ENABLED=False,
             CASH_PRIZES_ENABLED=False,
             PILOT_TOURNAMENT_ENTRY_COST=10.0,
+            CUP_ENABLED=False,
+            CUP_QUALIFICATION_ENABLED=True,
+            CUP_CASH_PAYOUTS_ENABLED=False,
+            CUP_EVENT_KEY='test-cup-event',
+            CUP_SEASON='2026',
         )
         self.context = app.app_context()
         self.context.push()
@@ -133,6 +146,64 @@ class TestPilotTournamentEconomy(unittest.TestCase):
         self.assertEqual(tournament['entry_balance_type'], 'promotional')
         self.assertFalse(tournament['cash_prizes_enabled'])
         self.assertEqual(tournament['prize_pool_amount'], 0.0)
+
+    def test_position_one_qualifies_once_and_later_wins_are_recorded(self):
+        tournament_id = self._create().get_json()['tournament']['id']
+        tournament = Tournament.query.get(tournament_id)
+        tournament.winner_id = self.users[0].id
+
+        _finalize_tournament(tournament)
+        _finalize_tournament(tournament)
+        db.session.commit()
+
+        first = CupQualification.query.filter_by(
+            source_tournament_id=tournament.id
+        ).one()
+        self.assertEqual(first.status, 'qualified')
+        self.assertTrue(first.seat_key)
+        self.assertEqual(CupQualification.query.count(), 1)
+
+        second = create_tournament_record(
+            creator_id=self.users[0].id,
+            tournament_type='standard',
+            tournament_name='Second Qualifying Win',
+            entry_fee=10.0,
+            max_players=4,
+        )
+        second.prize_pool_amount = 0.0
+        participant = add_tournament_participant(
+            second.id,
+            self.users[0].id,
+            payment_status='completed',
+            paid_amount=10.0,
+            payment_method='promotional_credit',
+        )
+        participant.status = 'registered'
+        second.winner_id = self.users[0].id
+
+        _finalize_tournament(second)
+        db.session.commit()
+
+        records = CupQualification.query.order_by(CupQualification.id).all()
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[1].status, 'duplicate_win')
+        self.assertIsNone(records[1].seat_key)
+        self.assertEqual(sum(bool(record.seat_key) for record in records), 1)
+
+        account = self.client.get('/account/api').get_json()['account']
+        self.assertTrue(account['cup_qualification']['qualified'])
+        self.assertEqual(account['cup_qualification']['qualifying_wins'], 2)
+        account_page = self.client.get('/account').get_data(as_text=True)
+        self.assertIn('uMshova Cup Qualification', account_page)
+        self.assertIn('QUALIFIED', account_page)
+
+        overview = self.client.get(
+            f'/api/tournaments/{second.id}/overview'
+        ).get_json()
+        self.assertEqual(
+            overview['podium'][0]['qualification_status'],
+            'duplicate_win',
+        )
 
     def test_duplicate_join_does_not_charge_twice(self):
         response = self._create()

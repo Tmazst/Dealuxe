@@ -16,6 +16,7 @@ from database import (
     get_player_by_user_id,
     log_transaction,
 )
+from services.cup_qualification_service import qualification_summary
 
 
 KYC_NOT_SUBMITTED = 'not_submitted'
@@ -52,6 +53,7 @@ def _save_file(file_storage, user_id, prefix):
 def get_account_json(user):
     """Full JSON view of a user's account (for the widget and account page)."""
     player = get_player_by_user_id(user.id)
+    cup_event_key = current_app.config.get('CUP_EVENT_KEY')
     return {
         'id': user.id,
         'username': user.username,
@@ -72,6 +74,7 @@ def get_account_json(user):
         'created_at': user.created_at.isoformat() if user.created_at else None,
         'last_login': user.last_login.isoformat() if user.last_login else None,
         'player': player.to_dict() if player else None,
+        'cup_qualification': qualification_summary(user.id, cup_event_key),
     }
 
 
@@ -195,4 +198,3 @@ def initiate_topup(user, amount):
         'external_transaction_id': result.get('external_transaction_id'),
         'external_ref_id': external_ref_id,
     }
-

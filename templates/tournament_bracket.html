@@ -1008,8 +1008,11 @@
                 const prizeEl = document.getElementById(prizeId);
                 if (nameEl) nameEl.textContent = entry.username || '—';
                 if (prizeEl) {
+                    const qualifierLabel = entry.qualification_status === 'duplicate_win'
+                        ? 'Already qualified'
+                        : 'Cup qualifier';
                     prizeEl.textContent = (pilotMode || t.cash_prizes_enabled === false)
-                        ? (placement === 1 ? 'Cup qualifier' : 'Placement recorded')
+                        ? (placement === 1 ? qualifierLabel : 'Placement recorded')
                         : `E${Number(entry.amount || 0).toFixed(2)}`;
                 }
             };

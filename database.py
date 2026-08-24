@@ -4,6 +4,7 @@ SQLAlchemy setup for Dealuxe Card Game
 """
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import uuid
 from sqlalchemy import text
 from sqlalchemy.orm import synonym
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -695,6 +696,48 @@ class TournamentParticipant(db.Model):
     user = db.relationship('User', backref='tournament_participations')
 
 
+class CupQualification(db.Model):
+    """Records every qualifying win while allowing one active seat per event."""
+    __tablename__ = 'cup_qualifications'
+    __table_args__ = (
+        db.UniqueConstraint('source_tournament_id', name='uq_cup_qualification_source'),
+        db.Index('idx_cup_qualifications_user_event', 'user_id', 'event_key'),
+        db.Index('idx_cup_qualifications_status', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_tournament_id = db.Column(
+        db.Integer, db.ForeignKey('tournaments.id'), nullable=False
+    )
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    season = db.Column(db.String(40), nullable=False)
+    event_key = db.Column(db.String(80), nullable=False)
+    status = db.Column(db.String(30), nullable=False, default='qualified')
+    # Only an active qualification receives a seat key. Its unique constraint
+    # prevents a user from holding two active seats in the same Cup event while
+    # still allowing later wins to be recorded as duplicate_win rows.
+    seat_key = db.Column(db.String(160), nullable=True, unique=True)
+    qualified_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    checked_in_at = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    source_tournament = db.relationship('Tournament', backref='cup_qualifications')
+    user = db.relationship('User', backref='cup_qualifications')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'source_tournament_id': self.source_tournament_id,
+            'user_id': self.user_id,
+            'season': self.season,
+            'event_key': self.event_key,
+            'status': self.status,
+            'has_active_seat': bool(self.seat_key),
+            'qualified_at': self.qualified_at.isoformat() if self.qualified_at else None,
+            'checked_in_at': self.checked_in_at.isoformat() if self.checked_in_at else None,
+        }
+
+
 class TournamentBracket(db.Model):
     """Represents a bracket slot in a tournament."""
     __tablename__ = 'tournament_brackets'
@@ -997,7 +1040,9 @@ def create_tournament_record(creator_id, tournament_type, tournament_name=None, 
     if max_players is None:
         max_players = {'standard': 4, 'premium': 8, 'deluxe': 16}.get(tournament_type, 4)
 
-    code = f"TMT-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{tournament_type[:3].upper()}"
+    # A UUID-backed code avoids collisions when two tournaments are created in
+    # the same second (common in tests, admin tools and future pilot traffic).
+    code = f"TMT-{uuid.uuid4().hex[:16].upper()}"
     tournament = Tournament(
         tournament_code=code,
         tournament_name=tournament_name or f"{tournament_type.title()} Tournament",

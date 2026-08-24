@@ -92,6 +92,12 @@ class PilotEconomyConfigTests(unittest.TestCase):
                 'CASH_PRIZES_ENABLED': 'true',
             })
 
+    def test_version_three_hard_disables_cup_cash_payouts(self):
+        with self.assertRaisesRegex(RuntimeError, 'CUP_CASH_PAYOUTS_ENABLED'):
+            build_pilot_economy_config({
+                'CUP_CASH_PAYOUTS_ENABLED': 'true',
+            })
+
 
 if __name__ == '__main__':
     unittest.main()

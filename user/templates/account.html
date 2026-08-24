@@ -230,6 +230,27 @@
                 </div>
             </section>
 
+            {% if config.PILOT_MODE %}
+            <!-- Cup qualification -->
+            <section class="card">
+                <h2>🏆 uMshova Cup Qualification</h2>
+                {% if account.cup_qualification.qualified %}
+                    <div class="balance-tile" style="margin-bottom:14px;">
+                        <div class="label">Current status</div>
+                        <div class="amount promotional" style="font-size:1.45rem;">QUALIFIED</div>
+                        <small>One active seat · {{ account.cup_qualification.active.season }} season</small>
+                    </div>
+                    <div class="info-row"><span>Qualifying tournament</span><strong>#{{ account.cup_qualification.active.source_tournament_id }}</strong></div>
+                    <div class="info-row"><span>Qualifying wins recorded</span><strong>{{ account.cup_qualification.qualifying_wins }}</strong></div>
+                    <div class="info-row"><span>Event</span><strong>{{ account.cup_qualification.active.event_key|replace('-', ' ')|title }}</strong></div>
+                {% else %}
+                    <div class="empty">
+                        Win Position 1 in an eligible ordinary pilot tournament to qualify for the uMshova Cup.
+                    </div>
+                {% endif %}
+            </section>
+            {% endif %}
+
             <!-- KYC -->
             <section class="card">
                 <h2>🪪 Identity Verification <small>(KYC)</small></h2>
