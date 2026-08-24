@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 import os
 
 from flask import current_app
@@ -15,11 +16,13 @@ from database import (
     Dispute,
     WalletAdjustment,
     Transaction,
+    CupQualification,
     add_tournament_participant,
     create_tournament_record,
     get_player_by_user_id,
 )
 from sqlalchemy import or_
+from services.cup_qualification_service import ACTIVE_QUALIFICATION_STATUSES
 
 
 def log_admin_action(admin_user_id, action, entity_type=None, entity_id=None, summary=None, details=None):
@@ -503,6 +506,197 @@ def award_credits(admin_user_id, user_id, amount, balance_type='promotional', re
         admin_user_id, user_id, balance_type, float(amount),
         reason or 'Promotional credits awarded',
     )
+
+
+# -----------------------------
+# CUP QUALIFICATION ROSTER
+# -----------------------------
+
+CUP_ROSTER_STATUSES = {
+    'qualified', 'checked_in', 'reserve', 'duplicate_win',
+    'revoked', 'replaced',
+}
+
+
+def _serialize_cup_qualification(qualification, seat_number=None):
+    payload = qualification.to_dict()
+    payload.update({
+        'username': _username(qualification.user_id),
+        'source_tournament_name': (
+            qualification.source_tournament.tournament_name
+            if qualification.source_tournament else None
+        ),
+        'source_tournament_code': (
+            qualification.source_tournament.tournament_code
+            if qualification.source_tournament else None
+        ),
+        'seat_number': seat_number,
+        'notes': qualification.notes,
+    })
+    return payload
+
+
+def list_cup_qualifications(event_key=None, status=''):
+    event_key = (event_key or current_app.config.get('CUP_EVENT_KEY') or '').strip()
+    query = CupQualification.query.filter_by(event_key=event_key)
+    if status:
+        if status not in CUP_ROSTER_STATUSES:
+            raise ValueError('Invalid Cup qualification status')
+        query = query.filter_by(status=status)
+    records = query.order_by(
+        CupQualification.qualified_at.asc(), CupQualification.id.asc()
+    ).all()
+
+    all_event_records = CupQualification.query.filter_by(event_key=event_key).all()
+    active_records = [
+        record for record in all_event_records
+        if record.status in ACTIVE_QUALIFICATION_STATUSES
+    ]
+    active_ids = {
+        record.id: seat_number
+        for seat_number, record in enumerate(
+            sorted(active_records, key=lambda item: (item.qualified_at, item.id)),
+            start=1,
+        )
+    }
+    capacity = int(current_app.config.get('CUP_CAPACITY', 64))
+    counts = {
+        roster_status: sum(record.status == roster_status for record in all_event_records)
+        for roster_status in sorted(CUP_ROSTER_STATUSES)
+    }
+    return {
+        'event_key': event_key,
+        'season': current_app.config.get('CUP_SEASON'),
+        'capacity': capacity,
+        'active_seats': len(active_records),
+        'remaining_seats': max(capacity - len(active_records), 0),
+        'ready_to_lock': len(active_records) >= capacity,
+        'counts': counts,
+        'qualifications': [
+            _serialize_cup_qualification(record, active_ids.get(record.id))
+            for record in records
+        ],
+    }
+
+
+def check_in_cup_qualification(qualification_id, admin_user_id):
+    qualification = CupQualification.query.get_or_404(qualification_id)
+    if qualification.status == 'checked_in':
+        return _serialize_cup_qualification(qualification)
+    if qualification.status != 'qualified' or not qualification.seat_key:
+        raise ValueError('Only an active qualified seat can be checked in')
+    qualification.status = 'checked_in'
+    qualification.checked_in_at = datetime.utcnow()
+    qualification.status_updated_at = datetime.utcnow()
+    qualification.status_updated_by = admin_user_id
+    log_admin_action(
+        admin_user_id, 'cup_qualification.check_in',
+        entity_type='cup_qualification', entity_id=qualification.id,
+        summary=f'Checked in {_username(qualification.user_id)} for {qualification.event_key}',
+    )
+    db.session.commit()
+    return _serialize_cup_qualification(qualification)
+
+
+def move_cup_qualification_to_reserve(qualification_id, admin_user_id, reason):
+    qualification = CupQualification.query.get_or_404(qualification_id)
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValueError('A reserve reason is required')
+    if qualification.status not in ACTIVE_QUALIFICATION_STATUSES:
+        raise ValueError('Only an active Cup seat can be moved to reserve')
+    qualification.status = 'reserve'
+    qualification.seat_key = None
+    qualification.checked_in_at = None
+    qualification.status_updated_at = datetime.utcnow()
+    qualification.status_updated_by = admin_user_id
+    qualification.notes = reason
+    log_admin_action(
+        admin_user_id, 'cup_qualification.reserve',
+        entity_type='cup_qualification', entity_id=qualification.id,
+        summary=f'Moved {_username(qualification.user_id)} to Cup reserve',
+        details=reason,
+    )
+    db.session.commit()
+    return _serialize_cup_qualification(qualification)
+
+
+def revoke_cup_qualification(qualification_id, admin_user_id, reason):
+    qualification = CupQualification.query.get_or_404(qualification_id)
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValueError('A revocation reason is required')
+    if qualification.status in {'revoked', 'replaced'}:
+        raise ValueError('This qualification is no longer active')
+    qualification.status = 'revoked'
+    qualification.seat_key = None
+    qualification.checked_in_at = None
+    qualification.status_updated_at = datetime.utcnow()
+    qualification.status_updated_by = admin_user_id
+    qualification.notes = reason
+    log_admin_action(
+        admin_user_id, 'cup_qualification.revoke',
+        entity_type='cup_qualification', entity_id=qualification.id,
+        summary=f'Revoked Cup qualification for {_username(qualification.user_id)}',
+        details=reason,
+    )
+    db.session.commit()
+    return _serialize_cup_qualification(qualification)
+
+
+def replace_cup_qualification(qualification_id, replacement_id, admin_user_id, reason):
+    source = CupQualification.query.get_or_404(qualification_id)
+    replacement = CupQualification.query.get_or_404(replacement_id)
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValueError('A replacement reason is required')
+    if source.id == replacement.id:
+        raise ValueError('Replacement qualification must be different')
+    if source.status not in ACTIVE_QUALIFICATION_STATUSES or not source.seat_key:
+        raise ValueError('Only an active Cup seat can be replaced')
+    if replacement.status != 'reserve' or replacement.seat_key:
+        raise ValueError('Replacement must be on the reserve list')
+    if source.event_key != replacement.event_key:
+        raise ValueError('Replacement must belong to the same Cup event')
+    other_active = CupQualification.query.filter(
+        CupQualification.user_id == replacement.user_id,
+        CupQualification.event_key == replacement.event_key,
+        CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES),
+    ).first()
+    if other_active is not None:
+        raise ValueError('Replacement player already holds an active Cup seat')
+
+    source.status = 'replaced'
+    source.seat_key = None
+    source.checked_in_at = None
+    source.status_updated_at = datetime.utcnow()
+    source.status_updated_by = admin_user_id
+    source.notes = reason
+
+    replacement.status = 'qualified'
+    replacement.seat_key = f'{replacement.event_key}:{replacement.user_id}'
+    replacement.replacement_for_id = source.id
+    replacement.status_updated_at = datetime.utcnow()
+    replacement.status_updated_by = admin_user_id
+    replacement.notes = reason
+
+    log_admin_action(
+        admin_user_id, 'cup_qualification.replace',
+        entity_type='cup_qualification', entity_id=source.id,
+        summary=(
+            f'Replaced {_username(source.user_id)} with '
+            f'{_username(replacement.user_id)} for {source.event_key}'
+        ),
+        details=json.dumps({
+            'replacement_qualification_id': replacement.id,
+            'reason': reason,
+        }),
+    )
+    db.session.commit()
+    return {
+        'replaced': _serialize_cup_qualification(source),
+        'replacement': _serialize_cup_qualification(replacement),
+    }
 
 
 # -----------------------------

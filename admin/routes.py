@@ -24,6 +24,11 @@ from admin.service import (
     user_activity,
     read_backend_logs,
     clear_backend_logs,
+    check_in_cup_qualification,
+    list_cup_qualifications,
+    move_cup_qualification_to_reserve,
+    replace_cup_qualification,
+    revoke_cup_qualification,
 )
 from database import User
 
@@ -205,6 +210,72 @@ def get_audit_logs():
     except (TypeError, ValueError):
         limit = 100
     return jsonify({'logs': list_audit_logs(limit)})
+
+
+@admin_bp.route('/cup-qualifications', methods=['GET'])
+@admin_required
+def cup_qualification_roster():
+    try:
+        return jsonify(list_cup_qualifications(
+            event_key=request.args.get('event_key'),
+            status=request.args.get('status', '').strip(),
+        ))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@admin_bp.route('/cup-qualifications/<int:qualification_id>/check-in', methods=['POST'])
+@admin_required
+def cup_qualification_check_in(qualification_id):
+    try:
+        qualification = check_in_cup_qualification(
+            qualification_id, session['user_id']
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Qualifier checked in', 'qualification': qualification})
+
+
+@admin_bp.route('/cup-qualifications/<int:qualification_id>/reserve', methods=['POST'])
+@admin_required
+def cup_qualification_reserve(qualification_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        qualification = move_cup_qualification_to_reserve(
+            qualification_id, session['user_id'], data.get('reason')
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Qualifier moved to reserve', 'qualification': qualification})
+
+
+@admin_bp.route('/cup-qualifications/<int:qualification_id>/revoke', methods=['POST'])
+@admin_required
+def cup_qualification_revoke(qualification_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        qualification = revoke_cup_qualification(
+            qualification_id, session['user_id'], data.get('reason')
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Qualification revoked', 'qualification': qualification})
+
+
+@admin_bp.route('/cup-qualifications/<int:qualification_id>/replace', methods=['POST'])
+@admin_required
+def cup_qualification_replace(qualification_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        result = replace_cup_qualification(
+            qualification_id,
+            int(data.get('replacement_qualification_id')),
+            session['user_id'],
+            data.get('reason'),
+        )
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Cup seat replaced', **result})
 
 
 @admin_bp.route('/disputes', methods=['GET'])

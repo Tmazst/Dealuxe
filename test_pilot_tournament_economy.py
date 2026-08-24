@@ -39,6 +39,7 @@ class TestPilotTournamentEconomy(unittest.TestCase):
                 'CUP_CASH_PAYOUTS_ENABLED',
                 'CUP_EVENT_KEY',
                 'CUP_SEASON',
+                'CUP_CAPACITY',
             )
         }
         app.config.update(
@@ -54,6 +55,7 @@ class TestPilotTournamentEconomy(unittest.TestCase):
             CUP_CASH_PAYOUTS_ENABLED=False,
             CUP_EVENT_KEY='test-cup-event',
             CUP_SEASON='2026',
+            CUP_CAPACITY=64,
         )
         self.context = app.app_context()
         self.context.push()
@@ -204,6 +206,40 @@ class TestPilotTournamentEconomy(unittest.TestCase):
             overview['podium'][0]['qualification_status'],
             'duplicate_win',
         )
+
+    def test_new_qualifier_becomes_reserve_when_cup_capacity_is_reached(self):
+        app.config['CUP_CAPACITY'] = 1
+        first_id = self._create().get_json()['tournament']['id']
+        first = Tournament.query.get(first_id)
+        first.winner_id = self.users[0].id
+        _finalize_tournament(first)
+        db.session.commit()
+
+        second = create_tournament_record(
+            creator_id=self.users[1].id,
+            tournament_type='standard',
+            tournament_name='Reserve Qualifier',
+            entry_fee=10.0,
+            max_players=4,
+        )
+        second.prize_pool_amount = 0.0
+        participant = add_tournament_participant(
+            second.id,
+            self.users[1].id,
+            payment_status='completed',
+            paid_amount=10.0,
+            payment_method='promotional_credit',
+        )
+        participant.status = 'registered'
+        second.winner_id = self.users[1].id
+        _finalize_tournament(second)
+        db.session.commit()
+
+        reserve = CupQualification.query.filter_by(
+            source_tournament_id=second.id
+        ).one()
+        self.assertEqual(reserve.status, 'reserve')
+        self.assertIsNone(reserve.seat_key)
 
     def test_duplicate_join_does_not_charge_twice(self):
         response = self._create()

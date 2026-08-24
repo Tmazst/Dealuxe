@@ -53,6 +53,7 @@ def build_pilot_economy_config(environ=None):
         'CUP_CASH_PAYOUTS_ENABLED': cup_cash_payouts,
         'CUP_EVENT_KEY': str(environ.get('CUP_EVENT_KEY') or 'umshova-cup-pilot').strip(),
         'CUP_SEASON': str(environ.get('CUP_SEASON') or '2026').strip(),
+        'CUP_CAPACITY': 64,
     }
 
 

@@ -856,6 +856,7 @@ def _finalize_tournament(tournament):
             user_id=tournament.winner_id,
             event_key=current_app.config['CUP_EVENT_KEY'],
             season=current_app.config['CUP_SEASON'],
+            capacity=current_app.config.get('CUP_CAPACITY', 64),
         )
 
 

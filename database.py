@@ -5,7 +5,7 @@ SQLAlchemy setup for Dealuxe Card Game
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import uuid
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import synonym
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -124,6 +124,25 @@ def ensure_payment_schema():
         ))
 
 
+def ensure_cup_qualification_schema():
+    """Add roster-workflow fields to an existing Cup qualification table."""
+    if db.engine is None or db.engine.name != 'sqlite':
+        return
+    if not inspect(db.engine).has_table('cup_qualifications'):
+        return
+    columns = [
+        ('status_updated_at', 'DATETIME'),
+        ('status_updated_by', 'INTEGER'),
+        ('replacement_for_id', 'INTEGER'),
+    ]
+    with db.session.begin():
+        for column_name, column_definition in columns:
+            if not _table_has_column('cup_qualifications', column_name):
+                db.session.execute(text(
+                    f'ALTER TABLE cup_qualifications ADD COLUMN {column_name} {column_definition}'
+                ))
+
+
 def init_db(app):
     """Initialize database with Flask app"""
     # SQLite configuration (will switch to MySQL later)
@@ -138,6 +157,7 @@ def init_db(app):
         ensure_tournament_schema()
         ensure_user_account_schema()
         ensure_payment_schema()
+        ensure_cup_qualification_schema()
         print("[DATABASE] Database initialized successfully")
 
 
@@ -719,10 +739,18 @@ class CupQualification(db.Model):
     seat_key = db.Column(db.String(160), nullable=True, unique=True)
     qualified_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     checked_in_at = db.Column(db.DateTime, nullable=True)
+    status_updated_at = db.Column(db.DateTime, nullable=True)
+    status_updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    replacement_for_id = db.Column(
+        db.Integer, db.ForeignKey('cup_qualifications.id'), nullable=True
+    )
     notes = db.Column(db.Text, nullable=True)
 
     source_tournament = db.relationship('Tournament', backref='cup_qualifications')
-    user = db.relationship('User', backref='cup_qualifications')
+    user = db.relationship(
+        'User', foreign_keys=[user_id], backref='cup_qualifications'
+    )
+    status_admin = db.relationship('User', foreign_keys=[status_updated_by])
 
     def to_dict(self):
         return {
@@ -735,6 +763,9 @@ class CupQualification(db.Model):
             'has_active_seat': bool(self.seat_key),
             'qualified_at': self.qualified_at.isoformat() if self.qualified_at else None,
             'checked_in_at': self.checked_in_at.isoformat() if self.checked_in_at else None,
+            'status_updated_at': self.status_updated_at.isoformat() if self.status_updated_at else None,
+            'status_updated_by': self.status_updated_by,
+            'replacement_for_id': self.replacement_for_id,
         }
 
 

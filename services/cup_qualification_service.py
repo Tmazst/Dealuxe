@@ -6,7 +6,7 @@ from database import CupQualification, db
 ACTIVE_QUALIFICATION_STATUSES = {'qualified', 'checked_in'}
 
 
-def award_cup_qualification(tournament, user_id, event_key, season):
+def award_cup_qualification(tournament, user_id, event_key, season, capacity=64):
     """Record a tournament win and grant at most one active event seat."""
     existing_source = CupQualification.query.filter_by(
         source_tournament_id=tournament.id
@@ -19,18 +19,32 @@ def award_cup_qualification(tournament, user_id, event_key, season):
         CupQualification.event_key == event_key,
         CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES),
     ).first()
-    has_active_seat = active is None
+    active_seat_count = CupQualification.query.filter(
+        CupQualification.event_key == event_key,
+        CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES),
+    ).count()
+    has_active_seat = active is None and active_seat_count < int(capacity)
+    if active is not None:
+        status = 'duplicate_win'
+    elif has_active_seat:
+        status = 'qualified'
+    else:
+        status = 'reserve'
     qualification = CupQualification(
         source_tournament_id=tournament.id,
         user_id=user_id,
         season=season,
         event_key=event_key,
-        status='qualified' if has_active_seat else 'duplicate_win',
+        status=status,
         seat_key=f'{event_key}:{user_id}' if has_active_seat else None,
         notes=(
             'Active Cup seat awarded from Position 1.'
             if has_active_seat
-            else f'Additional qualifying win; active seat retained from tournament #{active.source_tournament_id}.'
+            else (
+                f'Additional qualifying win; active seat retained from tournament #{active.source_tournament_id}.'
+                if active is not None
+                else f'Cup capacity of {capacity} reached; qualifier added to reserves.'
+            )
         ),
     )
     db.session.add(qualification)

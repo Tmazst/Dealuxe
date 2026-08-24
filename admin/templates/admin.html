@@ -75,6 +75,42 @@
 
     <div class="panel">
         <div class="controls">
+            <h2 style="margin-right:auto;">uMshova Cup Qualification Roster</h2>
+            <label>
+                Status:
+                <select id="cupStatusFilter">
+                    <option value="">All</option>
+                    <option value="qualified">Qualified</option>
+                    <option value="checked_in">Checked In</option>
+                    <option value="reserve">Reserve</option>
+                    <option value="duplicate_win">Additional Win</option>
+                    <option value="revoked">Revoked</option>
+                    <option value="replaced">Replaced</option>
+                </select>
+            </label>
+            <button id="reloadCupRoster">Reload</button>
+        </div>
+        <div class="summary-grid" id="cupSummaryGrid"></div>
+        <p class="status" id="cupRosterStatus"></p>
+        <table id="cupRosterTable">
+            <thead>
+                <tr>
+                    <th>Seat</th>
+                    <th>Player</th>
+                    <th>Season / Event</th>
+                    <th>Source Tournament</th>
+                    <th>Status</th>
+                    <th>Qualified</th>
+                    <th>Notes</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <div class="controls">
             <h2 style="margin-right:auto;">Disputes</h2>
             <label>
                 Filter:
@@ -171,6 +207,7 @@
         const statusEl = document.getElementById('status');
         const usersTableBody = document.querySelector('#usersTable tbody');
         const tournamentsTableBody = document.querySelector('#tournamentsTable tbody');
+        const cupRosterTableBody = document.querySelector('#cupRosterTable tbody');
         const searchInput = document.getElementById('searchInput');
         const summaryGrid = document.getElementById('summaryGrid');
         let currentAuditUserId = null;
@@ -262,6 +299,45 @@
                     </td>
                 `;
                 tournamentsTableBody.appendChild(row);
+            });
+        }
+
+        async function fetchCupRoster() {
+            const filter = document.getElementById('cupStatusFilter').value;
+            const url = '/api/admin/cup-qualifications' + (filter ? `?status=${encodeURIComponent(filter)}` : '');
+            const response = await fetch(url, { credentials: 'same-origin' });
+            if (!response.ok) return;
+            const data = await response.json();
+            document.getElementById('cupSummaryGrid').innerHTML = `
+                <div class="summary-card"><span class="pill">Active seats</span><strong>${data.active_seats}/${data.capacity}</strong></div>
+                <div class="summary-card"><span class="pill">Remaining</span><strong>${data.remaining_seats}</strong></div>
+                <div class="summary-card"><span class="pill">Checked in</span><strong>${data.counts.checked_in || 0}</strong></div>
+                <div class="summary-card"><span class="pill">Reserves</span><strong>${data.counts.reserve || 0}</strong></div>
+            `;
+            document.getElementById('cupRosterStatus').textContent = data.ready_to_lock
+                ? 'Roster has reached capacity. Cup creation remains controlled by CUP_ENABLED.'
+                : `${data.remaining_seats} active seat(s) remain before the 64-player lock.`;
+            cupRosterTableBody.innerHTML = '';
+            (data.qualifications || []).forEach(q => {
+                const active = q.status === 'qualified' || q.status === 'checked_in';
+                const reserve = q.status === 'reserve';
+                const actions = [];
+                if (q.status === 'qualified') actions.push(`<button data-action="cupCheckIn" data-id="${q.id}">Check in</button>`);
+                if (active) actions.push(`<button data-action="cupReserve" data-id="${q.id}">Reserve</button>`);
+                if (!['revoked', 'replaced'].includes(q.status)) actions.push(`<button data-action="cupRevoke" data-id="${q.id}">Revoke</button>`);
+                if (reserve) actions.push(`<button data-action="cupReplace" data-id="${q.id}">Use as replacement</button>`);
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${q.seat_number || '—'}</td>
+                    <td>${escapeHtml(q.username || q.user_id)}</td>
+                    <td>${escapeHtml(q.season)} / ${escapeHtml(q.event_key)}</td>
+                    <td>#${q.source_tournament_id} ${escapeHtml(q.source_tournament_name || '')}</td>
+                    <td><span class="pill">${escapeHtml(q.status.replace('_', ' '))}</span></td>
+                    <td>${escapeHtml(q.qualified_at || '')}</td>
+                    <td>${escapeHtml(q.notes || '')}</td>
+                    <td>${actions.join('')}</td>
+                `;
+                cupRosterTableBody.appendChild(row);
             });
         }
 
@@ -523,6 +599,35 @@
                         body: { status, resolution: resolution.trim() || undefined },
                     });
                 }
+                if (action === 'cupCheckIn') {
+                    await sendJson(`/api/admin/cup-qualifications/${button.dataset.id}/check-in`);
+                }
+                if (action === 'cupReserve') {
+                    const reason = prompt('Reason for moving this qualifier to reserve:');
+                    if (reason === null) return;
+                    await sendJson(`/api/admin/cup-qualifications/${button.dataset.id}/reserve`, {
+                        body: { reason },
+                    });
+                }
+                if (action === 'cupRevoke') {
+                    const reason = prompt('Reason for revoking this qualification:');
+                    if (reason === null) return;
+                    await sendJson(`/api/admin/cup-qualifications/${button.dataset.id}/revoke`, {
+                        body: { reason },
+                    });
+                }
+                if (action === 'cupReplace') {
+                    const sourceId = prompt('Active qualification ID to replace with this reserve:');
+                    if (sourceId === null) return;
+                    const reason = prompt('Replacement reason:');
+                    if (reason === null) return;
+                    await sendJson(`/api/admin/cup-qualifications/${Number(sourceId)}/replace`, {
+                        body: {
+                            replacement_qualification_id: Number(button.dataset.id),
+                            reason,
+                        },
+                    });
+                }
                 if (action === 'viewActivity') {
                     await viewUserActivity(userId);
                     return;
@@ -535,6 +640,7 @@
                 await fetchUsers(searchInput.value.trim());
                 await fetchTournaments();
                 await fetchDisputes();
+                await fetchCupRoster();
                 if (currentAuditUserId) { await viewUserActivity(currentAuditUserId); } else { await fetchAuditLogs(); }
             } catch (err) {
                 statusEl.textContent = 'Update failed: ' + err.message;
@@ -550,11 +656,14 @@
         });
         document.getElementById('disputeFilter').addEventListener('change', fetchDisputes);
         document.getElementById('reloadDisputes').addEventListener('click', fetchDisputes);
+        document.getElementById('cupStatusFilter').addEventListener('change', fetchCupRoster);
+        document.getElementById('reloadCupRoster').addEventListener('click', fetchCupRoster);
 
         fetchDashboard();
         fetchUsers();
         fetchTournaments();
         fetchDisputes();
+        fetchCupRoster();
         fetchAuditLogs();
         bindLogControls();
         fetchBackendLogs();

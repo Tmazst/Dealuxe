@@ -14,6 +14,7 @@ from database import (
     AdminAuditLog,
     Dispute,
     WalletAdjustment,
+    CupQualification,
     create_tournament_record,
     add_tournament_participant,
     get_player_by_user_id,
@@ -60,6 +61,119 @@ class TestAdminExpansion(unittest.TestCase):
         self.assertEqual(r.status_code, 403)
         r = self.client.get('/api/admin/audit-logs')
         self.assertEqual(r.status_code, 403)
+        r = self.client.get('/api/admin/cup-qualifications')
+        self.assertEqual(r.status_code, 403)
+
+    def _seed_cup_roster(self):
+        candidate = User(username='reserve1', email='reserve1@test.com')
+        candidate.set_password('pw')
+        db.session.add(candidate)
+        db.session.flush()
+        db.session.add(Player(user_id=candidate.id))
+
+        first = create_tournament_record(
+            creator_id=self.regular.id,
+            tournament_type='standard',
+            tournament_name='Qualifier One',
+            entry_fee=10.0,
+            max_players=4,
+        )
+        second = create_tournament_record(
+            creator_id=candidate.id,
+            tournament_type='standard',
+            tournament_name='Qualifier Two',
+            entry_fee=10.0,
+            max_players=4,
+        )
+        event_key = app.config['CUP_EVENT_KEY']
+        active = CupQualification(
+            source_tournament_id=first.id,
+            user_id=self.regular.id,
+            season='2026',
+            event_key=event_key,
+            status='qualified',
+            seat_key=f'{event_key}:{self.regular.id}',
+        )
+        reserve = CupQualification(
+            source_tournament_id=second.id,
+            user_id=candidate.id,
+            season='2026',
+            event_key=event_key,
+            status='reserve',
+        )
+        db.session.add_all([active, reserve])
+        db.session.commit()
+        return active.id, reserve.id, candidate.id
+
+    def test_cup_roster_check_in_and_replacement_are_audited(self):
+        active_id, reserve_id, candidate_id = self._seed_cup_roster()
+        self._login(self.admin)
+
+        roster = self.client.get('/api/admin/cup-qualifications')
+        self.assertEqual(roster.status_code, 200)
+        payload = roster.get_json()
+        self.assertEqual(payload['active_seats'], 1)
+        self.assertEqual(payload['capacity'], 64)
+        self.assertEqual(payload['remaining_seats'], 63)
+        admin_page = self.client.get('/admin').get_data(as_text=True)
+        self.assertIn('uMshova Cup Qualification Roster', admin_page)
+
+        checked_in = self.client.post(
+            f'/api/admin/cup-qualifications/{active_id}/check-in'
+        )
+        self.assertEqual(checked_in.status_code, 200)
+        self.assertEqual(
+            checked_in.get_json()['qualification']['status'], 'checked_in'
+        )
+
+        replaced = self.client.post(
+            f'/api/admin/cup-qualifications/{active_id}/replace',
+            json={
+                'replacement_qualification_id': reserve_id,
+                'reason': 'Original qualifier unavailable for Cup day',
+            },
+        )
+        self.assertEqual(replaced.status_code, 200, replaced.get_json())
+        self.assertEqual(replaced.get_json()['replaced']['status'], 'replaced')
+        self.assertEqual(replaced.get_json()['replacement']['status'], 'qualified')
+
+        replacement = CupQualification.query.get(reserve_id)
+        self.assertEqual(replacement.user_id, candidate_id)
+        self.assertTrue(replacement.seat_key)
+        self.assertEqual(replacement.replacement_for_id, active_id)
+        self.assertEqual(CupQualification.query.filter(
+            CupQualification.status.in_(('qualified', 'checked_in'))
+        ).count(), 1)
+        actions = {
+            log.action for log in AdminAuditLog.query.filter(
+                AdminAuditLog.entity_type == 'cup_qualification'
+            ).all()
+        }
+        self.assertIn('cup_qualification.check_in', actions)
+        self.assertIn('cup_qualification.replace', actions)
+
+    def test_cup_roster_reserve_and_revoke_require_reasons(self):
+        active_id, _, _ = self._seed_cup_roster()
+        self._login(self.admin)
+
+        missing_reason = self.client.post(
+            f'/api/admin/cup-qualifications/{active_id}/reserve', json={}
+        )
+        self.assertEqual(missing_reason.status_code, 400)
+
+        reserve = self.client.post(
+            f'/api/admin/cup-qualifications/{active_id}/reserve',
+            json={'reason': 'Awaiting attendance confirmation'},
+        )
+        self.assertEqual(reserve.status_code, 200)
+        self.assertEqual(reserve.get_json()['qualification']['status'], 'reserve')
+
+        revoke = self.client.post(
+            f'/api/admin/cup-qualifications/{active_id}/revoke',
+            json={'reason': 'Player withdrew'},
+        )
+        self.assertEqual(revoke.status_code, 200)
+        self.assertEqual(revoke.get_json()['qualification']['status'], 'revoked')
 
     def test_user_activity_requires_admin(self):
         self._login(self.regular)
