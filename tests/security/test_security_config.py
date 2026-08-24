@@ -1,6 +1,6 @@
 import unittest
 
-from config import build_runtime_security_config
+from config import build_pilot_economy_config, build_runtime_security_config
 
 
 class RuntimeSecurityConfigTests(unittest.TestCase):
@@ -68,6 +68,29 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
             config['SOCKETIO_ALLOWED_ORIGINS'],
             ['https://one.example', 'https://two.example'],
         )
+
+
+class PilotEconomyConfigTests(unittest.TestCase):
+    def test_pilot_defaults_to_credits_without_cash_or_paid_entry(self):
+        config = build_pilot_economy_config({'PILOT_MODE': 'true'})
+
+        self.assertTrue(config['PILOT_CREDITS_ENABLED'])
+        self.assertFalse(config['PAID_TOURNAMENT_ENTRY_ENABLED'])
+        self.assertFalse(config['CASH_PRIZES_ENABLED'])
+        self.assertEqual(config['PILOT_TOURNAMENT_ENTRY_COST'], 10.0)
+
+    def test_pilot_rejects_paid_entry_and_cash_prizes(self):
+        with self.assertRaisesRegex(RuntimeError, 'Paid tournament entry'):
+            build_pilot_economy_config({
+                'PILOT_MODE': 'true',
+                'PAID_TOURNAMENT_ENTRY_ENABLED': 'true',
+            })
+
+        with self.assertRaisesRegex(RuntimeError, 'Cash prizes'):
+            build_pilot_economy_config({
+                'PILOT_MODE': 'true',
+                'CASH_PRIZES_ENABLED': 'true',
+            })
 
 
 if __name__ == '__main__':

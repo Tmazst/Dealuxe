@@ -20,6 +20,30 @@ def _env_bool(environ, key, default=False):
     return str(raw_value).strip().lower() in TRUE_VALUES
 
 
+def build_pilot_economy_config(environ=None):
+    """Build the Version 3 pilot flags and reject unsafe combinations."""
+    environ = os.environ if environ is None else environ
+    pilot_mode = _env_bool(environ, 'PILOT_MODE', default=False)
+    paid_entry = _env_bool(environ, 'PAID_TOURNAMENT_ENTRY_ENABLED', default=False)
+    cash_prizes = _env_bool(environ, 'CASH_PRIZES_ENABLED', default=False)
+    pilot_credits = _env_bool(environ, 'PILOT_CREDITS_ENABLED', default=pilot_mode)
+
+    if pilot_mode and paid_entry:
+        raise RuntimeError('Paid tournament entry cannot be enabled in PILOT_MODE')
+    if pilot_mode and cash_prizes:
+        raise RuntimeError('Cash prizes cannot be enabled in PILOT_MODE')
+    if pilot_mode and not pilot_credits:
+        raise RuntimeError('PILOT_CREDITS_ENABLED is required in PILOT_MODE')
+
+    return {
+        'PILOT_MODE': pilot_mode,
+        'PAID_TOURNAMENT_ENTRY_ENABLED': paid_entry,
+        'CASH_PRIZES_ENABLED': cash_prizes,
+        'PILOT_CREDITS_ENABLED': pilot_credits,
+        'PILOT_TOURNAMENT_ENTRY_COST': 10.0,
+    }
+
+
 def _split_origins(raw_value):
     """Return a normalized, de-duplicated Socket.IO origin allowlist."""
     origins = []

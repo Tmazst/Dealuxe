@@ -47,7 +47,12 @@ from database import db, init_db, Tournament, User
 from database import Player
 from werkzeug.middleware.proxy_fix import ProxyFix
 from jinja2 import ChoiceLoader, FileSystemLoader
-from config import PaymentConfig, LogConfig, build_runtime_security_config
+from config import (
+    PaymentConfig,
+    LogConfig,
+    build_pilot_economy_config,
+    build_runtime_security_config,
+)
 from security import init_security_scaffold
 
 app = Flask(__name__)
@@ -55,6 +60,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1,x_proto=1)
 
 runtime_security = build_runtime_security_config()
 app.config.update(runtime_security)
+app.config.update(build_pilot_economy_config())
 
 # allow Flask to load spectator templates from the livescores_fixtures_updates folder
 app.jinja_loader = ChoiceLoader([

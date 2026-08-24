@@ -566,6 +566,8 @@ TX_WALLET_TOPUP = 'wallet_topup'  # Player loaded funds into the wallet
 TX_BET = 'bet'                    # Versus stake (v1 practice)
 TX_WIN = 'win'                    # Versus winnings (v1 practice)
 TX_PROMOTIONAL_CREDIT = 'promotional_credit'
+TX_PROMOTIONAL_ENTRY = 'promotional_entry'
+TX_PROMOTIONAL_ENTRY_REVERSAL = 'promotional_entry_reversal'
 TX_FREE_CASH = TX_PROMOTIONAL_CREDIT  # Deprecated compatibility name
 
 

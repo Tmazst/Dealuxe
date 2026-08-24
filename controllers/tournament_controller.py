@@ -25,6 +25,10 @@ from database import (
     TX_PRIZE_AWARD,
     TX_REFUND,
 )
+from services.promotional_credit_service import (
+    debit_tournament_entry,
+    reverse_tournament_entry,
+)
 
 
 tournament_bp = Blueprint('tournament', __name__, url_prefix='/api/tournaments')
@@ -177,6 +181,7 @@ def _serialize_tournament(tournament):
     current_players = TournamentParticipant.query.filter_by(
         tournament_id=tournament.id, status='registered'
     ).count()
+    promotional_entry = _is_promotional_tournament(tournament)
     return {
         'id': tournament.id,
         'code': tournament.tournament_code,
@@ -186,6 +191,8 @@ def _serialize_tournament(tournament):
         'current_players': current_players,
         'entry_fee': tournament.entry_fee,
         'prize_pool': tournament.prize_pool_amount,
+        'entry_balance_type': 'promotional' if promotional_entry else 'real',
+        'cash_prizes_enabled': not promotional_entry,
         'creator': _get_username(tournament.creator_id),
         'creator_id': tournament.creator_id,
         'status': tournament.status,
@@ -248,6 +255,23 @@ MAX_SCHEDULE_DELAY_HOURS = 24
 ROLL_COUNTDOWN_SECONDS = 600  # 10 minutes for the no-show roll game
 
 
+def _is_pilot_economy_enabled():
+    return bool(
+        current_app.config.get('PILOT_MODE', False)
+        and current_app.config.get('PILOT_CREDITS_ENABLED', False)
+    )
+
+
+def _is_promotional_tournament(tournament):
+    """Identify pilot tournaments from persisted participant payment data."""
+    if tournament.id is None:
+        return _is_pilot_economy_enabled()
+    return TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id,
+        payment_method='promotional_credit',
+    ).first() is not None
+
+
 def _is_payment_mock_mode():
     """Return True only when mock mode is EXPLICITLY enabled.
 
@@ -297,7 +321,20 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
     """
     player = Player.query.filter_by(user_id=user_id).first()
     if player is None:
-        return True, {'payment_required': False}
+        return False, 'Player wallet not found'
+
+    if _is_pilot_economy_enabled():
+        amount = float(current_app.config.get('PILOT_TOURNAMENT_ENTRY_COST', ENTRY_FEE))
+        try:
+            result = debit_tournament_entry(player, amount, tournament_id)
+        except ValueError as exc:
+            return False, str(exc)
+        return True, {
+            'payment_required': False,
+            'payment_method': 'promotional_credit',
+            'promotional_credit_balance': result['balance'],
+            'debited': result['debited'],
+        }
 
     if not player.can_spend(amount):
         return False, 'Daily spending limit reached (E50/day)'
@@ -605,12 +642,15 @@ def _withdraw_participant(tournament, participant):
         participant.status = 'withdrawn'
         participant.withdrew_at = datetime.utcnow()
         return True, None
-    if not _is_payment_mock_mode():
+    is_promotional_entry = participant.payment_method == 'promotional_credit'
+    if not is_promotional_entry and not _is_payment_mock_mode():
         return False, 'Completed mobile-money payments cannot be refunded from the waiting room'
 
     player = Player.query.filter_by(user_id=participant.user_id).first()
     amount = participant.paid_amount or tournament.entry_fee
-    if player is not None and amount > 0:
+    if player is not None and amount > 0 and is_promotional_entry:
+        reverse_tournament_entry(player, amount, tournament.id)
+    elif player is not None and amount > 0:
         balance_before = player.real_balance
         player.real_balance += amount
         player.total_wagered = max(0.0, player.total_wagered - amount)
@@ -630,7 +670,8 @@ def _withdraw_participant(tournament, participant):
     participant.payment_status = 'refunded'
     participant.withdrew_at = datetime.utcnow()
     tournament.current_player_count = max(0, tournament.current_player_count - 1)
-    tournament.prize_pool_amount = max(0.0, tournament.prize_pool_amount - amount)
+    if not is_promotional_entry:
+        tournament.prize_pool_amount = max(0.0, tournament.prize_pool_amount - amount)
     _ensure_prize_pool(tournament)
     return True, None
 
@@ -742,7 +783,7 @@ def _finalize_tournament(tournament):
         row = TournamentPrizePool.query.filter_by(
             tournament_id=tournament.id, placement=placement
         ).first()
-        amount = row.prize_amount if row else 0.0
+        amount = row.prize_amount if row and not _is_promotional_tournament(tournament) else 0.0
 
         participant = TournamentParticipant.query.filter_by(
             tournament_id=tournament.id, user_id=user_id
@@ -1149,8 +1190,13 @@ def create_tournament():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
-    # Server-enforced business rules (C3): E10 entry fee + fixed size per type.
-    entry_fee = ENTRY_FEE
+    # Server-authoritative entry cost. Pilot mode consumes promotional credit;
+    # Version 2 continues to use the existing wallet/payment path when disabled.
+    entry_fee = (
+        float(current_app.config.get('PILOT_TOURNAMENT_ENTRY_COST', ENTRY_FEE))
+        if _is_pilot_economy_enabled()
+        else ENTRY_FEE
+    )
     max_players = MAX_PLAYERS_BY_TYPE.get(tournament_type, 4)
 
     tournament = create_tournament_record(
@@ -1162,6 +1208,8 @@ def create_tournament():
         is_auto_lock=data.get('is_auto_lock', False),
         locked_player_count=data.get('locked_player_count'),
     )
+    if _is_pilot_economy_enabled():
+        tournament.prize_pool_amount = 0.0
     schedule = TournamentSchedule(
         tournament_id=tournament.id,
         start_option=normalized_option,
@@ -1171,7 +1219,10 @@ def create_tournament():
     )
     db.session.add(schedule)
     participant = add_tournament_participant(
-        tournament.id, user_id, payment_status='pending', payment_method='wallet'
+        tournament.id,
+        user_id,
+        payment_status='pending',
+        payment_method='promotional_credit' if _is_pilot_economy_enabled() else 'wallet',
     )
     participant.status = 'pending'
 
@@ -1194,14 +1245,22 @@ def create_tournament():
             'message': 'Complete payment to create the tournament',
         }), 202
 
-    participant.payment_status = 'completed'
-    participant.status = 'registered'
-    participant.payment_completed_at = datetime.utcnow()
-    participant.paid_amount = entry_fee
-    tournament.current_player_count = 1
-    tournament.prize_pool_amount = entry_fee
-    _ensure_prize_pool(tournament)
-    db.session.commit()
+    try:
+        participant.payment_status = 'completed'
+        participant.status = 'registered'
+        participant.payment_completed_at = datetime.utcnow()
+        participant.paid_amount = entry_fee
+        participant.payment_method = charge_result.get('payment_method', participant.payment_method)
+        tournament.current_player_count = 1
+        tournament.prize_pool_amount = 0.0 if _is_promotional_tournament(tournament) else entry_fee
+        _ensure_prize_pool(tournament)
+        db.session.commit()
+    except Exception:
+        # Promotional debit, participant, schedule and tournament are one unit:
+        # rollback restores the credit if any downstream creation step fails.
+        db.session.rollback()
+        current_app.logger.exception('Tournament creation transaction failed')
+        return jsonify({'error': 'Tournament could not be created; entry credit was not charged'}), 500
     _emit_tournament_updated(tournament)
 
     return jsonify({'tournament': _serialize_tournament(tournament), 'message': 'Tournament created'})
@@ -1225,7 +1284,10 @@ def join_tournament(tournament_id):
         return jsonify({'error': 'Tournament is full'}), 400
 
     participant = add_tournament_participant(
-        tournament.id, user_id, payment_status='pending', payment_method='wallet'
+        tournament.id,
+        user_id,
+        payment_status='pending',
+        payment_method='promotional_credit' if _is_pilot_economy_enabled() else 'wallet',
     )
     participant.status = 'pending'
     paid, charge_result = _charge_tournament_entry(
@@ -1243,13 +1305,20 @@ def join_tournament(tournament_id):
             'payment': charge_result,
         }), 202
 
-    participant.payment_status = 'completed'
-    participant.status = 'registered'
-    participant.payment_completed_at = datetime.utcnow()
-    participant.paid_amount = tournament.entry_fee
-    tournament.current_player_count += 1
-    tournament.prize_pool_amount += tournament.entry_fee
-    _ensure_prize_pool(tournament)
+    try:
+        participant.payment_status = 'completed'
+        participant.status = 'registered'
+        participant.payment_completed_at = datetime.utcnow()
+        participant.paid_amount = tournament.entry_fee
+        participant.payment_method = charge_result.get('payment_method', participant.payment_method)
+        tournament.current_player_count += 1
+        if not _is_promotional_tournament(tournament):
+            tournament.prize_pool_amount += tournament.entry_fee
+        _ensure_prize_pool(tournament)
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Tournament join transaction failed')
+        return jsonify({'error': 'Tournament could not be joined; entry credit was not charged'}), 500
 
     # Notify waiting rooms so their participant list refreshes in real time.
     if _socketio is not None:
