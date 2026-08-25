@@ -60,6 +60,7 @@ def _serialize_user(user):
         'is_active': user.is_active,
         'is_admin': user.is_admin,
         'is_super_admin': user.is_super_admin,
+        'verified_referral_count': int(user.verified_referral_count or 0),
         'created_at': user.created_at.isoformat() if user.created_at else None,
         'last_login': user.last_login.isoformat() if user.last_login else None,
         'real_balance': player.real_balance if player else None,
@@ -99,6 +100,16 @@ def update_user(user_id, data, admin_user_id=None):
     if 'is_active' in data:
         target_user.is_active = _coerce_bool(data['is_active'])
         changes.append(f"is_active={target_user.is_active}")
+
+    if 'verified_referral_count' in data:
+        try:
+            referral_count = int(data['verified_referral_count'])
+        except (TypeError, ValueError) as exc:
+            raise ValueError('Invalid verified referral count') from exc
+        if referral_count < 0:
+            raise ValueError('Verified referral count cannot be negative')
+        target_user.verified_referral_count = referral_count
+        changes.append(f'verified_referral_count={referral_count}')
 
     if player is None and any(field in data for field in (
         'real_balance', 'promotional_credit_balance', 'fake_balance'
@@ -532,6 +543,7 @@ def _serialize_cup_qualification(qualification, seat_number=None):
         ),
         'seat_number': seat_number,
         'notes': qualification.notes,
+        'original_username': _username(qualification.original_user_id),
     })
     return payload
 
@@ -865,6 +877,222 @@ def assign_cup_positions_9_to_10(
     return get_cup_placements(tournament.id)
 
 
+def _active_cup_participant_for_user(user_id):
+    return db.session.query(TournamentParticipant).join(
+        Tournament, TournamentParticipant.tournament_id == Tournament.id
+    ).filter(
+        Tournament.tournament_type == 'cup',
+        Tournament.status.in_(('locked', 'in_progress')),
+        TournamentParticipant.user_id == user_id,
+    ).first()
+
+
+def list_cup_replacement_candidates(event_key=None):
+    """Return data-backed runner-up and admin-verified referral candidates."""
+    event_key = (event_key or current_app.config.get('CUP_EVENT_KEY') or '').strip()
+    active_user_ids = {
+        row.user_id for row in CupQualification.query.filter(
+            CupQualification.event_key == event_key,
+            CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES),
+        ).all()
+    }
+    cup_user_ids = {
+        row.user_id for row in db.session.query(TournamentParticipant).join(
+            Tournament, TournamentParticipant.tournament_id == Tournament.id
+        ).filter(Tournament.tournament_type == 'cup').all()
+    }
+    excluded = active_user_ids | cup_user_ids
+
+    runner_up_rows = Tournament.query.filter(
+        Tournament.tournament_type.in_(('standard', 'premium', 'deluxe')),
+        Tournament.max_players.in_((4, 8, 16)),
+        Tournament.status == 'completed',
+        Tournament.runner_up_id.isnot(None),
+    ).order_by(Tournament.completed_at.desc(), Tournament.id.desc()).all()
+    runner_up_summary = {}
+    for tournament in runner_up_rows:
+        if tournament.runner_up_id in excluded:
+            continue
+        user = User.query.get(tournament.runner_up_id)
+        if user is None or not user.is_active:
+            continue
+        summary = runner_up_summary.setdefault(user.id, {
+            'user_id': user.id,
+            'username': user.username,
+            'source_type': 'runner_up',
+            'source_tournament_id': tournament.id,
+            'source_tournament_name': tournament.tournament_name,
+            'source_tournament_size': tournament.max_players,
+            'runner_up_count': 0,
+            'verified_referral_count': int(user.verified_referral_count or 0),
+        })
+        summary['runner_up_count'] += 1
+
+    referral_users = User.query.filter(
+        User.is_active.is_(True),
+        User.verified_referral_count > 0,
+    ).order_by(User.verified_referral_count.desc(), User.username.asc()).all()
+    referral_leaders = [
+        {
+            'user_id': user.id,
+            'username': user.username,
+            'source_type': 'referral_leader',
+            'source_tournament_id': None,
+            'source_tournament_name': None,
+            'source_tournament_size': None,
+            'runner_up_count': runner_up_summary.get(user.id, {}).get(
+                'runner_up_count', 0
+            ),
+            'verified_referral_count': int(user.verified_referral_count or 0),
+        }
+        for user in referral_users
+        if user.id not in excluded
+    ]
+    return {
+        'event_key': event_key,
+        'runner_ups': list(runner_up_summary.values())[:50],
+        'referral_leaders': referral_leaders[:25],
+    }
+
+
+def replace_absent_cup_player(
+    qualification_id,
+    candidate_user_id,
+    source_type,
+    admin_user_id,
+    reason,
+    source_tournament_id=None,
+):
+    """Replace an absent qualifier before their first Cup match begins."""
+    qualification = CupQualification.query.get_or_404(qualification_id)
+    reason = (reason or '').strip()
+    source_type = (source_type or '').strip()
+    if not reason:
+        raise ValueError('An absence and replacement reason is required')
+    if qualification.status not in ACTIVE_QUALIFICATION_STATUSES or not qualification.seat_key:
+        raise ValueError('Only an active Cup seat can be replaced')
+    try:
+        candidate_user_id = int(candidate_user_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('A valid replacement player is required') from exc
+    if candidate_user_id == qualification.user_id:
+        raise ValueError('Replacement player must be different from the absent player')
+    candidate = User.query.get(candidate_user_id)
+    if candidate is None or not candidate.is_active:
+        raise ValueError('Replacement player must have an active account')
+    other_active = CupQualification.query.filter(
+        CupQualification.user_id == candidate.id,
+        CupQualification.event_key == qualification.event_key,
+        CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES),
+    ).first()
+    if other_active is not None:
+        raise ValueError('Replacement player already holds an active Cup seat')
+    if _active_cup_participant_for_user(candidate.id) is not None:
+        raise ValueError('Replacement player is already registered in an active Cup')
+
+    source_reference = None
+    if source_type == 'runner_up':
+        try:
+            source_tournament_id = int(source_tournament_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('A valid runner-up tournament is required') from exc
+        source_tournament = Tournament.query.get(source_tournament_id)
+        if (
+            source_tournament is None
+            or source_tournament.tournament_type not in {'standard', 'premium', 'deluxe'}
+            or source_tournament.max_players not in {4, 8, 16}
+            or source_tournament.status != 'completed'
+            or source_tournament.runner_up_id != candidate.id
+        ):
+            raise ValueError('Player is not the recorded runner-up for that ordinary tournament')
+        source_reference = f'tournament:{source_tournament.id}'
+    elif source_type == 'referral_leader':
+        if int(candidate.verified_referral_count or 0) < 1:
+            raise ValueError('Player has no administrator-verified referrals')
+        source_reference = f'verified_referrals:{candidate.verified_referral_count}'
+    else:
+        raise ValueError('Replacement source must be runner_up or referral_leader')
+
+    absent_user_id = qualification.user_id
+    cup_participant = _active_cup_participant_for_user(absent_user_id)
+    bracket = None
+    match = None
+    if cup_participant is not None:
+        cup = Tournament.query.get(cup_participant.tournament_id)
+        bracket = TournamentBracket.query.filter(
+            TournamentBracket.tournament_id == cup.id,
+            TournamentBracket.round_number == 1,
+            or_(
+                TournamentBracket.player1_id == absent_user_id,
+                TournamentBracket.player2_id == absent_user_id,
+            ),
+        ).first()
+        if bracket is None:
+            raise ValueError('Absent player no longer has a replaceable Round 1 Cup seat')
+        match = TournamentMatch.query.filter_by(bracket_id=bracket.id).first()
+        if (
+            bracket.status == 'completed'
+            or match is None
+            or match.status != 'scheduled'
+            or match.started_at is not None
+        ):
+            raise ValueError('Cup replacement is locked once the player’s first match begins')
+
+    qualification.original_user_id = qualification.original_user_id or absent_user_id
+    qualification.user_id = candidate.id
+    qualification.status = 'qualified'
+    qualification.seat_key = f'{qualification.event_key}:{candidate.id}'
+    qualification.checked_in_at = None
+    qualification.status_updated_at = datetime.utcnow()
+    qualification.status_updated_by = admin_user_id
+    qualification.replacement_source_type = source_type
+    qualification.replacement_source_reference = source_reference
+    qualification.notes = f'Absent-player replacement: {reason}'
+
+    if cup_participant is not None:
+        cup_participant.user_id = candidate.id
+        cup_participant.status = 'registered'
+        cup_participant.notes = (
+            f'Replaced absent user #{absent_user_id}; {source_reference}; {reason}'
+        )
+        if bracket.player1_id == absent_user_id:
+            bracket.player1_id = candidate.id
+        if bracket.player2_id == absent_user_id:
+            bracket.player2_id = candidate.id
+        if match.player1_id == absent_user_id:
+            match.player1_id = candidate.id
+        if match.player2_id == absent_user_id:
+            match.player2_id = candidate.id
+
+    log_admin_action(
+        admin_user_id,
+        'cup_roster.replace_absent',
+        entity_type='cup_qualification',
+        entity_id=qualification.id,
+        summary=(
+            f'Replaced absent {_username(absent_user_id)} with {candidate.username}'
+        ),
+        details=json.dumps({
+            'absent_user_id': absent_user_id,
+            'replacement_user_id': candidate.id,
+            'source_type': source_type,
+            'source_reference': source_reference,
+            'cup_tournament_id': cup_participant.tournament_id if cup_participant else None,
+            'reason': reason,
+        }),
+    )
+    db.session.commit()
+    return {
+        'qualification': _serialize_cup_qualification(qualification),
+        'absent_user_id': absent_user_id,
+        'replacement_user_id': candidate.id,
+        'replacement_username': candidate.username,
+        'source_type': source_type,
+        'source_reference': source_reference,
+        'cup_tournament_id': cup_participant.tournament_id if cup_participant else None,
+    }
+
+
 def check_in_cup_qualification(qualification_id, admin_user_id):
     qualification = CupQualification.query.get_or_404(qualification_id)
     if qualification.status == 'checked_in':
@@ -891,6 +1119,8 @@ def move_cup_qualification_to_reserve(qualification_id, admin_user_id, reason):
         raise ValueError('A reserve reason is required')
     if qualification.status not in ACTIVE_QUALIFICATION_STATUSES:
         raise ValueError('Only an active Cup seat can be moved to reserve')
+    if _active_cup_participant_for_user(qualification.user_id) is not None:
+        raise ValueError('Use the live Cup absent-player replacement control')
     qualification.status = 'reserve'
     qualification.seat_key = None
     qualification.checked_in_at = None
@@ -914,6 +1144,8 @@ def revoke_cup_qualification(qualification_id, admin_user_id, reason):
         raise ValueError('A revocation reason is required')
     if qualification.status in {'revoked', 'replaced'}:
         raise ValueError('This qualification is no longer active')
+    if _active_cup_participant_for_user(qualification.user_id) is not None:
+        raise ValueError('Use the live Cup absent-player replacement control')
     qualification.status = 'revoked'
     qualification.seat_key = None
     qualification.checked_in_at = None
@@ -940,6 +1172,8 @@ def replace_cup_qualification(qualification_id, replacement_id, admin_user_id, r
         raise ValueError('Replacement qualification must be different')
     if source.status not in ACTIVE_QUALIFICATION_STATUSES or not source.seat_key:
         raise ValueError('Only an active Cup seat can be replaced')
+    if _active_cup_participant_for_user(source.user_id) is not None:
+        raise ValueError('Use the live Cup absent-player replacement control')
     if replacement.status != 'reserve' or replacement.seat_key:
         raise ValueError('Replacement must be on the reserve list')
     if source.event_key != replacement.event_key:

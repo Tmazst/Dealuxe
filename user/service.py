@@ -54,7 +54,7 @@ def get_account_json(user):
     """Full JSON view of a user's account (for the widget and account page)."""
     player = get_player_by_user_id(user.id)
     cup_event_key = current_app.config.get('CUP_EVENT_KEY')
-    return {
+    payload = {
         'id': user.id,
         'username': user.username,
         'email': user.email,
@@ -76,6 +76,10 @@ def get_account_json(user):
         'player': player.to_dict() if player else None,
         'cup_qualification': qualification_summary(user.id, cup_event_key),
     }
+    from hybrid.service import get_profile_payload, hybrid_profile_enabled
+    if hybrid_profile_enabled(current_app.config):
+        payload['discovery_profile'] = get_profile_payload(user)
+    return payload
 
 
 def update_profile_fields(user, form):

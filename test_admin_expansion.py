@@ -1,6 +1,7 @@
 import os
 import time
 import unittest
+from datetime import datetime
 
 os.environ['ENV'] = 'development'
 
@@ -71,6 +72,8 @@ class TestAdminExpansion(unittest.TestCase):
         r = self.client.get('/api/admin/cup-qualifications')
         self.assertEqual(r.status_code, 403)
         r = self.client.get('/api/admin/cup-tournaments/1/placements')
+        self.assertEqual(r.status_code, 403)
+        r = self.client.get('/api/admin/cup-replacement-candidates')
         self.assertEqual(r.status_code, 403)
 
     def _seed_cup_roster(self):
@@ -183,6 +186,132 @@ class TestAdminExpansion(unittest.TestCase):
         )
         self.assertEqual(revoke.status_code, 200)
         self.assertEqual(revoke.get_json()['qualification']['status'], 'revoked')
+
+    def test_admin_replaces_absent_qualifier_with_recorded_runner_up(self):
+        active_id, _, _ = self._seed_cup_roster()
+        runner_up = User(
+            username='runner_replacement',
+            email='runner_replacement@test.com',
+            password_hash='not-used',
+        )
+        referral_leader = User(
+            username='invite_leader',
+            email='invite_leader@test.com',
+            password_hash='not-used',
+            verified_referral_count=7,
+        )
+        db.session.add_all([runner_up, referral_leader])
+        db.session.flush()
+        source = create_tournament_record(
+            creator_id=self.admin.id,
+            tournament_type='premium',
+            tournament_name='Eight Player Runner-up Source',
+            entry_fee=10.0,
+            max_players=8,
+        )
+        source.status = 'completed'
+        source.runner_up_id = runner_up.id
+        db.session.commit()
+        self._login(self.admin)
+
+        candidates = self.client.get('/api/admin/cup-replacement-candidates')
+        self.assertEqual(candidates.status_code, 200)
+        payload = candidates.get_json()
+        self.assertIn(runner_up.id, {
+            item['user_id'] for item in payload['runner_ups']
+        })
+        self.assertIn(referral_leader.id, {
+            item['user_id'] for item in payload['referral_leaders']
+        })
+
+        replacement = self.client.post(
+            f'/api/admin/cup-qualifications/{active_id}/replace-absent',
+            json={
+                'candidate_user_id': runner_up.id,
+                'source_type': 'runner_up',
+                'source_tournament_id': source.id,
+                'reason': 'Qualifier did not arrive for Cup check-in',
+            },
+        )
+        self.assertEqual(replacement.status_code, 200, replacement.get_json())
+        qualification = CupQualification.query.get(active_id)
+        self.assertEqual(qualification.user_id, runner_up.id)
+        self.assertEqual(qualification.original_user_id, self.regular.id)
+        self.assertEqual(qualification.replacement_source_type, 'runner_up')
+        self.assertEqual(
+            qualification.replacement_source_reference, f'tournament:{source.id}'
+        )
+        self.assertIsNotNone(AdminAuditLog.query.filter_by(
+            action='cup_roster.replace_absent', entity_id=active_id
+        ).first())
+
+    def test_live_cup_replacement_updates_unstarted_round_one_match(self):
+        app.config['CUP_ENABLED'] = True
+        self._add_cup_qualifiers(64)
+        self._login(self.admin)
+        created = self.client.post('/api/admin/cup-tournaments', json={})
+        self.assertEqual(created.status_code, 201, created.get_json())
+        cup_id = created.get_json()['cup']['tournament_id']
+        qualification = CupQualification.query.filter_by(
+            event_key=app.config['CUP_EVENT_KEY']
+        ).order_by(CupQualification.id.asc()).first()
+        absent_user_id = qualification.user_id
+        participant = TournamentParticipant.query.filter_by(
+            tournament_id=cup_id, user_id=absent_user_id
+        ).first()
+        bracket = TournamentBracket.query.filter(
+            TournamentBracket.tournament_id == cup_id,
+            TournamentBracket.round_number == 1,
+            (TournamentBracket.player1_id == absent_user_id)
+            | (TournamentBracket.player2_id == absent_user_id),
+        ).first()
+        match = TournamentMatch.query.filter_by(bracket_id=bracket.id).first()
+
+        referral_pick = User(
+            username='live_referral_pick',
+            email='live_referral_pick@test.com',
+            password_hash='not-used',
+            verified_referral_count=12,
+        )
+        db.session.add(referral_pick)
+        db.session.commit()
+        replaced = self.client.post(
+            f'/api/admin/cup-qualifications/{qualification.id}/replace-absent',
+            json={
+                'candidate_user_id': referral_pick.id,
+                'source_type': 'referral_leader',
+                'reason': 'Confirmed absent before Round 1 started',
+            },
+        )
+        self.assertEqual(replaced.status_code, 200, replaced.get_json())
+        db.session.refresh(participant)
+        db.session.refresh(bracket)
+        db.session.refresh(match)
+        self.assertEqual(participant.user_id, referral_pick.id)
+        self.assertIn(referral_pick.id, {bracket.player1_id, bracket.player2_id})
+        self.assertIn(referral_pick.id, {match.player1_id, match.player2_id})
+        self.assertNotIn(absent_user_id, {match.player1_id, match.player2_id})
+
+        second_pick = User(
+            username='late_replacement',
+            email='late_replacement@test.com',
+            password_hash='not-used',
+            verified_referral_count=5,
+        )
+        db.session.add(second_pick)
+        match.started_at = datetime.utcnow()
+        match.status = 'in_progress'
+        db.session.commit()
+        too_late = self.client.post(
+            f'/api/admin/cup-qualifications/{qualification.id}/replace-absent',
+            json={
+                'candidate_user_id': second_pick.id,
+                'source_type': 'referral_leader',
+                'reason': 'Attempted after match start',
+            },
+        )
+        self.assertEqual(too_late.status_code, 400)
+        self.assertIn('once the player', too_late.get_json()['error'])
 
     def _add_cup_qualifiers(self, count):
         event_key = app.config['CUP_EVENT_KEY']
@@ -646,6 +775,22 @@ class TestAdminExpansion(unittest.TestCase):
         with self.app_context:
             user = User.query.get(self.regular.id)
             self.assertFalse(user.is_admin)
+
+    def test_admin_maintains_verified_invite_count(self):
+        self._login(self.admin)
+        updated = self.client.patch(
+            f'/api/admin/users/{self.regular.id}',
+            json={'verified_referral_count': 9},
+        )
+        self.assertEqual(updated.status_code, 200, updated.get_json())
+        self.assertEqual(updated.get_json()['user']['verified_referral_count'], 9)
+        self.assertEqual(User.query.get(self.regular.id).verified_referral_count, 9)
+
+        rejected = self.client.patch(
+            f'/api/admin/users/{self.regular.id}',
+            json={'verified_referral_count': -1},
+        )
+        self.assertEqual(rejected.status_code, 400)
 
     def test_super_admin_can_access_admin_endpoints(self):
         with self.app_context:

@@ -47,6 +47,7 @@
                     <th>Super</th>
                     <th>Real Balance</th>
                     <th>Promotional Credits</th>
+                    <th>Verified Invites</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -159,6 +160,63 @@
                     <th>Player</th>
                     <th>Category</th>
                     <th>Description</th>
+                    <th>Status</th>
+                    <th>Resolution</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="panel" id="hybridProfilesPanel" style="display:none;">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Hybrid Discovery Profiles</h2>
+            <button id="reloadHybridProfiles">Reload</button>
+        </div>
+        <p class="status">Private MVP profiles only. Matching, chat and public discovery remain disabled.</p>
+        <table id="hybridProfilesTable">
+            <thead>
+                <tr>
+                    <th>Player</th>
+                    <th>Enabled</th>
+                    <th>Intent</th>
+                    <th>Category</th>
+                    <th>Location</th>
+                    <th>Visible</th>
+                    <th>Chat preference</th>
+                    <th>Moderation</th>
+                    <th>Caption</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="panel" id="hybridReportsPanel" style="display:none;">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Hybrid Safety Reports</h2>
+            <label>Status:
+                <select id="hybridReportStatus">
+                    <option value="">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="in_review">In Review</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </label>
+            <button id="reloadHybridReports">Reload</button>
+        </div>
+        <table id="hybridReportsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Reporter</th>
+                    <th>Reported player</th>
+                    <th>Reason</th>
+                    <th>Details</th>
+                    <th>Context</th>
                     <th>Status</th>
                     <th>Resolution</th>
                     <th>Actions</th>
@@ -298,6 +356,7 @@
                     <td>${user.is_super_admin ? 'Yes' : 'No'}</td>
                     <td><input type="number" step="0.01" value="${user.real_balance ?? 0}" data-field="real_balance"></td>
                     <td><input type="number" step="0.01" value="${user.promotional_credit_balance ?? user.fake_balance ?? 0}" data-field="promotional_credit_balance" aria-label="Promotional credit balance"></td>
+                    <td><input type="number" min="0" step="1" value="${user.verified_referral_count ?? 0}" data-field="verified_referral_count" aria-label="Administrator-verified invite count"></td>
                     <td>
                         <button data-action="viewActivity" data-id="${user.id}">View</button>
                         <button data-action="toggleActive" data-id="${user.id}">${user.is_active ? 'Disable' : 'Enable'}</button>
@@ -356,6 +415,7 @@
                 const actions = [];
                 if (q.status === 'qualified') actions.push(`<button data-action="cupCheckIn" data-id="${q.id}">Check in</button>`);
                 if (active) actions.push(`<button data-action="cupReserve" data-id="${q.id}">Reserve</button>`);
+                if (active) actions.push(`<button data-action="cupAbsent" data-id="${q.id}">Replace absent player</button>`);
                 if (!['revoked', 'replaced'].includes(q.status)) actions.push(`<button data-action="cupRevoke" data-id="${q.id}">Revoke</button>`);
                 if (reserve) actions.push(`<button data-action="cupReplace" data-id="${q.id}">Use as replacement</button>`);
                 const row = document.createElement('tr');
@@ -366,7 +426,11 @@
                     <td>#${q.source_tournament_id} ${escapeHtml(q.source_tournament_name || '')}</td>
                     <td><span class="pill">${escapeHtml(q.status.replace('_', ' '))}</span></td>
                     <td>${escapeHtml(q.qualified_at || '')}</td>
-                    <td>${escapeHtml(q.notes || '')}</td>
+                    <td>${escapeHtml([
+                        q.notes || '',
+                        q.replacement_source_type ? `Source: ${q.replacement_source_type.replace('_', ' ')}` : '',
+                        q.original_username ? `Original player: ${q.original_username}` : '',
+                    ].filter(Boolean).join(' · '))}</td>
                     <td>${actions.join('')}</td>
                 `;
                 cupRosterTableBody.appendChild(row);
@@ -435,6 +499,40 @@
             if (!response.ok) throw new Error(data.error || 'Could not load Cup placements');
             renderCupPlacements(data);
             return data;
+        }
+
+        async function chooseCupReplacement(qualificationId) {
+            const response = await fetch('/api/admin/cup-replacement-candidates', {
+                credentials: 'same-origin',
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Could not load replacements');
+            const candidates = [
+                ...(data.runner_ups || []).map(item => ({
+                    ...item,
+                    label: `${item.username} — runner-up (${item.source_tournament_size}-player ${item.source_tournament_name})`,
+                })),
+                ...(data.referral_leaders || []).map(item => ({
+                    ...item,
+                    label: `${item.username} — ${item.verified_referral_count} verified invite(s)`,
+                })),
+            ];
+            if (!candidates.length) throw new Error('No eligible replacement candidates are available');
+            const menu = candidates.map((item, index) => `${index + 1}. ${item.label}`).join('\n');
+            const selection = prompt(`Select the replacement player:\n\n${menu}`);
+            if (selection === null) return;
+            const candidate = candidates[Number(selection) - 1];
+            if (!candidate) throw new Error('Select a valid replacement number');
+            const reason = prompt('Reason the Cup player is absent and is being replaced:');
+            if (reason === null) return;
+            await sendJson(`/api/admin/cup-qualifications/${qualificationId}/replace-absent`, {
+                body: {
+                    candidate_user_id: candidate.user_id,
+                    source_type: candidate.source_type,
+                    source_tournament_id: candidate.source_tournament_id,
+                    reason,
+                },
+            });
         }
 
         async function fetchDisputes() {
@@ -557,6 +655,84 @@
             await fetchAuditLogs();
         }
 
+        async function fetchHybridProfiles() {
+            const panel = document.getElementById('hybridProfilesPanel');
+            const response = await fetch('/api/admin/hybrid/profiles', { credentials: 'same-origin' });
+            if (response.status === 404) {
+                panel.style.display = 'none';
+                return;
+            }
+            if (!response.ok) return;
+            const data = await response.json();
+            const body = document.querySelector('#hybridProfilesTable tbody');
+            body.innerHTML = '';
+            (data.profiles || []).forEach(profile => {
+                const row = document.createElement('tr');
+                const moderationActions = profile.custom_caption ? `
+                    <button data-action="moderateHybridCaption" data-id="${profile.id}" data-decision="approved">Approve</button>
+                    <button data-action="moderateHybridCaption" data-id="${profile.id}" data-decision="rejected">Reject</button>
+                ` : '';
+                row.innerHTML = `
+                    <td>${escapeHtml(profile.username || profile.user_id)}</td>
+                    <td>${profile.is_enabled ? 'Yes' : 'No'}</td>
+                    <td>${escapeHtml(profile.intent || '')}</td>
+                    <td>${escapeHtml([profile.category, profile.subcategory].filter(Boolean).join(' / '))}</td>
+                    <td>${escapeHtml(profile.location || '')}</td>
+                    <td>${profile.is_visible ? 'Yes' : 'No'}</td>
+                    <td>${profile.chat_preference_enabled ? 'Allowed later' : 'No'}</td>
+                    <td><span class="pill">${escapeHtml((profile.moderation_status || '').replace('_', ' '))}</span></td>
+                    <td>${escapeHtml(profile.custom_caption || profile.predefined_caption || '')}</td>
+                    <td>${moderationActions}</td>
+                `;
+                body.appendChild(row);
+            });
+            if (!(data.profiles || []).length) {
+                body.innerHTML = '<tr><td colspan="10">No Hybrid discovery profiles have been created.</td></tr>';
+            }
+            panel.style.display = '';
+        }
+
+        async function fetchHybridReports() {
+            const panel = document.getElementById('hybridReportsPanel');
+            const status = document.getElementById('hybridReportStatus').value;
+            const url = '/api/admin/hybrid/reports' + (status ? `?status=${encodeURIComponent(status)}` : '');
+            const response = await fetch(url, { credentials: 'same-origin' });
+            if (response.status === 404) {
+                panel.style.display = 'none';
+                return;
+            }
+            if (!response.ok) return;
+            const data = await response.json();
+            const body = document.querySelector('#hybridReportsTable tbody');
+            body.innerHTML = '';
+            (data.reports || []).forEach(report => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${report.id}</td>
+                    <td>${escapeHtml(report.reporter_username || report.reporter_id)}</td>
+                    <td>${escapeHtml(report.reported_username || report.reported_user_id)}</td>
+                    <td>${escapeHtml((report.reason_code || '').replace('_', ' '))}</td>
+                    <td>${escapeHtml(report.details || '')}</td>
+                    <td>${escapeHtml([
+                        report.tournament_id ? `Tournament #${report.tournament_id}` : '',
+                        report.match_id ? `Match #${report.match_id}` : '',
+                    ].filter(Boolean).join(' / '))}</td>
+                    <td><span class="pill">${escapeHtml((report.status || '').replace('_', ' '))}</span></td>
+                    <td>${escapeHtml(report.resolution || '')}</td>
+                    <td>
+                        <button data-action="reviewHybridReport" data-id="${report.id}" data-status="in_review">Review</button>
+                        <button data-action="reviewHybridReport" data-id="${report.id}" data-status="resolved">Resolve</button>
+                        <button data-action="reviewHybridReport" data-id="${report.id}" data-status="rejected">Reject</button>
+                    </td>
+                `;
+                body.appendChild(row);
+            });
+            if (!(data.reports || []).length) {
+                body.innerHTML = '<tr><td colspan="9">No Hybrid safety reports found.</td></tr>';
+            }
+            panel.style.display = '';
+        }
+
         // -------------------------
         // Backend print-log viewer
         // -------------------------
@@ -646,7 +822,12 @@
                 if (action === 'saveBalances') {
                     const realBalance = parseFloat(row.querySelector('input[data-field="real_balance"]').value || 0);
                     const promotionalBalance = parseFloat(row.querySelector('input[data-field="promotional_credit_balance"]').value || 0);
-                    await sendUserUpdate(userId, { real_balance: realBalance, promotional_credit_balance: promotionalBalance });
+                    const verifiedReferralCount = parseInt(row.querySelector('input[data-field="verified_referral_count"]').value || 0, 10);
+                    await sendUserUpdate(userId, {
+                        real_balance: realBalance,
+                        promotional_credit_balance: promotionalBalance,
+                        verified_referral_count: verifiedReferralCount,
+                    });
                 }
                 if (action === 'lockTournament') {
                     await sendTournamentAction(userId, 'lock');
@@ -673,6 +854,28 @@
                     await sendJson(`/api/admin/disputes/${button.dataset.id}/resolve`, {
                         method: 'POST',
                         body: { status, resolution: resolution.trim() || undefined },
+                    });
+                }
+                if (action === 'moderateHybridCaption') {
+                    const decision = button.dataset.decision;
+                    const note = prompt(
+                        decision === 'rejected' ? 'Required rejection reason:' : 'Optional approval note:',
+                        ''
+                    );
+                    if (note === null) return;
+                    await sendJson(`/api/admin/hybrid/profiles/${button.dataset.id}/moderation`, {
+                        method: 'PATCH', body: { decision, note },
+                    });
+                }
+                if (action === 'reviewHybridReport') {
+                    const status = button.dataset.status;
+                    const resolution = prompt(
+                        status === 'in_review' ? 'Optional review note:' : 'Required resolution:',
+                        ''
+                    );
+                    if (resolution === null) return;
+                    await sendJson(`/api/admin/hybrid/reports/${button.dataset.id}`, {
+                        method: 'PATCH', body: { status, resolution },
                     });
                 }
                 if (action === 'cupCheckIn') {
@@ -703,6 +906,9 @@
                             reason,
                         },
                     });
+                }
+                if (action === 'cupAbsent') {
+                    await chooseCupReplacement(Number(button.dataset.id));
                 }
                 if (action === 'createCupTournament') {
                     if (!confirm('Create and start the 64-player Cup from the approved active roster?')) return;
@@ -752,6 +958,8 @@
                 await fetchTournaments();
                 await fetchDisputes();
                 await fetchCupRoster();
+                await fetchHybridProfiles();
+                await fetchHybridReports();
                 if (currentAuditUserId) { await viewUserActivity(currentAuditUserId); } else { await fetchAuditLogs(); }
             } catch (err) {
                 statusEl.textContent = 'Update failed: ' + err.message;
@@ -769,12 +977,17 @@
         document.getElementById('reloadDisputes').addEventListener('click', fetchDisputes);
         document.getElementById('cupStatusFilter').addEventListener('change', fetchCupRoster);
         document.getElementById('reloadCupRoster').addEventListener('click', fetchCupRoster);
+        document.getElementById('reloadHybridProfiles').addEventListener('click', fetchHybridProfiles);
+        document.getElementById('hybridReportStatus').addEventListener('change', fetchHybridReports);
+        document.getElementById('reloadHybridReports').addEventListener('click', fetchHybridReports);
 
         fetchDashboard();
         fetchUsers();
         fetchTournaments();
         fetchDisputes();
         fetchCupRoster();
+        fetchHybridProfiles();
+        fetchHybridReports();
         fetchAuditLogs();
         bindLogControls();
         fetchBackendLogs();

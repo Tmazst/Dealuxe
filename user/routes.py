@@ -10,6 +10,7 @@ from functools import wraps
 from flask import (
     Blueprint,
     abort,
+    current_app,
     flash,
     jsonify,
     redirect,
@@ -31,6 +32,13 @@ from user.service import (
     store_kyc_document,
     update_profile_fields,
     upload_dir,
+)
+from hybrid.service import (
+    get_profile_payload,
+    hybrid_profile_enabled,
+    list_blocks,
+    list_own_reports,
+    profile_options,
 )
 
 user_bp = Blueprint('user', __name__, url_prefix='/account', template_folder='templates')
@@ -66,6 +74,7 @@ def account_page():
         date_of_birth=user.date_of_birth,
         id_number=user.id_number,
     )
+    hybrid_available = hybrid_profile_enabled(current_app.config)
     return render_template(
         'account.html',
         user=user,
@@ -75,6 +84,11 @@ def account_page():
         kyc_form=KYCDocumentForm(),
         id_form=IDPhotoForm(),
         transactions=recent_transactions(user),
+        hybrid_available=hybrid_available,
+        hybrid_profile=get_profile_payload(user) if hybrid_available else None,
+        hybrid_options=profile_options() if hybrid_available else None,
+        hybrid_blocks=list_blocks(user.id) if hybrid_available else (),
+        hybrid_reports=list_own_reports(user.id) if hybrid_available else (),
     )
 
 

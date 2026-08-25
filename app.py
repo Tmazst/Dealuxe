@@ -42,6 +42,7 @@ from controllers.auth_controller import auth_bp, admin_required
 from controllers.tournament_controller import tournament_bp, init_tournament_events
 from admin.routes import admin_bp
 from user.routes import user_bp
+from hybrid import hybrid_bp
 from Forms import  *
 from database import db, init_db, Tournament, User
 from database import Player
@@ -51,6 +52,7 @@ from config import (
     PaymentConfig,
     LogConfig,
     build_pilot_economy_config,
+    build_hybrid_config,
     build_runtime_security_config,
 )
 from security import init_security_scaffold
@@ -61,6 +63,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1,x_proto=1)
 runtime_security = build_runtime_security_config()
 app.config.update(runtime_security)
 app.config.update(build_pilot_economy_config())
+app.config.update(build_hybrid_config())
 
 # allow Flask to load spectator templates from the livescores_fixtures_updates folder
 app.jinja_loader = ChoiceLoader([
@@ -148,6 +151,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(tournament_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(user_bp)
+app.register_blueprint(hybrid_bp)
 
 # Ensure the upload directory exists for user KYC / ID files
 try:

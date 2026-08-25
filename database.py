@@ -95,6 +95,7 @@ def ensure_user_account_schema():
         ('id_photo_back_path', 'VARCHAR(255)'),
         ('kyc_status', "VARCHAR(20) DEFAULT 'not_submitted'"),
         ('kyc_submitted_at', 'DATETIME'),
+        ('verified_referral_count', 'INTEGER DEFAULT 0'),
     ]
     with db.session.begin():
         for column_name, column_definition in user_columns:
@@ -134,6 +135,9 @@ def ensure_cup_qualification_schema():
         ('status_updated_at', 'DATETIME'),
         ('status_updated_by', 'INTEGER'),
         ('replacement_for_id', 'INTEGER'),
+        ('original_user_id', 'INTEGER'),
+        ('replacement_source_type', 'VARCHAR(30)'),
+        ('replacement_source_reference', 'VARCHAR(120)'),
     ]
     with db.session.begin():
         for column_name, column_definition in columns:
@@ -191,6 +195,9 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     is_admin = db.Column(db.Boolean, default=False)
     is_super_admin = db.Column(db.Boolean, default=False)  # CLI-bootstrap-only role (promotes/demotes admins)
+    # MVP referral-leader count is verified and maintained by administrators.
+    # Automated referral attribution/rewards remain a later milestone.
+    verified_referral_count = db.Column(db.Integer, nullable=False, default=0)
     
     # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.now)
@@ -748,6 +755,9 @@ class CupQualification(db.Model):
     replacement_for_id = db.Column(
         db.Integer, db.ForeignKey('cup_qualifications.id'), nullable=True
     )
+    original_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    replacement_source_type = db.Column(db.String(30), nullable=True)
+    replacement_source_reference = db.Column(db.String(120), nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
     source_tournament = db.relationship('Tournament', backref='cup_qualifications')
@@ -755,6 +765,7 @@ class CupQualification(db.Model):
         'User', foreign_keys=[user_id], backref='cup_qualifications'
     )
     status_admin = db.relationship('User', foreign_keys=[status_updated_by])
+    original_user = db.relationship('User', foreign_keys=[original_user_id])
 
     def to_dict(self):
         return {
@@ -770,7 +781,104 @@ class CupQualification(db.Model):
             'status_updated_at': self.status_updated_at.isoformat() if self.status_updated_at else None,
             'status_updated_by': self.status_updated_by,
             'replacement_for_id': self.replacement_for_id,
+            'original_user_id': self.original_user_id,
+            'replacement_source_type': self.replacement_source_type,
+            'replacement_source_reference': self.replacement_source_reference,
         }
+
+
+class DiscoveryProfile(db.Model):
+    """Private, owner-controlled Hybrid discovery profile foundation."""
+    __tablename__ = 'discovery_profiles'
+    __table_args__ = (
+        db.UniqueConstraint('user_id', name='uq_discovery_profiles_user_id'),
+        db.Index('idx_discovery_profiles_visibility', 'is_visible'),
+        db.Index('idx_discovery_profiles_moderation', 'moderation_status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    is_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    intent = db.Column(db.String(30), nullable=True)
+    category = db.Column(db.String(50), nullable=True)
+    subcategory = db.Column(db.String(80), nullable=True)
+    location = db.Column(db.String(120), nullable=True)
+    predefined_caption = db.Column(db.String(80), nullable=True)
+    custom_caption = db.Column(db.String(280), nullable=True)
+    moderation_status = db.Column(
+        db.String(30), nullable=False, default='not_required'
+    )
+    moderation_note = db.Column(db.String(500), nullable=True)
+    moderated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    moderated_at = db.Column(db.DateTime, nullable=True)
+    is_visible = db.Column(db.Boolean, nullable=False, default=False)
+    chat_preference_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    user = db.relationship('User', backref=db.backref(
+        'discovery_profile', uselist=False, cascade='all, delete-orphan'
+    ), foreign_keys=[user_id])
+
+
+class UserBlock(db.Model):
+    """A persistent, mutual hard exclusion for future Hybrid features."""
+    __tablename__ = 'user_blocks'
+    __table_args__ = (
+        db.UniqueConstraint('blocker_id', 'blocked_id', name='uq_user_blocks_pair'),
+        db.Index('idx_user_blocks_blocker_active', 'blocker_id', 'is_active'),
+        db.Index('idx_user_blocks_blocked_active', 'blocked_id', 'is_active'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    blocker_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    blocked_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    blocker = db.relationship('User', foreign_keys=[blocker_id])
+    blocked = db.relationship('User', foreign_keys=[blocked_id])
+
+
+class DiscoveryReport(db.Model):
+    """Private safety report about another user's Hybrid profile or conduct."""
+    __tablename__ = 'discovery_reports'
+    __table_args__ = (
+        db.Index('idx_discovery_reports_reporter', 'reporter_id'),
+        db.Index('idx_discovery_reports_reported', 'reported_user_id'),
+        db.Index('idx_discovery_reports_status', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    reporter_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    reported_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    profile_id = db.Column(
+        db.Integer, db.ForeignKey('discovery_profiles.id'), nullable=True
+    )
+    tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
+    match_id = db.Column(db.Integer, nullable=True)
+    reason_code = db.Column(db.String(40), nullable=False)
+    details = db.Column(db.String(1000), nullable=True)
+    status = db.Column(db.String(30), nullable=False, default='pending')
+    resolution = db.Column(db.String(1000), nullable=True)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    reporter = db.relationship('User', foreign_keys=[reporter_id])
+    reported_user = db.relationship('User', foreign_keys=[reported_user_id])
+    profile = db.relationship('DiscoveryProfile')
 
 
 class TournamentBracket(db.Model):

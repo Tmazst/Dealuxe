@@ -57,6 +57,49 @@ def build_pilot_economy_config(environ=None):
     }
 
 
+def build_hybrid_config(environ=None):
+    """Build the disabled-by-default Hybrid MVP feature configuration."""
+    environ = os.environ if environ is None else environ
+    master = _env_bool(environ, 'HYBRID_ENABLED', default=False)
+    profile = _env_bool(environ, 'HYBRID_PROFILE_ENABLED', default=False)
+    matching = _env_bool(environ, 'HYBRID_MATCHING_ENABLED', default=False)
+    chat = _env_bool(environ, 'HYBRID_CHAT_ENABLED', default=False)
+    bracket_discovery = _env_bool(
+        environ, 'HYBRID_BRACKET_DISCOVERY_ENABLED', default=False
+    )
+    payments = _env_bool(environ, 'HYBRID_PAYMENTS_ENABLED', default=False)
+    relationship = _env_bool(
+        environ, 'HYBRID_RELATIONSHIP_ENABLED', default=False
+    )
+    children = {
+        'HYBRID_PROFILE_ENABLED': profile,
+        'HYBRID_MATCHING_ENABLED': matching,
+        'HYBRID_CHAT_ENABLED': chat,
+        'HYBRID_BRACKET_DISCOVERY_ENABLED': bracket_discovery,
+        'HYBRID_PAYMENTS_ENABLED': payments,
+        'HYBRID_RELATIONSHIP_ENABLED': relationship,
+    }
+    enabled_children = [name for name, enabled in children.items() if enabled]
+    if enabled_children and not master:
+        raise RuntimeError(
+            'HYBRID_ENABLED is required when enabling: '
+            + ', '.join(enabled_children)
+        )
+    if relationship:
+        raise RuntimeError('HYBRID_RELATIONSHIP_ENABLED is unavailable in the MVP')
+    if payments:
+        raise RuntimeError('HYBRID_PAYMENTS_ENABLED requires post-pilot approval')
+    if matching or chat or bracket_discovery:
+        raise RuntimeError(
+            'Hybrid matching, chat and bracket discovery are not implemented '
+            'in the foundation slice'
+        )
+    return {
+        'HYBRID_ENABLED': master,
+        **children,
+    }
+
+
 def _split_origins(raw_value):
     """Return a normalized, de-duplicated Socket.IO origin allowlist."""
     origins = []

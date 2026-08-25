@@ -251,6 +251,124 @@
             </section>
             {% endif %}
 
+            {% if hybrid_available %}
+            <!-- Hybrid discovery profile (private foundation) -->
+            <section class="card">
+                <h2>Discovery &amp; Matching <small>MVP profile</small></h2>
+                <p class="page-sub" style="margin-bottom:14px;">
+                    Configure how you may be discovered later. Matching and chat are not active yet.
+                </p>
+                <form method="post" action="/account/discovery">
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" name="is_enabled" {% if hybrid_profile.is_enabled %}checked{% endif %}>
+                            Enable my discovery profile
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Intent</label>
+                        <select class="form-control" name="intent">
+                            <option value="">Select intent</option>
+                            {% for value in hybrid_options.intents %}
+                                <option value="{{ value }}" {% if hybrid_profile.intent == value %}selected{% endif %}>{{ value|title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Category</label>
+                        <select class="form-control" name="category">
+                            <option value="">Select category</option>
+                            {% for value in hybrid_options.categories %}
+                                <option value="{{ value }}" {% if hybrid_profile.category == value %}selected{% endif %}>{{ value|title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Subcategory</label>
+                        <input class="form-control" name="subcategory" maxlength="80" value="{{ hybrid_profile.subcategory or '' }}" placeholder="Optional detail">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Location</label>
+                        <input class="form-control" name="location" maxlength="120" value="{{ hybrid_profile.location or '' }}" placeholder="Town, region or service area">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Profile caption</label>
+                        <select class="form-control" name="predefined_caption">
+                            <option value="">Select caption</option>
+                            {% for value in hybrid_options.predefined_captions %}
+                                <option value="{{ value }}" {% if hybrid_profile.predefined_caption == value %}selected{% endif %}>{{ value|replace('_', ' ')|title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Custom caption <small>(administrator review required)</small></label>
+                        <textarea class="form-control" name="custom_caption" maxlength="280" rows="3">{{ hybrid_profile.custom_caption or '' }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">
+                            <input type="checkbox" name="is_visible" {% if hybrid_profile.is_visible %}checked{% endif %}>
+                            Visible when discovery is activated
+                        </label>
+                        <label class="form-label">
+                            <input type="checkbox" name="chat_preference_enabled" {% if hybrid_profile.chat_preference_enabled %}checked{% endif %}>
+                            Allow chat when the later chat feature is activated
+                        </label>
+                    </div>
+                    {% if hybrid_profile.moderation_status == 'pending_review' %}
+                        <div class="flash" style="margin-bottom:12px;">Custom caption pending administrator review.</div>
+                    {% elif hybrid_profile.moderation_status == 'approved' %}
+                        <div class="flash success" style="margin-bottom:12px;">Custom caption approved. You may enable profile visibility.</div>
+                    {% elif hybrid_profile.moderation_status == 'rejected' %}
+                        <div class="flash error" style="margin-bottom:12px;">Custom caption rejected{% if hybrid_profile.moderation_note %}: {{ hybrid_profile.moderation_note }}{% endif %}. Profile visibility remains off.</div>
+                    {% endif %}
+                    <button class="btn block" type="submit">Save discovery profile</button>
+                </form>
+
+                <hr style="margin:22px 0;border:0;border-top:1px solid rgba(255,255,255,.14);">
+                <h3>Hybrid safety controls</h3>
+                <p class="page-sub">Blocks are mutual exclusions for future discovery, matching and chat. Reports are private to administrators.</p>
+                <form method="post" action="/account/discovery/block" style="margin-bottom:14px;">
+                    <div class="form-group">
+                        <label class="form-label">Block a player by username</label>
+                        <input class="form-control" name="username" maxlength="80" required placeholder="Player username">
+                    </div>
+                    <button class="btn" type="submit">Block player</button>
+                </form>
+                {% if hybrid_blocks %}
+                    <div style="margin-bottom:18px;">
+                        {% for block in hybrid_blocks %}
+                            <form method="post" action="/account/discovery/unblock" style="display:inline-block;margin:4px;">
+                                <input type="hidden" name="blocked_user_id" value="{{ block.blocked_user_id }}">
+                                <button class="btn" type="submit">Unblock {{ block.blocked_username }}</button>
+                            </form>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <form method="post" action="/account/discovery/report">
+                    <div class="form-group">
+                        <label class="form-label">Report a player privately</label>
+                        <input class="form-control" name="username" maxlength="80" required placeholder="Player username">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Reason</label>
+                        <select class="form-control" name="reason_code" required>
+                            {% for value in hybrid_options.report_reasons %}
+                                <option value="{{ value }}">{{ value|replace('_', ' ')|title }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Details</label>
+                        <textarea class="form-control" name="details" maxlength="1000" rows="3" placeholder="Describe what happened"></textarea>
+                    </div>
+                    <button class="btn" type="submit">Submit private report</button>
+                </form>
+                {% if hybrid_reports %}
+                    <p class="page-sub" style="margin-top:12px;">Your submitted reports: {{ hybrid_reports|length }}</p>
+                {% endif %}
+            </section>
+            {% endif %}
+
             <!-- KYC -->
             <section class="card">
                 <h2>🪪 Identity Verification <small>(KYC)</small></h2>

@@ -28,6 +28,8 @@ from admin.service import (
     get_cup_placements,
     assign_cup_positions_5_to_8,
     assign_cup_positions_9_to_10,
+    list_cup_replacement_candidates,
+    replace_absent_cup_player,
     check_in_cup_qualification,
     list_cup_qualifications,
     move_cup_qualification_to_reserve,
@@ -241,6 +243,34 @@ def create_cup_tournament_route():
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'message': '64-player Cup created and started', 'cup': cup}), 201
+
+
+@admin_bp.route('/cup-replacement-candidates', methods=['GET'])
+@admin_required
+def cup_replacement_candidates_route():
+    return jsonify(list_cup_replacement_candidates(
+        event_key=request.args.get('event_key')
+    ))
+
+
+@admin_bp.route(
+    '/cup-qualifications/<int:qualification_id>/replace-absent', methods=['POST']
+)
+@admin_required
+def cup_replace_absent_route(qualification_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        result = replace_absent_cup_player(
+            qualification_id=qualification_id,
+            candidate_user_id=data.get('candidate_user_id'),
+            source_type=data.get('source_type'),
+            source_tournament_id=data.get('source_tournament_id'),
+            admin_user_id=session['user_id'],
+            reason=data.get('reason'),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Absent Cup player replaced', **result})
 
 
 @admin_bp.route('/cup-tournaments/<int:tournament_id>/placements', methods=['GET'])
