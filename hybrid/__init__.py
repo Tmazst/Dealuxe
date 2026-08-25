@@ -1,5 +1,4 @@
-"""Isolated Version 3 Hybrid MVP foundation."""
+"""Isolated Version 3 Hybrid package.
 
-from hybrid.routes import hybrid_bp
-
-__all__ = ['hybrid_bp']
+Import submodules directly so the pure matcher never initializes Flask routes.
+"""

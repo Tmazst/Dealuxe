@@ -42,7 +42,7 @@ from controllers.auth_controller import auth_bp, admin_required
 from controllers.tournament_controller import tournament_bp, init_tournament_events
 from admin.routes import admin_bp
 from user.routes import user_bp
-from hybrid import hybrid_bp
+from hybrid.routes import hybrid_bp
 from Forms import  *
 from database import db, init_db, Tournament, User
 from database import Player
