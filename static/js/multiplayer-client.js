@@ -85,6 +85,61 @@ function isGamePage() {
     return !!document.getElementById('player-cards');
 };
 
+function setMatchConnectionStatus(state, label) {
+    var target = document.getElementById('match-connection-status');
+    if (!target) return;
+    target.classList.remove('connected', 'reconnecting');
+    if (state) target.classList.add(state);
+    while (target.firstChild) target.removeChild(target.firstChild);
+    var icon = document.createElement('i');
+    icon.className = 'fa-solid fa-circle';
+    icon.setAttribute('aria-hidden', 'true');
+    target.appendChild(icon);
+    target.appendChild(document.createTextNode(' ' + label));
+}
+
+function updateMatchupNames(myName, opponentName) {
+    var values = [
+        ['matchup-me-name', myName],
+        ['score-me-name', myName],
+        ['matchup-opponent-name', opponentName],
+        ['score-opponent-name', opponentName]
+    ];
+    values.forEach(function (entry) {
+        if (!entry[1]) return;
+        var target = document.getElementById(entry[0]);
+        if (target) target.textContent = entry[1];
+    });
+}
+
+function setPlayerAvatar(role, url) {
+    var images = document.querySelectorAll('[data-player-avatar="' + role + '"]');
+    Array.prototype.forEach.call(images, function (image) {
+        var fallback = image.parentElement && image.parentElement.querySelector('.player-avatar-fallback');
+        function useFallback() {
+            image.hidden = true;
+            image.removeAttribute('src');
+            if (fallback) fallback.hidden = false;
+        }
+        image.addEventListener('error', useFallback);
+        if (url) {
+            image.src = url;
+            image.hidden = false;
+            if (fallback) fallback.hidden = true;
+        } else if (!image.getAttribute('src')) {
+            useFallback();
+        }
+    });
+}
+
+function initializeMatchupDisplay() {
+    setPlayerAvatar('me', null);
+    setPlayerAvatar('opponent', null);
+    if (socket && socket.connected) {
+        setMatchConnectionStatus('connected', 'Connected');
+    }
+}
+
 // Minimal state applier: sets counts and dumps state for debugging
 function applyStateToUI(state, player_index) {
     try {
@@ -191,9 +246,15 @@ function renderMultiplayerCommentFromPayload(payload) {
 // Handle game_started: if on game page, initialize without redirect
 if (socket) {
     socket.on('connect', function() {
+        setMatchConnectionStatus('connected', 'Connected');
+        if (typeof hideTurnTimeoutBanner === 'function') hideTurnTimeoutBanner();
         if (window.tournamentRoomCode) {
             socket.emit('reconnect_to_room', { room_code: window.tournamentRoomCode });
         }
+    });
+
+    socket.on('disconnect', function () {
+        setMatchConnectionStatus('reconnecting', 'Reconnecting');
     });
 
     socket.on('game_started', function(data) {
@@ -251,11 +312,7 @@ if (socket) {
                 // Optionally notify player
                 console.log('It is your turn');
             }
-            // Update mode label for multiplayer
-            try {
-                var modeVal = document.querySelector('.mode-caption-cont .mode-value');
-                if (modeVal) modeVal.textContent = 'Multiplayer';
-            } catch (e) {}
+            updateMatchupNames(data.your_username, data.opponent_username);
             // Update brand with current bet total if provided
             try {
                 var betTotal = data.bet_total;
@@ -367,6 +424,7 @@ if (socket) {
             if (payload.game_id) window.currentMultiplayer.game_id = payload.game_id;
             window.currentMultiplayer.your_turn = payload.is_my_turn;
             window.currentMultiplayer.turn_deadline = payload.turn_deadline;
+            updateMatchupNames(payload.your_username, payload.opponent_username);
             if (typeof setLocalPlayerIndex === 'function') setLocalPlayerIndex(payload.player_index);
             // Start/stop the turn countdown timer
             try {
@@ -404,17 +462,29 @@ if (socket) {
     socket.on('opponent_disconnected', function(data) {
         console.warn('[multiplayer-client] opponent_disconnected', data);
         if (isGamePage()) {
+            setMatchConnectionStatus('reconnecting', 'Opponent offline');
             // Show a temporary notice
             var agentText = document.getElementById('agent-text');
-            if (agentText) agentText.textContent = 'Opponent disconnected - waiting for reconnection...';
+            if (window.hybridPanel) {
+                window.hybridPanel.setMessage('safety', 'Opponent disconnected - waiting for reconnection...');
+            } else if (agentText) {
+                agentText.textContent = 'Opponent disconnected - waiting for reconnection...';
+            }
         }
     });
 
     socket.on('opponent_reconnected', function(data) {
         console.debug('[multiplayer-client] opponent_reconnected', data);
         if (isGamePage()) {
+            if (typeof hideTurnTimeoutBanner === 'function') hideTurnTimeoutBanner();
+            setMatchConnectionStatus('connected', 'Connected');
             var agentText = document.getElementById('agent-text');
-            if (agentText) agentText.textContent = 'Opponent reconnected - game resumed';
+            if (window.hybridPanel) {
+                window.hybridPanel.clearMessage('safety');
+                window.hybridPanel.setMessage('status', 'Opponent reconnected - game resumed', {ttl: 5000});
+            } else if (agentText) {
+                agentText.textContent = 'Opponent reconnected - game resumed';
+            }
         }
     });
 
@@ -422,6 +492,10 @@ if (socket) {
     socket.on('opponent_joined', function(data){
         if (data && typeof data.opponent_username === 'string') {
             window.opponentName = data.opponent_username;
+            updateMatchupNames(null, data.opponent_username);
+            if (data.room_code) {
+                setPlayerAvatar('opponent', '/api/hybrid/game/' + encodeURIComponent(data.room_code) + '/opponent-image');
+            }
         }
     });
 
@@ -481,5 +555,7 @@ window.multiplayerRejoin = function(room_code) {
     if (!socket) return;
     socket.emit('reconnect_to_room', { room_code: room_code });
 };
+
+document.addEventListener('DOMContentLoaded', initializeMatchupDisplay);
 
 })();

@@ -5,6 +5,7 @@ instance/*.sqlite3
 .env
 .venv
 *.zip
+*.pyc
 controllers/__pycache__/*cpython-311.cyc
 controllers/__pycache__/*cpython-313.cyc
 controllers/__pycache__/ai_controller.cpython-311.pyc
@@ -156,3 +157,9 @@ __pycache__/test_tournament_match_flow.cpython-311.pyc
 # Backend print-log capture
 logs/
 
+migrations/006_hybrid_matching_shadow_audit.sql
+migrations/007_hybrid_admin_feature_settings.sql
+migrations/008_hybrid_caption_catalogue.sql
+migrations/009_hybrid_shadow_audit_duration.sql
+migrations/010_hybrid_game_profile_preferences.sql
+migrations/011_public_profile_image.sql

@@ -63,6 +63,9 @@ def build_hybrid_config(environ=None):
     master = _env_bool(environ, 'HYBRID_ENABLED', default=False)
     profile = _env_bool(environ, 'HYBRID_PROFILE_ENABLED', default=False)
     matching = _env_bool(environ, 'HYBRID_MATCHING_ENABLED', default=False)
+    matching_shadow = _env_bool(
+        environ, 'HYBRID_MATCHING_SHADOW_ENABLED', default=False
+    )
     chat = _env_bool(environ, 'HYBRID_CHAT_ENABLED', default=False)
     bracket_discovery = _env_bool(
         environ, 'HYBRID_BRACKET_DISCOVERY_ENABLED', default=False
@@ -74,6 +77,7 @@ def build_hybrid_config(environ=None):
     children = {
         'HYBRID_PROFILE_ENABLED': profile,
         'HYBRID_MATCHING_ENABLED': matching,
+        'HYBRID_MATCHING_SHADOW_ENABLED': matching_shadow,
         'HYBRID_CHAT_ENABLED': chat,
         'HYBRID_BRACKET_DISCOVERY_ENABLED': bracket_discovery,
         'HYBRID_PAYMENTS_ENABLED': payments,
@@ -89,13 +93,40 @@ def build_hybrid_config(environ=None):
         raise RuntimeError('HYBRID_RELATIONSHIP_ENABLED is unavailable in the MVP')
     if payments:
         raise RuntimeError('HYBRID_PAYMENTS_ENABLED requires post-pilot approval')
-    if matching or chat or bracket_discovery:
+    locked_runtime_flags = [
+        name
+        for name, enabled in (
+            ('HYBRID_BRACKET_DISCOVERY_ENABLED', bracket_discovery),
+        )
+        if enabled
+    ]
+    if locked_runtime_flags:
         raise RuntimeError(
-            'Hybrid matching, chat and bracket discovery are not implemented '
-            'in the foundation slice'
+            'These Hybrid flags are locked during the MVP shadow stage: '
+            + ', '.join(locked_runtime_flags)
+            + '. Keep them false; use HYBRID_MATCHING_SHADOW_ENABLED=true '
+              'to observe proposed pairs without changing live brackets.'
+        )
+    if matching_shadow and not profile:
+        raise RuntimeError(
+            'HYBRID_PROFILE_ENABLED is required for Hybrid matching shadow mode'
+        )
+    if matching and not profile:
+        raise RuntimeError(
+            'HYBRID_PROFILE_ENABLED is required for live Hybrid matching'
+        )
+    if chat and not profile:
+        raise RuntimeError(
+            'HYBRID_PROFILE_ENABLED is required for Q-messànger chat'
+        )
+    if matching and matching_shadow:
+        raise RuntimeError(
+            'Choose either HYBRID_MATCHING_ENABLED or '
+            'HYBRID_MATCHING_SHADOW_ENABLED, not both'
         )
     return {
         'HYBRID_ENABLED': master,
+        'HYBRID_MATCHING_TIMEOUT_MS': 250,
         **children,
     }
 

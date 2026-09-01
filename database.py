@@ -4,6 +4,7 @@ SQLAlchemy setup for Dealuxe Card Game
 """
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import os
 import uuid
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import synonym
@@ -93,6 +94,7 @@ def ensure_user_account_schema():
         ('kyc_document_path', 'VARCHAR(255)'),
         ('id_photo_path', 'VARCHAR(255)'),
         ('id_photo_back_path', 'VARCHAR(255)'),
+        ('profile_image_path', 'VARCHAR(255)'),
         ('kyc_status', "VARCHAR(20) DEFAULT 'not_submitted'"),
         ('kyc_submitted_at', 'DATETIME'),
         ('verified_referral_count', 'INTEGER DEFAULT 0'),
@@ -147,10 +149,46 @@ def ensure_cup_qualification_schema():
                 ))
 
 
+def ensure_hybrid_shadow_audit_schema():
+    """Add observational matcher timing to databases created before migration 009."""
+    if db.engine is None or db.engine.name != 'sqlite':
+        return
+    if not inspect(db.engine).has_table('discovery_match_audits'):
+        return
+    with db.session.begin():
+        if not _table_has_column('discovery_match_audits', 'matching_duration_ms'):
+            db.session.execute(text(
+                'ALTER TABLE discovery_match_audits '
+                'ADD COLUMN matching_duration_ms FLOAT'
+            ))
+
+
+def ensure_hybrid_game_preferences_schema():
+    """Default-on per-game profile sharing for existing multiplayer rooms."""
+    if db.engine is None or db.engine.name != 'sqlite':
+        return
+    if not inspect(db.engine).has_table('game_rooms'):
+        return
+    with db.session.begin():
+        for column_name in (
+            'player1_profile_visible',
+            'player2_profile_visible',
+        ):
+            if not _table_has_column('game_rooms', column_name):
+                db.session.execute(text(
+                    f'ALTER TABLE game_rooms ADD COLUMN {column_name} '
+                    'BOOLEAN NOT NULL DEFAULT 1'
+                ))
+
+
 def init_db(app):
     """Initialize database with Flask app"""
     # SQLite configuration (will switch to MySQL later)
-    app.config['SQLALCHEMY_DATABASE_URI'] ='sqlite:///dealuxe_game.db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = (
+        app.config.get('SQLALCHEMY_DATABASE_URI')
+        or os.environ.get('DEALUXE_DATABASE_URI')
+        or 'sqlite:///dealuxe_game.db'
+    )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ECHO'] = False  # Set to True for SQL debugging
     
@@ -162,6 +200,8 @@ def init_db(app):
         ensure_user_account_schema()
         ensure_payment_schema()
         ensure_cup_qualification_schema()
+        ensure_hybrid_shadow_audit_schema()
+        ensure_hybrid_game_preferences_schema()
         print("[DATABASE] Database initialized successfully")
 
 
@@ -190,6 +230,8 @@ class User(db.Model):
     kyc_document_path = db.Column(db.String(255))       # proof of address / KYC doc
     id_photo_path = db.Column(db.String(255))           # ID / passport photo (front)
     id_photo_back_path = db.Column(db.String(255))      # ID / passport photo (back)
+    # Dedicated public-facing avatar. Never substitute private KYC/ID images.
+    profile_image_path = db.Column(db.String(255))
     kyc_status = db.Column(db.String(20), default='not_submitted')  # not_submitted/pending_review/verified/rejected
     kyc_submitted_at = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
@@ -811,7 +853,7 @@ class DiscoveryProfile(db.Model):
     moderation_note = db.Column(db.String(500), nullable=True)
     moderated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     moderated_at = db.Column(db.DateTime, nullable=True)
-    is_visible = db.Column(db.Boolean, nullable=False, default=False)
+    is_visible = db.Column(db.Boolean, nullable=False, default=True)
     chat_preference_enabled = db.Column(db.Boolean, nullable=False, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
@@ -879,6 +921,104 @@ class DiscoveryReport(db.Model):
     reporter = db.relationship('User', foreign_keys=[reporter_id])
     reported_user = db.relationship('User', foreign_keys=[reported_user_id])
     profile = db.relationship('DiscoveryProfile')
+
+
+class DiscoveryMatchAudit(db.Model):
+    """Privacy-safe record of a Hybrid matcher shadow-mode decision."""
+    __tablename__ = 'discovery_match_audits'
+    __table_args__ = (
+        db.UniqueConstraint(
+            'tournament_id', 'mode', 'algorithm_version',
+            name='uq_discovery_match_audits_run',
+        ),
+        db.Index('idx_discovery_match_audits_tournament', 'tournament_id'),
+        db.Index('idx_discovery_match_audits_created', 'created_at'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tournament_id = db.Column(
+        db.Integer, db.ForeignKey('tournaments.id'), nullable=False
+    )
+    mode = db.Column(db.String(20), nullable=False, default='shadow')
+    algorithm_version = db.Column(db.String(80), nullable=False)
+    status = db.Column(db.String(40), nullable=False)
+    participant_count = db.Column(db.Integer, nullable=False)
+    total_score = db.Column(db.Integer, nullable=False, default=0)
+    hybrid_pair_count = db.Column(db.Integer, nullable=False, default=0)
+    matching_duration_ms = db.Column(db.Float, nullable=True)
+    legacy_fallback_recommended = db.Column(db.Boolean, nullable=False, default=False)
+    proposed_seed_order_json = db.Column(db.Text, nullable=False, default='[]')
+    legacy_seed_order_json = db.Column(db.Text, nullable=False, default='[]')
+    pairs_json = db.Column(db.Text, nullable=False, default='[]')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    tournament = db.relationship('Tournament')
+
+
+class HybridFeatureSetting(db.Model):
+    """Persistent administrator override for an approved Hybrid MVP flag."""
+    __tablename__ = 'hybrid_feature_settings'
+    __table_args__ = (
+        db.Index('idx_hybrid_feature_settings_updated', 'updated_at'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    setting_key = db.Column(db.String(80), unique=True, nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    administrator = db.relationship('User', foreign_keys=[updated_by])
+
+
+class HybridPilotMetric(db.Model):
+    """Aggregate pilot counters only; never stores captions or message bodies."""
+    __tablename__ = 'hybrid_pilot_metrics'
+
+    id = db.Column(db.Integer, primary_key=True)
+    metric_key = db.Column(db.String(80), unique=True, nullable=False)
+    total_count = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class DiscoveryCaptionTemplate(db.Model):
+    """Administrator-managed structured caption offered to discovery profiles."""
+    __tablename__ = 'discovery_caption_templates'
+    __table_args__ = (
+        db.Index('idx_discovery_caption_templates_active', 'is_active'),
+        db.Index('idx_discovery_caption_templates_intent_category', 'intent', 'category'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(80), unique=True, nullable=False)
+    display_name = db.Column(db.String(120), nullable=False)
+    intent = db.Column(db.String(30), nullable=False)
+    category = db.Column(db.String(50), nullable=True)
+    template_text = db.Column(db.String(280), nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=100)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    creator = db.relationship('User', foreign_keys=[created_by])
+    administrator = db.relationship('User', foreign_keys=[updated_by])
 
 
 class TournamentBracket(db.Model):
@@ -1258,6 +1398,11 @@ class GameRoom(db.Model):
     player2_connected = db.Column(db.Boolean, default=False)
     player1_last_seen = db.Column(db.DateTime, nullable=True)
     player2_last_seen = db.Column(db.DateTime, nullable=True)
+
+    # Discovery profiles are shared in a game by default. Either participant
+    # can opt out for that room without changing their global marketer profile.
+    player1_profile_visible = db.Column(db.Boolean, nullable=False, default=True)
+    player2_profile_visible = db.Column(db.Boolean, nullable=False, default=True)
     
     # Results
     winner_id = db.Column(db.Integer, nullable=True)
@@ -1297,6 +1442,8 @@ class GameRoom(db.Model):
             'player2_id': self.player2_id,
             'player1_username': player1_username,
             'player2_username': User.query.get(self.player2_id).username if self.player2_id else None,
+            'player1_profile_visible': bool(self.player1_profile_visible),
+            'player2_profile_visible': bool(self.player2_profile_visible),
             'created_by_username': player1_username,  # player1 is always the creator
             'creator_online': creator_online,
             'status': self.status,

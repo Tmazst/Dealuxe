@@ -196,6 +196,18 @@
                     </div>
                     {{ profile_form.submit(class="btn block") }}
                 </form>
+                <div class="upload-block">
+                    <h3>Q-messànger profile image</h3>
+                    <p class="upload-file">This public image may appear to your tournament opponent. Private KYC and ID images are never used.</p>
+                    {% if account.profile_image_path %}
+                        <img src="/account/uploads/{{ account.profile_image_path }}" alt="Current public profile" style="width:72px;height:72px;object-fit:cover;border-radius:50%;margin:8px 0;border:2px solid #EF4036;">
+                    {% endif %}
+                    <form method="post" action="/account/profile-image" enctype="multipart/form-data">
+                        {{ profile_image_form.hidden_tag() }}
+                        {{ profile_image_form.profile_image(class="form-control", accept="image/png,image/jpeg") }}
+                        {{ profile_image_form.submit(class="btn block", style="margin-top:8px;") }}
+                    </form>
+                </div>
             </section>
 
             <!-- Wallet -->
@@ -252,13 +264,15 @@
             {% endif %}
 
             {% if hybrid_available %}
-            <!-- Hybrid discovery profile (private foundation) -->
+            <!-- Hybrid discovery profile -->
             <section class="card">
-                <h2>Discovery &amp; Matching <small>MVP profile</small></h2>
+                <h2>Hybrid Discovery <small>MVP pilot</small></h2>
                 <p class="page-sub" style="margin-bottom:14px;">
-                    Configure how you may be discovered later. Matching and chat are not active yet.
+                    Tell us what you offer or need. During shadow testing, suggested
+                    tournament pairings are visible only to administrators and do not
+                    change the live bracket.
                 </p>
-                <form method="post" action="/account/discovery">
+                <form method="post" action="/account/discovery" id="hybridDiscoveryForm">
                     <div class="form-group">
                         <label class="form-label">
                             <input type="checkbox" name="is_enabled" {% if hybrid_profile.is_enabled %}checked{% endif %}>
@@ -267,7 +281,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Intent</label>
-                        <select class="form-control" name="intent">
+                        <select class="form-control" name="intent" id="hybridIntent">
                             <option value="">Select intent</option>
                             {% for value in hybrid_options.intents %}
                                 <option value="{{ value }}" {% if hybrid_profile.intent == value %}selected{% endif %}>{{ value|title }}</option>
@@ -276,7 +290,7 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Category</label>
-                        <select class="form-control" name="category">
+                        <select class="form-control" name="category" id="hybridCategory">
                             <option value="">Select category</option>
                             {% for value in hybrid_options.categories %}
                                 <option value="{{ value }}" {% if hybrid_profile.category == value %}selected{% endif %}>{{ value|title }}</option>
@@ -285,20 +299,27 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Subcategory</label>
-                        <input class="form-control" name="subcategory" maxlength="80" value="{{ hybrid_profile.subcategory or '' }}" placeholder="Optional detail">
+                        <input class="form-control" name="subcategory" id="hybridSubcategory" maxlength="80" value="{{ hybrid_profile.subcategory or '' }}" placeholder="For example: furniture or plumbing">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Location</label>
-                        <input class="form-control" name="location" maxlength="120" value="{{ hybrid_profile.location or '' }}" placeholder="Town, region or service area">
+                        <input class="form-control" name="location" id="hybridLocation" maxlength="120" value="{{ hybrid_profile.location or '' }}" placeholder="Town, region or service area">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Profile caption</label>
-                        <select class="form-control" name="predefined_caption">
+                        <select class="form-control" name="predefined_caption" id="hybridCaption">
                             <option value="">Select caption</option>
-                            {% for value in hybrid_options.predefined_captions %}
-                                <option value="{{ value }}" {% if hybrid_profile.predefined_caption == value %}selected{% endif %}>{{ value|replace('_', ' ')|title }}</option>
+                            {% for caption in hybrid_options.caption_templates %}
+                                <option
+                                    value="{{ caption.code }}"
+                                    data-intent="{{ caption.intent }}"
+                                    data-category="{{ caption.category or '' }}"
+                                    data-template="{{ caption.template_text }}"
+                                    {% if hybrid_profile.predefined_caption == caption.code %}selected{% endif %}
+                                >{{ caption.display_name }} — {{ caption.template_text }}</option>
                             {% endfor %}
                         </select>
+                        <div class="upload-file" id="hybridCaptionPreview" style="margin-top:8px;{% if not hybrid_profile.caption_preview %}display:none;{% endif %}">Preview: {{ hybrid_profile.caption_preview or '' }}</div>
                     </div>
                     <div class="form-group">
                         <label class="form-label">Custom caption <small>(administrator review required)</small></label>
@@ -307,11 +328,11 @@
                     <div class="form-group">
                         <label class="form-label">
                             <input type="checkbox" name="is_visible" {% if hybrid_profile.is_visible %}checked{% endif %}>
-                            Visible when discovery is activated
+                            Visible to opponents by default (you can hide it for an individual game)
                         </label>
                         <label class="form-label">
                             <input type="checkbox" name="chat_preference_enabled" {% if hybrid_profile.chat_preference_enabled %}checked{% endif %}>
-                            Allow chat when the later chat feature is activated
+                            Allow Q-messànger chat during games
                         </label>
                     </div>
                     {% if hybrid_profile.moderation_status == 'pending_review' %}
@@ -478,6 +499,55 @@
                     btn.disabled = false;
                 }
             });
+        })();
+
+        (function () {
+            var intent = document.getElementById('hybridIntent');
+            var category = document.getElementById('hybridCategory');
+            var subcategory = document.getElementById('hybridSubcategory');
+            var location = document.getElementById('hybridLocation');
+            var caption = document.getElementById('hybridCaption');
+            var preview = document.getElementById('hybridCaptionPreview');
+            if (!intent || !category || !caption || !preview) return;
+
+            function renderTemplate(template) {
+                return String(template || '')
+                    .replaceAll('{category}', category.value || 'your category')
+                    .replaceAll('{subcategory}', subcategory.value.trim() || 'your item or skill')
+                    .replaceAll('{location}', location.value.trim() || 'your area');
+            }
+
+            function refreshCaptions() {
+                var selectedStillAvailable = false;
+                Array.prototype.forEach.call(caption.options, function (option, index) {
+                    if (index === 0) return;
+                    var intentMatches = !intent.value || option.dataset.intent === intent.value;
+                    var categoryMatches = !category.value || !option.dataset.category || option.dataset.category === category.value;
+                    option.hidden = !(intentMatches && categoryMatches);
+                    option.disabled = option.hidden;
+                    if (option.selected && !option.hidden) selectedStillAvailable = true;
+                });
+                if (!selectedStillAvailable && caption.selectedIndex > 0) caption.value = '';
+                refreshPreview();
+            }
+
+            function refreshPreview() {
+                var option = caption.options[caption.selectedIndex];
+                if (!option || !option.value || option.disabled) {
+                    preview.style.display = 'none';
+                    preview.textContent = '';
+                    return;
+                }
+                preview.textContent = 'Preview: ' + renderTemplate(option.dataset.template);
+                preview.style.display = '';
+            }
+
+            intent.addEventListener('change', refreshCaptions);
+            category.addEventListener('change', refreshCaptions);
+            caption.addEventListener('change', refreshPreview);
+            subcategory.addEventListener('input', refreshPreview);
+            location.addEventListener('input', refreshPreview);
+            refreshCaptions();
         })();
     </script>
 </body>

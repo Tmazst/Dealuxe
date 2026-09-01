@@ -198,6 +198,28 @@
             font-weight: 700;
             font-size: 0.9rem;
             flex-shrink: 0;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .bracket-avatar-image {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
+        }
+
+        .bracket-avatar-image[hidden],
+        .player-avatar.has-image .bracket-avatar-fallback {
+            display: none !important;
+        }
+
+        .bracket-avatar-fallback {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+            justify-content: center;
         }
 
         .player-name {
@@ -897,6 +919,37 @@
             const statusLabel = (status) => ({
                 scheduled: 'Ready to play', in_progress: 'Live now', completed: 'Completed', pending: 'Waiting'
             }[status] || status);
+            const bindBracketAvatars = (entries) => {
+                document.querySelectorAll('#bracket-wrapper .player-avatar').forEach((avatar, index) => {
+                    const entry = entries[index] || {};
+                    const fallback = document.createElement('span');
+                    fallback.className = 'bracket-avatar-fallback';
+                    fallback.textContent = (entry.name || '?').charAt(0).toUpperCase();
+                    avatar.textContent = '';
+                    avatar.appendChild(fallback);
+                    if (!entry.url) return;
+                    const image = document.createElement('img');
+                    image.className = 'bracket-avatar-image';
+                    image.alt = (entry.name || 'Player') + ' profile image';
+                    image.hidden = true;
+                    const showImage = () => {
+                        image.hidden = false;
+                        avatar.classList.add('has-image');
+                    };
+                    const showFallback = () => {
+                        image.hidden = true;
+                        avatar.classList.remove('has-image');
+                    };
+                    image.addEventListener('load', showImage, { once: true });
+                    image.addEventListener('error', showFallback, { once: true });
+                    avatar.insertBefore(image, fallback);
+                    image.src = entry.url;
+                    if (image.complete) {
+                        if (image.naturalWidth > 0) showImage();
+                        else showFallback();
+                    }
+                });
+            };
             const wrapper = document.getElementById('bracket-wrapper');
 
             document.getElementById('tournament-name').textContent = tournament.tournament_name || 'Tournament';
@@ -908,6 +961,7 @@
             document.getElementById('live-count').textContent = live;
             document.getElementById('completed-count').textContent = complete;
 
+            const avatarEntries = [];
             wrapper.innerHTML = rounds.map((round) => `
                 <div class="bracket-column">
                     <div class="bracket-title">${escapeHtml(round.round_name).toUpperCase()}</div>
@@ -943,6 +997,10 @@
 
                         const firstWinner = slot.winner_id === slot.player1_id ? ' winner' : '';
                         const secondWinner = slot.winner_id === slot.player2_id ? ' winner' : '';
+                        avatarEntries.push(
+                            { name: slot.player1_name, url: slot.player1_avatar_url },
+                            { name: slot.player2_name, url: slot.player2_avatar_url }
+                        );
                         return `<div class="match-box ${escapeHtml(status)}">
                             <div class="match-header"><span class="match-round">Match ${slot.match_number}</span><span class="match-time">${escapeHtml(statusLabel(status))}</span></div>
                             <div class="match-players">
@@ -953,6 +1011,8 @@
                         </div>`;
                     }).join('')}
                 </div>`).join('');
+
+            bindBracketAvatars(avatarEntries);
 
             renderNextMatchCallout();
         }

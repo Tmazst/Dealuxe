@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Card Game</title>
-    
+
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css?family=Montserrat:300,400,700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css?family=Oswald:300,400,700&display=swap" rel="stylesheet">
@@ -14,6 +14,7 @@
     
     <!-- Custom Styles (must be last to override defaults) -->
     <link rel="stylesheet" type="text/css" href="/static/css/style.css">
+    <link rel="stylesheet" type="text/css" href="/static/css/hybrid-panel.css">
     
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -41,40 +42,70 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
 <div class="app-grid gen-flex">
 
     <main class="panel">
-        <div id="leader-progess-bars-cont">
+        <div class="mode-caption-cont gen-flex-col">
+            <span class="mode-key">{{ matchup.title }}</span>
+            <div class="mode-value" aria-label="Current contestants">
+                <span class="matchup-player matchup-player-me">
+                    <strong id="matchup-me-name">{{ matchup.my_name }}</strong>
+                </span>
+                <span class="matchup-vs" aria-hidden="true">VS</span>
+                <span class="matchup-player matchup-player-opponent">
+                    <strong id="matchup-opponent-name">{{ matchup.opponent_name }}</strong>
+                </span>
+            </div>
+            <div class="match-context" aria-label="Match information">
+                <span><i class="fa-solid fa-gamepad" aria-hidden="true"></i> {{ matchup.subtitle }}</span>
+                {% if matchup.round_name %}<span><i class="fa-solid fa-sitemap" aria-hidden="true"></i> {{ matchup.round_name }}{% if matchup.match_number %} · Match {{ matchup.match_number }}{% endif %}</span>{% endif %}
+                {% if matchup.field_size %}<span><i class="fa-solid fa-users" aria-hidden="true"></i> {{ matchup.field_size }}</span>{% endif %}
+                <span id="match-connection-status" class="match-connection-status"><i class="fa-solid fa-circle" aria-hidden="true"></i> Connecting</span>
+                {% if matchup.bracket_url %}<a href="{{ matchup.bracket_url }}"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i> View bracket</a>{% endif %}
+            </div>
+        </div>
+        <div id="leader-progess-bars-cont" aria-label="Players' card progress">
             <div class="user-progress-bar-cont">
-                <div class="user-icon"><i class="fa-solid fa-user"></i></div>
-                <div id="user-progress-fill" class="user-progress-fill" style="width: 0%;"></div>
-                <div id="user-progress-text" class="user-progress-text">0%</div>
+                <div class="user-icon player-avatar-frame">
+                    <img class="player-avatar" data-player-avatar="me" {% if matchup.my_avatar_url %}src="{{ matchup.my_avatar_url }}"{% else %}hidden{% endif %} alt="{{ matchup.my_name }} profile image">
+                    <i class="fa-solid fa-user player-avatar-fallback" {% if matchup.my_avatar_url %}hidden{% endif %} aria-hidden="true"></i>
+                </div>
+                <div id="user-progress-fill-me" class="user-progress-fill" style="width: 0%;"></div>
+                <div id="user-progress-text-me" class="user-progress-text">0%</div>
             </div>
             <div class="opponent-progress-bar-cont gen-flex">
-                <div class="user-icon"><i class="fa-solid fa-crosshairs"></i></div>
-                <div id="user-progress-fill" class="user-progress-fill" style="width: 0%;"></div>
-                <div id="user-progress-text" class="user-progress-text">0%</div>
+                <div class="user-icon player-avatar-frame">
+                    <img class="player-avatar" data-player-avatar="opponent" {% if matchup.opponent_avatar_url %}src="{{ matchup.opponent_avatar_url }}"{% else %}hidden{% endif %} alt="{{ matchup.opponent_name }} profile image">
+                    <i class="fa-solid fa-user player-avatar-fallback" {% if matchup.opponent_avatar_url %}hidden{% endif %} aria-hidden="true"></i>
+                </div>
+                <div id="user-progress-fill-opponent" class="user-progress-fill" style="width: 0%;"></div>
+                <div id="user-progress-text-opponent" class="user-progress-text">0%</div>
             </div>
         </div>
-        <div class="mode-caption-cont gen-flex">
-            <span class="mode-key draw-label">Mode</span>
-            <span class="mode-value">Human vs AI Robot</span> 
-        </div>
+
 
         <div class="game-table">
 
             <div class="attack-pile-cont gen-flex">
-                <div id="card-count-1"  class="score player-left gen-flex-col">
-                    <i class="fa-solid fa-user"></i>
+                <div id="card-count-1" class="score player-left gen-flex-col" aria-label="Your remaining cards">
+                    <div class="score-avatar player-avatar-frame">
+                        <img class="player-avatar" data-player-avatar="me" {% if matchup.my_avatar_url %}src="{{ matchup.my_avatar_url }}"{% else %}hidden{% endif %} alt="">
+                        <i class="fa-solid fa-user player-avatar-fallback" {% if matchup.my_avatar_url %}hidden{% endif %} aria-hidden="true"></i>
+                    </div>
+                    <small class="score-player-name" id="score-me-name">{{ matchup.my_name }}</small>
                     <h3 id='card-count-me'></h3>
-                    <small>cards</small>
+                    <small>cards left</small>
                 </div>
                 <div id="attack-pile" class="attack-pile">
                     <div id="attack-zone" class="attack-zone">
                         DROP CARD HERE 
                     </div>
                 </div>
-                <div id="card-count-2"  class="score player-left gen-flex-col">
-                    <i class="fa-solid fa-crosshairs"></i>
+                <div id="card-count-2" class="score player-right gen-flex-col" aria-label="Opponent's remaining cards">
+                    <div class="score-avatar player-avatar-frame">
+                        <img class="player-avatar" data-player-avatar="opponent" {% if matchup.opponent_avatar_url %}src="{{ matchup.opponent_avatar_url }}"{% else %}hidden{% endif %} alt="">
+                        <i class="fa-solid fa-user player-avatar-fallback" {% if matchup.opponent_avatar_url %}hidden{% endif %} aria-hidden="true"></i>
+                    </div>
+                    <small class="score-player-name" id="score-opponent-name">{{ matchup.opponent_name }}</small>
                     <h3 id='card-count-opponent'></h3>
-                    <small>cards</small>
+                    <small>cards left</small>
                 </div>
             </div>
             <div class="cont-narrative gen-flex-col">
@@ -88,24 +119,52 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                     </div>
                 </div>
             </div>
-        </div>
+        </div><br>
 
-        <div id="agent-panel" class="agent-panel"><!---We are updating the agent-panel to add a chatting and social marketing/selling feature-->
-            <!--Example-->
-            <!--Slot title: Chat, Sale and Promote your brand-->
-            <!--layout ideas; on the left side : This slot/section will display user profile image, Name(small fonts), -->
-            <i class="fa-solid fa-robot agent-icon"></i>
-            <!---Default Captions Examples;-->
-            <!---Hi, I Sipho Dlamini I am selling second hand cars-->
-            <!---Default: Custom Captions Examples;-->
-            <!---Hi, I Sipho Dlamini I am selling second hand cars-->
-            <!---Hi, I Ncedo Dlamini I am looking a good second hand laptop-->
-            <!---Hi, I Themba Hlatjwako I am looking one room flat, Manzini-->
-            <!---Hi, I Themba Sibeko, 1 room flats are available, Malkerns-->
-            <!---Hi, I Cynthia Hlatjwako, I am single looking for love......(Love captions are be exclusive only to opponents users who have signed up for the love feature)-->
+        <section id="agent-panel" class="agent-panel" aria-label="Game assistant and Hybrid discovery"><!---We are updating the agent-panel to add a chatting and social marketing/selling feature-->
 
-            <div id="agent-text" class="agent-text">Welcome! I'll guide you through the game.</div>
-        </div>
+            <div class="agent-icon" aria-hidden="true">
+                <img id="hybrid-profile-image" alt="" hidden>
+                <i id="hybrid-profile-placeholder" class="fa-solid fa-user"></i>
+            </div>
+  
+            <div class="agent-panel-content">
+                <div id="hybrid-profile" class="hybrid-profile" hidden>
+                    <div class="hybrid-profile-heading">
+                        <div>
+                            <span class="hybrid-profile-badge">Q-messànger</span>
+                            <strong id="hybrid-profile-name"></strong>
+                        </div>
+                        <button id="hybrid-profile-toggle" class="hybrid-profile-toggle" type="button" aria-expanded="true" aria-controls="hybrid-profile-details">Collapse</button>
+                    </div>
+                    <div id="hybrid-profile-details">
+                        <div id="hybrid-profile-meta" class="hybrid-profile-meta"></div>
+                        <p id="hybrid-profile-caption" class="hybrid-profile-caption"></p>
+                        <div class="hybrid-profile-contact">
+                            <div><i class="fa-solid fa-envelope" aria-hidden="true"></i><span id="hybrid-profile-email"></span></div>
+                            <div><i class="fa-solid fa-phone" aria-hidden="true"></i><span id="hybrid-profile-phone"></span></div>
+                        </div>
+                    </div>
+                </div>
+                <label id="hybrid-profile-sharing" class="hybrid-profile-sharing" hidden>
+                    <input id="hybrid-profile-sharing-toggle" type="checkbox" checked>
+                    Share my discovery profile in this game
+                    <span id="hybrid-profile-sharing-status" class="hybrid-profile-sharing-status" aria-live="polite"></span>
+                </label>
+                {% if config.HYBRID_CHAT_ENABLED %}
+                <div id="hybrid-chat" class="hybrid-chat" hidden>
+                    <div id="hybrid-chat-latest" class="hybrid-chat-latest" aria-live="polite"></div>
+                    <form id="hybrid-chat-form" class="hybrid-chat-form" autocomplete="off">
+                        <label class="sr-only" for="hybrid-chat-input">Message your opponent</label>
+                        <input id="hybrid-chat-input" type="text" maxlength="280" placeholder="Message your opponent…" aria-describedby="hybrid-chat-status">
+                        <button id="hybrid-chat-send" type="submit" aria-label="Send message"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
+                    </form>
+                    <div id="hybrid-chat-status" class="hybrid-chat-status" aria-live="polite"></div>
+                </div>
+                {% endif %}
+                <div id="agent-text" class="agent-text" aria-live="polite">Welcome! I'll guide you through the game.</div>
+            </div>
+        </section>
 
         <pre id="state"></pre>
     </main>
@@ -120,7 +179,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
 
 <div class="game-over-modal-cont gen-flex-col">
     <div class="game-over-modal ambience gen-flex-col">
-        <button class="modal-close-btn" onclick="location.reload()" title="Close">
+        <button class="modal-close-btn" onclick="location.href='/'" title="Close">
             <i class="fa-solid fa-times"></i>
         </button>
         <div class="game-over-header">
@@ -133,6 +192,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                 <small class="win-label" >With a</small>
                 <div class="win-type" id="win-type">DEALUXE WIN</div>
             </div>
+            {% if not config.PILOT_MODE %}
             <div class="prize-display" id="prize-display" style="display: none;">
                 <div class="prize-amount">
                     <i class="fa-solid fa-coins"></i>
@@ -140,6 +200,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                 </div>
                 <small class="prize-label">Prize Won</small>
             </div>
+            {% endif %}
             <div class="game-stats">
                 <div class="stat-row">
                     <i class="fa-solid fa-user"></i>
@@ -186,7 +247,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                 </div>
             </div>
 
-            <button class="btn-glass new-game-btn" id="game-over-new-game-btn" onclick="location.href='/game'">Close</button>
+            <button class="btn-glass new-game-btn" id="game-over-new-game-btn" onclick="location.href='/'">Close</button>
         </div>
     </div>
 </div>
@@ -325,6 +386,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
     </div>
 </div>
 
+{% if not config.PILOT_MODE %}
 <div style="display:none" class="game-start-modal-cont gen-flex-col"> <!--Legacy - This modal was used in the old version. Do not turn it on it hides the tournament game player's hand-->
     <div class="game-start-modal ambience gen-flex-col ">
         <button class="modal-close-btn" onclick="showLobbyModal()" title="Open Lobby">
@@ -402,7 +464,9 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
         <button class="game_start_btn"><h1 class="btn">Start Game</h1></button> 
     </div>
 </div>
+{% endif %}
 
+<script src="/static/js/hybrid-panel.js"></script>
 <script src="/static/js/game.js"></script>
 <script src="/static/js/game-start.js"></script>
 <!-- Multiplayer scripts: lobby + in-page client -->
@@ -418,11 +482,11 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
             <div class="lobby-card create-room-section" style="flex:1;">
                 <h2><i class="fa-solid fa-plus-circle"></i> Create New Room</h2>
                 <div class="bet-input-group">
-                    <label for="bet-amount"><i class="fa-solid fa-coins"></i> Joining Fee (SZL)</label>
+                    <label for="bet-amount"><i class="fa-solid fa-coins"></i> {% if config.PILOT_MODE %}Promotional game amount (SZL){% else %}Joining Fee (SZL){% endif %}</label>
                     <input type="number" id="bet-amount" placeholder="Enter bet amount" min="0" step="0.01" value="100">
                 </div>
                 <button class="create-room-btn" id="create-room-btn"> <i class="fa-solid fa-door-open"></i> Create Room</button>
-                <div class="player-count" style="margin-top: 20px;">Your balance: <strong id="user-balance">{{ "%.2f"|format(user_balance|default(0.0)) }}</strong> SZL (Free Cash)</div>
+                <div class="player-count" style="margin-top: 20px;">Your balance: <strong id="user-balance">{{ "%.2f"|format(user_balance|default(0.0)) }}</strong> SZL ({% if config.PILOT_MODE %}Promotional credit{% else %}Free Cash{% endif %})</div>
             </div>
 
             <div class="lobby-card" style="flex:1;">

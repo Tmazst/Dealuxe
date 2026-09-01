@@ -23,12 +23,13 @@ from flask import (
 
 from controllers.auth_controller import login_required
 from database import User, db, get_player_by_user_id
-from user.forms import ProfileForm, KYCDocumentForm, IDPhotoForm
+from user.forms import ProfileForm, KYCDocumentForm, IDPhotoForm, ProfileImageForm
 from user.service import (
     get_account_json,
     initiate_topup,
     recent_transactions,
     store_id_photos,
+    store_profile_image,
     store_kyc_document,
     update_profile_fields,
     upload_dir,
@@ -83,6 +84,7 @@ def account_page():
         profile_form=profile_form,
         kyc_form=KYCDocumentForm(),
         id_form=IDPhotoForm(),
+        profile_image_form=ProfileImageForm(),
         transactions=recent_transactions(user),
         hybrid_available=hybrid_available,
         hybrid_profile=get_profile_payload(user) if hybrid_available else None,
@@ -148,6 +150,20 @@ def id_photo_upload():
 
     store_id_photos(user, form.id_photo.data, form.id_photo_back.data)
     flash('ID photos uploaded', 'success')
+    return redirect(url_for('user.account_page'))
+
+
+@user_bp.route('/profile-image', methods=['POST'])
+@_page_login_required
+def profile_image_upload():
+    """Upload the public Q-messànger avatar; KYC images remain private."""
+    user = _current_user()
+    form = ProfileImageForm()
+    if not form.validate() or not form.profile_image.data:
+        flash('Please choose a valid profile image (png/jpg)', 'error')
+        return redirect(url_for('user.account_page'))
+    store_profile_image(user, form.profile_image.data)
+    flash('Public profile image updated', 'success')
     return redirect(url_for('user.account_page'))
 
 

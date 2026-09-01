@@ -7,7 +7,7 @@ project root once:
 
 Idempotent: if an account already exists it is reused (and reported) instead
 of being duplicated. Players are funded so they can pay tournament entry fees
-(real balance) and play versus-lobby fake games (fake balance).
+(real balance) and receive active promotional credits for pilot tournaments.
 """
 
 import argparse
@@ -34,7 +34,7 @@ BROWSER_PLAYERS = [
     ('Edge', 'edge@dealuxe.test'),
 ]
 INITIAL_REAL_BALANCE = 1000.0
-INITIAL_FAKE_BALANCE = 500.0
+INITIAL_PROMOTIONAL_CREDIT = 500.0
 
 
 def main():
@@ -54,13 +54,22 @@ def main():
                     player = Player(user_id=existing.id)
                     db.session.add(player)
                 player.real_balance = max(player.real_balance or 0, INITIAL_REAL_BALANCE)
+                player.grant_promotional_credits(
+                    INITIAL_PROMOTIONAL_CREDIT,
+                    replace=True,
+                    commit=False,
+                )
                 db.session.commit()
                 reused.append(username)
                 continue
 
             user, player = create_user(username, email, args.password)
             player.real_balance = INITIAL_REAL_BALANCE
-            player.fake_balance = INITIAL_FAKE_BALANCE
+            player.grant_promotional_credits(
+                INITIAL_PROMOTIONAL_CREDIT,
+                replace=True,
+                commit=False,
+            )
             db.session.commit()
             created.append(username)
 

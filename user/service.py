@@ -69,6 +69,7 @@ def get_account_json(user):
         'kyc_document_path': user.kyc_document_path,
         'id_photo_path': user.id_photo_path,
         'id_photo_back_path': user.id_photo_back_path,
+        'profile_image_path': user.profile_image_path,
         'is_admin': user.is_admin,
         'is_super_admin': user.is_super_admin,
         'created_at': user.created_at.isoformat() if user.created_at else None,
@@ -119,6 +120,13 @@ def store_id_photos(user, front, back):
     if back and back.filename:
         user.id_photo_back_path = _save_file(back, user.id, 'id_back')
     _refresh_kyc_status(user)
+
+
+def store_profile_image(user, image):
+    """Store a dedicated public profile image without touching KYC images."""
+    user.profile_image_path = _save_file(image, user.id, 'profile')
+    db.session.commit()
+    return user.profile_image_path
 
 def recent_transactions(user, limit=10):
     """Most recent wallet transactions for the account page."""

@@ -247,9 +247,16 @@ function updateProgressBars(data) {
 async function updateAgent(state) {
     const text = document.getElementById('agent-text');
     if (!text) return;
+    const writeAgent = (message, channel = 'gameplay') => {
+        if (window.hybridPanel) {
+            window.hybridPanel.setMessage(channel, message);
+        } else {
+            text.textContent = message;
+        }
+    };
 
     if (!state) {
-        text.innerText = "Waiting for game state...";
+        writeAgent("Waiting for game state...", 'status');
         return;
     }
 
@@ -262,24 +269,24 @@ async function updateAgent(state) {
 
     if (phase === 'ATTACK') {
         if (attacker === localPlayerIndex) {
-            text.innerText = `It's your turn to attack. Choose a card to attack with (4-13).`;
+            writeAgent(`It's your turn to attack. Choose a card to attack with (4-13).`);
         } else {
-            text.innerText = `Opponent is deciding their attack...`;
+            writeAgent(`Opponent is deciding their attack...`);
         }
     } else if (phase === 'DEFENSE') {
         if (defender === localPlayerIndex) {
-text.innerText = `Defend against ${attackCard}. Choose two or three cards whose values sum to it, or draw.`;
+            writeAgent(`Defend against ${attackCard}. Choose two or three cards whose values sum to it, or draw.`);
         } else {
-            text.innerText = `Waiting for opponent to defend against ${attackCard}...`;
+            writeAgent(`Waiting for opponent to defend against ${attackCard}...`);
         }
     } else if (phase === 'RULE_8') {
-        text.innerText = `Rule 8: drop a trail value (1-3) if prompted.`;
+        writeAgent(`Rule 8: drop a trail value (1-3) if prompted.`);
     } else if (phase === 'GAME_OVER') {
-        text.innerText = `Game over. Check results in the leaderboard.`;
+        writeAgent(`Game over. Check results in the leaderboard.`);
         console.log("[FRONTEND] Game over detected, showing modal");
         showGameModal();
     } else {
-        text.innerText = `Phase: ${phase}`;
+        writeAgent(`Phase: ${phase}`);
     }
 
     // Update a simple turn indicator in the header
@@ -311,7 +318,7 @@ text.innerText = `Defend against ${attackCard}. Choose two or three cards whose 
 let turnCountdownTimer = null;
 
 function startTurnCountdown(deadlineIso, isMyTurn) {
-    stopTurnCountdown();
+    stopTurnCountdown(true);
     const el = document.getElementById('turn-timer');
     if (!el) return;
     if (!isMyTurn || !deadlineIso) {
@@ -326,7 +333,15 @@ function startTurnCountdown(deadlineIso, isMyTurn) {
         if (msLeft <= 0) {
             el.textContent = '⏰ Time expired';
             el.classList.add('urgent');
-            stopTurnCountdown();
+            if (turnCountdownTimer) {
+                clearInterval(turnCountdownTimer);
+                turnCountdownTimer = null;
+            }
+            window.setTimeout(function () {
+                el.style.display = 'none';
+                el.classList.remove('urgent');
+                el.textContent = '';
+            }, 2000);
             return;
         }
         const totalSec = Math.ceil(msLeft / 1000);
@@ -339,10 +354,18 @@ function startTurnCountdown(deadlineIso, isMyTurn) {
     turnCountdownTimer = setInterval(tick, 1000);
 }
 
-function stopTurnCountdown() {
+function stopTurnCountdown(hideTimer) {
     if (turnCountdownTimer) {
         clearInterval(turnCountdownTimer);
         turnCountdownTimer = null;
+    }
+    if (hideTimer !== false) {
+        const el = document.getElementById('turn-timer');
+        if (el) {
+            el.style.display = 'none';
+            el.classList.remove('urgent');
+            el.textContent = '';
+        }
     }
 }
 
@@ -355,11 +378,20 @@ function showTurnTimeoutBanner(message) {
     el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, 7000);
 }
 
+function hideTurnTimeoutBanner() {
+    const el = document.getElementById('turn-timeout-banner');
+    if (!el) return;
+    clearTimeout(el._hideTimer);
+    el.style.display = 'none';
+    el.textContent = '';
+}
+
 function showSocketReconnectNotice() {
     const el = document.getElementById('turn-timeout-banner');
     if (el) {
         el.textContent = '🔌 Connection lost — reconnecting… Your move was not sent.';
         el.style.display = 'block';
+        clearTimeout(el._hideTimer);
     }
 }
 
@@ -837,7 +869,12 @@ function animateOpponentDefense(values) {
 }
 
 function setOpponentStatus(text) {
-    document.getElementById("agent-text").textContent = text;
+    const agentText = document.getElementById("agent-text");
+    if (window.hybridPanel) {
+        window.hybridPanel.setMessage('status', text);
+    } else if (agentText) {
+        agentText.textContent = text;
+    }
 }
 /* -----------------------------
    RENDERING (TEMP / DEBUG)

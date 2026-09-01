@@ -132,6 +132,10 @@ else:
     )
     app.config['SOCKET_TRANSPORTS'] = ['websocket', 'polling']
 
+# Optional UI features may publish requester-scoped refresh events without
+# importing this module (which would create a circular dependency).
+app.extensions['socketio'] = socketio
+
 init_security_scaffold(app, socketio)
 
 # socketio = SocketIO(app, cors_allowed_origins="*",async_mode='threading')
@@ -141,6 +145,11 @@ init_security_scaffold(app, socketio)
 # -----------------------------
 
 init_db(app)
+with app.app_context():
+    from hybrid.settings import apply_persisted_settings
+    from hybrid.catalog import ensure_default_caption_templates
+    apply_persisted_settings(app)
+    ensure_default_caption_templates()
 
 # -----------------------------
 # REGISTER BLUEPRINTS
@@ -168,6 +177,8 @@ except Exception as exc:
 
 manager = GameManager(redis_url=app.config['REDIS_URL'])
 app.extensions['game_manager'] = manager
+from hybrid.chat import build_chat_store, init_hybrid_chat_events
+app.extensions['hybrid_chat_store'] = build_chat_store(manager)
 
 # -----------------------------
 # MULTIPLAYER SETUP
@@ -176,6 +187,7 @@ app.extensions['game_manager'] = manager
 from controllers.multiplayer_controller import init_multiplayer_events
 init_multiplayer_events(socketio, manager, app)
 init_tournament_events(socketio, app)
+init_hybrid_chat_events(socketio, app)
 
 # -----------------------------
 # BACKGROUND SCHEDULER
@@ -315,11 +327,68 @@ def lobby():
 
 @app.route("/game/<room_code>")
 def multiplayer_game(room_code):
+    """Render requester-oriented matchup and tournament context for a game."""
+    from database import GameRoom, TournamentBracket, TournamentMatch
+
+    room = GameRoom.query.filter_by(room_code=room_code).first()
+    requester_id = session.get('user_id')
+    matchup = {
+        'authorized': False,
+        'my_name': 'You',
+        'opponent_name': 'Opponent',
+        'my_avatar_url': None,
+        'opponent_avatar_url': None,
+        'title': 'Game room',
+        'subtitle': 'Multiplayer match',
+        'round_name': None,
+        'match_number': None,
+        'field_size': None,
+        'bracket_url': None,
+        'room_code': room_code,
+    }
+    if room and requester_id and room.is_player_in_room(requester_id):
+        requester = db.session.get(User, requester_id)
+        opponent_id = room.get_opponent_id(requester_id)
+        opponent = db.session.get(User, opponent_id) if opponent_id else None
+        matchup.update({
+            'authorized': True,
+            'my_name': requester.username if requester else 'You',
+            'opponent_name': opponent.username if opponent else 'Waiting for opponent',
+            'my_avatar_url': (
+                '/account/uploads/' + requester.profile_image_path
+                if requester and requester.profile_image_path else None
+            ),
+            'opponent_avatar_url': (
+                '/api/hybrid/game/{0}/opponent-image'.format(room_code)
+                if opponent and opponent.profile_image_path else None
+            ),
+        })
+
+        tournament = db.session.get(Tournament, room.tournament_id) if room.tournament_id else None
+        match = (
+            db.session.get(TournamentMatch, room.match_id)
+            if room.match_id else
+            TournamentMatch.query.filter_by(game_room_id=room.id).first()
+        )
+        bracket = db.session.get(TournamentBracket, match.bracket_id) if match else None
+        if tournament:
+            matchup.update({
+                'title': tournament.tournament_name,
+                'subtitle': '{0} tournament'.format(tournament.tournament_type.title()),
+                'round_name': bracket.round_name if bracket else 'Tournament match',
+                'match_number': bracket.match_number if bracket else None,
+                'field_size': '{0}/{1} players'.format(
+                    tournament.locked_player_count or tournament.current_player_count,
+                    tournament.max_players,
+                ),
+                'bracket_url': '/tournaments/{0}/bracket'.format(tournament.id),
+            })
     return render_template(
         "game.html",
         form=GameStartForm(),
         room_code=room_code,
         tournament_room_code=room_code,
+        matchup=matchup,
     )
 
 

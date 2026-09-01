@@ -129,11 +129,17 @@ class TestPilotTournamentEconomy(unittest.TestCase):
             f'/spectators/tournaments/{tournament_id}'
         ).get_data(as_text=True)
 
-        self.assertIn('Practice. Learn.', arena)
+        self.assertIn('Play. Market.', arena)
         self.assertIn('E10 promotional credit', arena)
         self.assertIn('Create with E10 credit', arena)
         self.assertNotIn('Prize pool breakdown', arena)
         self.assertNotIn('Create &amp; pay E10.00', arena)
+        self.assertNotIn('real prizes', arena.lower())
+        self.assertIn('uMshova Cup cash prize', arena)
+        self.assertIn('E2000', arena)
+        self.assertIn('Cup only', arena)
+        self.assertNotIn('Payment initiated', arena)
+        self.assertIn('do not award cash prizes', arena)
         self.assertIn('Cup qualifier', waiting_room)
         self.assertNotIn('Total Prize Pool', waiting_room)
         self.assertIn('Cup qualifier', bracket)

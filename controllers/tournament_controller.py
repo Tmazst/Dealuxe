@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import random
 import uuid
 
-from flask import Blueprint, request, jsonify, session, current_app
+from flask import Blueprint, abort, request, jsonify, session, current_app, send_from_directory
 from flask_socketio import emit, join_room, leave_room
 from sqlalchemy import or_
 
@@ -19,6 +19,7 @@ from database import (
     Transaction,
     User,
     Player,
+    DiscoveryProfile,
     create_tournament_record,
     add_tournament_participant,
     log_transaction,
@@ -491,6 +492,79 @@ def _create_match_for_bracket(bracket, tournament, card_count=6):
     return None
 
 
+def _record_hybrid_matching_shadow(tournament, participant_user_ids, legacy_seed_order):
+    """Observe a proposed seed order after the legacy bracket is safely committed."""
+    if not (
+        current_app.config.get('HYBRID_ENABLED', False)
+        and current_app.config.get('HYBRID_PROFILE_ENABLED', False)
+        and current_app.config.get('HYBRID_MATCHING_SHADOW_ENABLED', False)
+    ):
+        return None
+    try:
+        from hybrid.shadow import record_shadow_audit
+        return record_shadow_audit(
+            tournament,
+            participant_user_ids,
+            legacy_seed_order,
+            current_app.config,
+        )
+    except Exception as exc:
+        # The live legacy bracket is already committed and must never be
+        # rolled back or delayed by an observational Hybrid failure.
+        db.session.rollback()
+        print(
+            f'[HYBRID] Shadow audit skipped for tournament #{tournament.id}: '
+            f'{type(exc).__name__}'
+        )
+        return None
+
+
+def _prepare_hybrid_live_seed(tournament, participant_user_ids, legacy_seed_order):
+    """Return an optional validated live proposal; any problem keeps legacy seeds."""
+    if not (
+        current_app.config.get('HYBRID_ENABLED', False)
+        and current_app.config.get('HYBRID_PROFILE_ENABLED', False)
+        and current_app.config.get('HYBRID_MATCHING_ENABLED', False)
+        and tournament.tournament_type in {'standard', 'premium', 'deluxe'}
+    ):
+        return list(legacy_seed_order), None
+    try:
+        from hybrid.shadow import evaluate_matching
+        result, duration_ms = evaluate_matching(
+            tournament, participant_user_ids, current_app.config
+        )
+        proposed = list(result.seed_order)
+        if (
+            result.legacy_fallback_recommended
+            or len(proposed) != len(participant_user_ids)
+            or set(proposed) != set(participant_user_ids)
+        ):
+            return list(legacy_seed_order), (result, duration_ms)
+        return proposed, (result, duration_ms)
+    except Exception as exc:
+        print(
+            f'[HYBRID] Live matching fell back for tournament #{tournament.id}: '
+            f'{type(exc).__name__}'
+        )
+        return list(legacy_seed_order), None
+
+
+def _record_hybrid_live_audit(tournament, legacy_seed_order, decision):
+    if decision is None:
+        return None
+    try:
+        from hybrid.shadow import persist_match_audit
+        result, duration_ms = decision
+        return persist_match_audit(
+            tournament, result, legacy_seed_order, 'live', duration_ms
+        )
+    except Exception as exc:
+        db.session.rollback()
+        print(
+            f'[HYBRID] Live audit skipped for tournament #{tournament.id}: '
+            f'{type(exc).__name__}'
+        )
+        return None
 def _build_bracket(tournament):
     """Create bracket rows and match records for a tournament.
 
@@ -509,8 +583,12 @@ def _build_bracket(tournament):
     if len(participants) < 2:
         return []
 
-    players = [p.user_id for p in participants]
-    random.shuffle(players)
+    participant_user_ids = [p.user_id for p in participants]
+    legacy_seed_order = list(participant_user_ids)
+    random.shuffle(legacy_seed_order)
+    players, live_decision = _prepare_hybrid_live_seed(
+        tournament, participant_user_ids, legacy_seed_order
+    )
 
     # Normalise to a power-of-two bracket size, padding with None (byes).
     size = 2
@@ -606,6 +684,14 @@ def _build_bracket(tournament):
     tournament.status = 'in_progress'
     tournament.started_at = datetime.utcnow()
     db.session.commit()
+
+    _record_hybrid_live_audit(tournament, legacy_seed_order, live_decision)
+
+    _record_hybrid_matching_shadow(
+        tournament,
+        participant_user_ids,
+        legacy_seed_order,
+    )
 
     return TournamentBracket.query.filter_by(tournament_id=tournament.id).all()
 
@@ -718,6 +804,12 @@ def _withdraw_participant(tournament, participant):
 
 
 def _serialize_bracket(bracket):
+    player1_avatar_url = _tournament_profile_image_url(
+        bracket.tournament_id, bracket.player1_id
+    )
+    player2_avatar_url = _tournament_profile_image_url(
+        bracket.tournament_id, bracket.player2_id
+    )
     return {
         'id': bracket.id,
         'round_number': bracket.round_number,
@@ -727,6 +819,8 @@ def _serialize_bracket(bracket):
         'player2_id': bracket.player2_id,
         'player1_name': _get_username(bracket.player1_id),
         'player2_name': _get_username(bracket.player2_id),
+        'player1_avatar_url': player1_avatar_url,
+        'player2_avatar_url': player2_avatar_url,
         'status': bracket.status,
         'winner_id': bracket.winner_id,
         'winner_name': _get_username(bracket.winner_id),
@@ -734,6 +828,23 @@ def _serialize_bracket(bracket):
         'started_at': bracket.started_at.isoformat() if bracket.started_at else None,
         'completed_at': bracket.completed_at.isoformat() if bracket.completed_at else None,
     }
+
+
+def _tournament_profile_image_url(tournament_id, user_id):
+    """Return a versioned public-avatar URL for a visible bracket player."""
+    if not user_id:
+        return None
+    user = db.session.get(User, user_id)
+    profile = DiscoveryProfile.query.filter_by(user_id=user_id).first()
+    if not (
+        user and user.profile_image_path
+        and profile and profile.is_enabled and profile.is_visible
+    ):
+        return None
+    version = user.profile_image_path.rsplit('/', 1)[-1]
+    return '/api/tournaments/{0}/players/{1}/profile-image?v={2}'.format(
+        tournament_id, user_id, version
+    )
 
 
 def _serialize_match(match):
@@ -1505,6 +1616,36 @@ def tournament_overview(tournament_id):
         'podium': _serialize_podium(tournament),
         'stats': _tournament_stats(tournament, matches, participants),
     })
+
+
+@tournament_bp.route(
+    '/<int:tournament_id>/players/<int:user_id>/profile-image',
+    methods=['GET'],
+)
+def tournament_player_profile_image(tournament_id, user_id):
+    """Serve a visible player's dedicated public image for this bracket."""
+    Tournament.query.get_or_404(tournament_id)
+    seated = TournamentBracket.query.filter(
+        TournamentBracket.tournament_id == tournament_id,
+        or_(
+            TournamentBracket.player1_id == user_id,
+            TournamentBracket.player2_id == user_id,
+        ),
+    ).first()
+    if seated is None:
+        abort(404)
+    if _tournament_profile_image_url(tournament_id, user_id) is None:
+        abort(404)
+
+    from user.service import upload_dir
+
+    user = db.session.get(User, user_id)
+    owner_id, separator, filename = user.profile_image_path.partition('/')
+    if not separator or owner_id != str(user_id) or not filename:
+        abort(404)
+    response = send_from_directory(upload_dir(user_id), filename)
+    response.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return response
 
 
 def record_tournament_match_result(match_id, winner_id, loser_id, win_type='normal', started_at=None, duration_seconds=None):

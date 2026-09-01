@@ -4,20 +4,27 @@ from datetime import datetime
 
 from sqlalchemy import and_, or_
 
-from database import DiscoveryProfile, DiscoveryReport, Tournament, User, UserBlock, db
-
-
-INTENTS = ('selling', 'seeking', 'collaboration')
-CATEGORIES = (
-    'products', 'services', 'jobs', 'business', 'community', 'other',
+from database import (
+    DiscoveryProfile,
+    DiscoveryReport,
+    GameRoom,
+    Tournament,
+    User,
+    UserBlock,
+    db,
 )
-PREDEFINED_CAPTIONS = (
-    'selling_products',
-    'offering_services',
-    'looking_to_buy',
-    'seeking_services',
-    'open_to_collaboration',
-    'business_networking',
+from hybrid.catalog import (
+    CATEGORIES,
+    DEFAULT_CAPTION_TEMPLATES,
+    INTENTS,
+    get_caption_template,
+    list_caption_templates,
+    render_caption,
+)
+
+
+PREDEFINED_CAPTIONS = tuple(
+    template['code'] for template in DEFAULT_CAPTION_TEMPLATES
 )
 EDITABLE_FIELDS = {
     'is_enabled', 'intent', 'category', 'subcategory', 'location',
@@ -37,10 +44,14 @@ def hybrid_profile_enabled(config):
 
 
 def profile_options():
+    caption_templates = list_caption_templates(active_only=True)
     return {
         'intents': INTENTS,
         'categories': CATEGORIES,
-        'predefined_captions': PREDEFINED_CAPTIONS,
+        'predefined_captions': tuple(
+            template['code'] for template in caption_templates
+        ),
+        'caption_templates': caption_templates,
         'report_reasons': REPORT_REASONS,
     }
 
@@ -79,15 +90,27 @@ def serialize_profile(profile, user=None):
             'location': None,
             'predefined_caption': None,
             'custom_caption': None,
+            'caption_preview': None,
             'moderation_status': 'not_required',
             'moderation_note': None,
             'moderated_by': None,
             'moderated_at': None,
-            'is_visible': False,
+            'is_visible': True,
             'chat_preference_enabled': False,
             'created_at': None,
             'updated_at': None,
         }
+    caption_template = get_caption_template(profile.predefined_caption)
+    caption_preview = (
+        profile.custom_caption
+        if profile.custom_caption and profile.moderation_status == 'approved'
+        else render_caption(
+            caption_template,
+            category=profile.category,
+            subcategory=profile.subcategory,
+            location=profile.location,
+        )
+    )
     return {
         'id': profile.id,
         'user_id': profile.user_id,
@@ -99,6 +122,7 @@ def serialize_profile(profile, user=None):
         'location': profile.location,
         'predefined_caption': profile.predefined_caption,
         'custom_caption': profile.custom_caption,
+        'caption_preview': caption_preview,
         'moderation_status': profile.moderation_status,
         'moderation_note': profile.moderation_note,
         'moderated_by': profile.moderated_by,
@@ -148,11 +172,20 @@ def update_profile(user, payload):
         candidate['predefined_caption'] = _text(
             payload['predefined_caption'], 'predefined_caption', 80
         )
-    if (
-        candidate['predefined_caption'] is not None
-        and candidate['predefined_caption'] not in PREDEFINED_CAPTIONS
-    ):
-        raise ValueError('Invalid predefined caption')
+    caption_template = get_caption_template(candidate['predefined_caption'])
+    if candidate['predefined_caption'] is not None:
+        if caption_template is None:
+            raise ValueError('Invalid predefined caption')
+        if 'predefined_caption' in payload and not caption_template['is_active']:
+            raise ValueError('Selected predefined caption is inactive')
+        if candidate['intent'] and caption_template['intent'] != candidate['intent']:
+            raise ValueError('Selected caption does not match the discovery intent')
+        if (
+            candidate['category']
+            and caption_template['category']
+            and caption_template['category'] != candidate['category']
+        ):
+            raise ValueError('Selected caption does not match the discovery category')
     if 'custom_caption' in payload:
         candidate['custom_caption'] = _text(
             payload['custom_caption'], 'custom_caption', 280
@@ -288,6 +321,102 @@ def users_are_blocked(first_user_id, second_user_id):
             and_(UserBlock.blocker_id == second_user_id, UserBlock.blocked_id == first_user_id),
         ),
     ).first() is not None
+
+
+def get_game_context(user_id, room_code):
+    """Return only the opponent profile fields authorized for one room member."""
+    room = GameRoom.query.filter_by(room_code=str(room_code or '').strip()).first()
+    if room is None:
+        raise LookupError('Game room not found')
+    if not room.is_player_in_room(user_id):
+        raise PermissionError('You are not a participant in this game room')
+
+    opponent_id = room.get_opponent_id(user_id)
+    own_profile_visible = bool(
+        room.player1_profile_visible
+        if user_id == room.player1_id
+        else room.player2_profile_visible
+    )
+    if opponent_id is None:
+        return {
+            'available': False,
+            'reason': 'opponent_unavailable',
+            'own_profile_visible': own_profile_visible,
+        }
+    if users_are_blocked(user_id, opponent_id):
+        return {
+            'available': False,
+            'reason': 'blocked',
+            'own_profile_visible': own_profile_visible,
+        }
+
+    opponent_profile_visible = bool(
+        room.player2_profile_visible
+        if opponent_id == room.player2_id
+        else room.player1_profile_visible
+    )
+    if not opponent_profile_visible:
+        return {
+            'available': False,
+            'reason': 'hidden_for_game',
+            'own_profile_visible': own_profile_visible,
+        }
+
+    profile = DiscoveryProfile.query.filter_by(user_id=opponent_id).first()
+    if profile is None or not profile.is_enabled or not profile.is_visible:
+        return {
+            'available': False,
+            'reason': 'profile_unavailable',
+            'own_profile_visible': own_profile_visible,
+        }
+
+    serialized = serialize_profile(profile)
+    opponent = db.session.get(User, opponent_id)
+    caption = serialized.get('caption_preview')
+    if not caption:
+        return {
+            'available': False,
+            'reason': 'caption_unavailable',
+            'own_profile_visible': own_profile_visible,
+        }
+
+    return {
+        'available': True,
+        'own_profile_visible': own_profile_visible,
+        'opponent': {
+            'username': serialized.get('username'),
+            'email': opponent.email if opponent else None,
+            'phone': opponent.phone if opponent else None,
+            'has_profile_image': bool(opponent and opponent.profile_image_path),
+            'profile_image_url': (
+                f'/api/hybrid/game/{room.room_code}/opponent-image?v='
+                f'{opponent.profile_image_path.rsplit("/", 1)[-1]}'
+                if opponent and opponent.profile_image_path
+                else None
+            ),
+            'intent': serialized.get('intent'),
+            'category': serialized.get('category'),
+            'subcategory': serialized.get('subcategory'),
+            'caption': caption,
+            'label': 'Hybrid discovery profile',
+        },
+    }
+
+
+def update_game_profile_visibility(user_id, room_code, visible):
+    """Set one participant's profile-sharing choice for one game room."""
+    room = GameRoom.query.filter_by(room_code=str(room_code or '').strip()).first()
+    if room is None:
+        raise LookupError('Game room not found')
+    if not room.is_player_in_room(user_id):
+        raise PermissionError('You are not a participant in this game room')
+    visible = _boolean(visible, 'profile_visible')
+    if user_id == room.player1_id:
+        room.player1_profile_visible = visible
+    else:
+        room.player2_profile_visible = visible
+    db.session.commit()
+    return visible
 
 
 def _optional_positive_id(value, field):

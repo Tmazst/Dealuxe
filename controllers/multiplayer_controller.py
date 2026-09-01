@@ -487,6 +487,8 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             # Get user IDs before leaving context
             player1_id = room.player1_id
             player2_id = room.player2_id
+            player1_username = db.session.get(User, player1_id).username
+            player2_username = db.session.get(User, player2_id).username
             turn_deadline_iso = room.turn_deadline.isoformat()
             
             # Player 1 is index 0, Player 2 is index 1
@@ -533,6 +535,8 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 'game_id': game_id,
                 'room_code': room_code,
                 'your_player_index': 0,
+                'your_username': player1_username,
+                'opponent_username': player2_username,
                 'your_turn': _is_my_turn(state, 0),
                 'state': transformed_p1,
                 'bet_total': (room.bet_amount or 0) * 2,
@@ -543,6 +547,8 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 'game_id': game_id,
                 'room_code': room_code,
                 'your_player_index': 1,
+                'your_username': player2_username,
+                'opponent_username': player1_username,
                 'your_turn': _is_my_turn(state, 1),
                 'state': transformed_p2,
                 'bet_total': (room.bet_amount or 0) * 2,
@@ -619,6 +625,10 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 emit('game_update', {
                     'game_state': transformed,
                     'player_index': player_index,
+                    'your_username': db.session.get(User, user_id).username,
+                    'opponent_username': db.session.get(
+                        User, room.get_opponent_id(user_id)
+                    ).username,
                     'is_my_turn': transformed['attacker'] == player_index or transformed['defender'] == player_index,
                     'action': action_type,
                     'result': None,

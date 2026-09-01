@@ -174,7 +174,7 @@
             <h2 style="margin-right:auto;">Hybrid Discovery Profiles</h2>
             <button id="reloadHybridProfiles">Reload</button>
         </div>
-        <p class="status">Private MVP profiles only. Matching, chat and public discovery remain disabled.</p>
+        <p class="status">Private MVP profiles only. Round 1 matching and Q-messànger follow their selected switches; public discovery remains disabled.</p>
         <table id="hybridProfilesTable">
             <thead>
                 <tr>
@@ -192,6 +192,94 @@
             </thead>
             <tbody></tbody>
         </table>
+    </div>
+
+    <div class="panel" id="hybridSettingsPanel">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Hybrid MVP Settings</h2>
+            <button id="saveHybridSettings">Save settings</button>
+        </div>
+        <p class="status" id="hybridSettingsStatus">Loading Hybrid settings...</p>
+        <div class="summary-grid">
+            <label class="summary-card">
+                <span class="pill">Master</span>
+                <strong><input type="checkbox" id="settingHybridEnabled"> Enable Hybrid foundation</strong>
+            </label>
+            <label class="summary-card">
+                <span class="pill">Profiles</span>
+                <strong><input type="checkbox" id="settingHybridProfile"> Enable player profiles</strong>
+            </label>
+            <label class="summary-card">
+                <span class="pill">Observation only</span>
+                <strong><input type="checkbox" id="settingHybridShadow"> Enable matching shadow audits</strong>
+            </label>
+            <label class="summary-card">
+                <span class="pill">Live Round 1</span>
+                <strong><input type="checkbox" id="settingHybridLive"> Use Hybrid pairs in ordinary tournaments</strong>
+            </label>
+            <label class="summary-card">
+                <span class="pill">Private game chat</span>
+                <strong><input type="checkbox" id="settingHybridChat"> Enable Q-messànger for consenting opponents</strong>
+            </label>
+        </div>
+        <h3>Locked for this MVP stage</h3>
+        <div id="hybridLockedSettings" class="status"></div>
+        <p class="status">Manage seeking, selling and collaboration wording in the caption catalogue below. Custom player captions still require moderation.</p>
+    </div>
+
+    <div class="panel" id="hybridCaptionCataloguePanel">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Hybrid Caption Catalogue</h2>
+            <button id="reloadHybridCaptions">Reload</button>
+        </div>
+        <p class="status" id="hybridCaptionStatus">Loading caption templates...</p>
+        <div class="controls">
+            <input id="newCaptionCode" placeholder="code_like_this" maxlength="80">
+            <input id="newCaptionName" placeholder="Display name" maxlength="120">
+            <select id="newCaptionIntent">
+                <option value="selling">Selling</option>
+                <option value="seeking">Seeking</option>
+                <option value="collaboration">Collaboration</option>
+            </select>
+            <select id="newCaptionCategory">
+                <option value="">Any category</option>
+                <option value="products">Products</option>
+                <option value="services">Services</option>
+                <option value="jobs">Jobs</option>
+                <option value="business">Business</option>
+                <option value="community">Community</option>
+                <option value="other">Other</option>
+            </select>
+            <input id="newCaptionOrder" type="number" min="0" max="10000" value="100" style="width:90px;">
+        </div>
+        <div class="controls">
+            <input id="newCaptionText" placeholder="Example: I offer {subcategory} services in {location}." maxlength="280" style="min-width:520px;flex:1;">
+            <button id="createHybridCaption">Add caption</button>
+        </div>
+        <table id="hybridCaptionTable">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Display name</th>
+                    <th>Intent</th>
+                    <th>Category</th>
+                    <th>Template wording</th>
+                    <th>Order</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="panel" id="hybridPilotMetricsPanel">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Hybrid MVP Pilot Measurements</h2>
+            <button id="reloadHybridPilotMetrics">Reload</button>
+        </div>
+        <p class="status" id="hybridPilotMetricsStatus">Loading aggregate pilot measurements...</p>
+        <div class="summary-grid" id="hybridPilotMetricsGrid"></div>
     </div>
 
     <div class="panel" id="hybridReportsPanel" style="display:none;">
@@ -220,6 +308,29 @@
                     <th>Status</th>
                     <th>Resolution</th>
                     <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="panel" id="hybridMatchAuditsPanel" style="display:none;">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Hybrid Matching Shadow Audits</h2>
+            <button id="reloadHybridMatchAudits">Reload</button>
+        </div>
+        <p class="status" id="hybridMatchAuditMode">Loading matching mode...</p>
+        <table id="hybridMatchAuditsTable">
+            <thead>
+                <tr>
+                    <th>Tournament</th>
+                    <th>Run</th>
+                    <th>Players</th>
+                    <th>Outcome</th>
+                    <th>Matcher time</th>
+                    <th>Live Round 1</th>
+                    <th>Proposed Hybrid Round 1</th>
+                    <th>Review</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -396,6 +507,9 @@
             const response = await fetch(url, { credentials: 'same-origin' });
             if (!response.ok) return;
             const data = await response.json();
+            document.getElementById('hybridMatchAuditMode').textContent = data.mode === 'live'
+                ? 'Live mode: accepted Hybrid proposals determine ordinary Tournament Round 1; every decision retains its legacy fallback comparison.'
+                : 'Observation only: proposed Hybrid seeds never change the live legacy bracket.';
             document.getElementById('cupSummaryGrid').innerHTML = `
                 <div class="summary-card"><span class="pill">Active seats</span><strong>${data.active_seats}/${data.capacity}</strong></div>
                 <div class="summary-card"><span class="pill">Remaining</span><strong>${data.remaining_seats}</strong></div>
@@ -679,7 +793,7 @@
                     <td>${escapeHtml([profile.category, profile.subcategory].filter(Boolean).join(' / '))}</td>
                     <td>${escapeHtml(profile.location || '')}</td>
                     <td>${profile.is_visible ? 'Yes' : 'No'}</td>
-                    <td>${profile.chat_preference_enabled ? 'Allowed later' : 'No'}</td>
+                    <td>${profile.chat_preference_enabled ? 'Allowed' : 'No'}</td>
                     <td><span class="pill">${escapeHtml((profile.moderation_status || '').replace('_', ' '))}</span></td>
                     <td>${escapeHtml(profile.custom_caption || profile.predefined_caption || '')}</td>
                     <td>${moderationActions}</td>
@@ -690,6 +804,146 @@
                 body.innerHTML = '<tr><td colspan="10">No Hybrid discovery profiles have been created.</td></tr>';
             }
             panel.style.display = '';
+        }
+
+        function syncHybridSettingDependencies() {
+            const master = document.getElementById('settingHybridEnabled');
+            const profile = document.getElementById('settingHybridProfile');
+            const shadow = document.getElementById('settingHybridShadow');
+            const live = document.getElementById('settingHybridLive');
+            const chat = document.getElementById('settingHybridChat');
+            if (!master.checked) {
+                profile.checked = false;
+                shadow.checked = false;
+                live.checked = false;
+                chat.checked = false;
+            }
+            profile.disabled = !master.checked;
+            if (!profile.checked) {
+                shadow.checked = false;
+                live.checked = false;
+                chat.checked = false;
+            }
+            shadow.disabled = !master.checked || !profile.checked;
+            live.disabled = !master.checked || !profile.checked;
+            chat.disabled = !master.checked || !profile.checked;
+        }
+
+        async function fetchHybridSettings() {
+            const response = await fetch('/api/admin/hybrid/settings', {
+                credentials: 'same-origin',
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            const settings = data.settings || {};
+            const values = Object.fromEntries(
+                (settings.editable || []).map(item => [item.key, item])
+            );
+            document.getElementById('settingHybridEnabled').checked = Boolean(values.HYBRID_ENABLED?.enabled);
+            document.getElementById('settingHybridProfile').checked = Boolean(values.HYBRID_PROFILE_ENABLED?.enabled);
+            document.getElementById('settingHybridShadow').checked = Boolean(values.HYBRID_MATCHING_SHADOW_ENABLED?.enabled);
+            document.getElementById('settingHybridLive').checked = Boolean(values.HYBRID_MATCHING_ENABLED?.enabled);
+            document.getElementById('settingHybridChat').checked = Boolean(values.HYBRID_CHAT_ENABLED?.enabled);
+            document.getElementById('hybridLockedSettings').innerHTML = (settings.locked || []).map(item =>
+                `<div><strong>${escapeHtml(item.key)}</strong>: ${escapeHtml(item.reason)}</div>`
+            ).join('');
+            const overridden = (settings.editable || []).filter(item => item.source === 'admin_override').length;
+            document.getElementById('hybridSettingsStatus').textContent = overridden
+                ? `Active settings loaded. ${overridden} value(s) are stored as administrator overrides.`
+                : 'Using environment defaults. Saving will create persistent administrator overrides.';
+            syncHybridSettingDependencies();
+        }
+
+        function captionSelectOptions(values, selected, includeAny = false) {
+            const options = includeAny ? ['<option value="">Any category</option>'] : [];
+            (values || []).forEach(value => {
+                const isSelected = value === selected ? ' selected' : '';
+                options.push(`<option value="${escapeHtml(value)}"${isSelected}>${escapeHtml(value.replace('_', ' '))}</option>`);
+            });
+            return options.join('');
+        }
+
+        async function fetchHybridCaptions() {
+            const response = await fetch('/api/admin/hybrid/captions', {
+                credentials: 'same-origin',
+            });
+            if (!response.ok) return;
+            const data = await response.json();
+            const body = document.querySelector('#hybridCaptionTable tbody');
+            body.innerHTML = '';
+            (data.captions || []).forEach(caption => {
+                const row = document.createElement('tr');
+                row.dataset.captionId = caption.id;
+                row.innerHTML = `
+                    <td><strong>${escapeHtml(caption.code)}</strong></td>
+                    <td><input data-caption-field="display_name" maxlength="120" value="${escapeHtml(caption.display_name)}"></td>
+                    <td><select data-caption-field="intent">${captionSelectOptions(data.intents, caption.intent)}</select></td>
+                    <td><select data-caption-field="category">${captionSelectOptions(data.categories, caption.category, true)}</select></td>
+                    <td><textarea data-caption-field="template_text" maxlength="280" rows="3">${escapeHtml(caption.template_text)}</textarea></td>
+                    <td><input data-caption-field="sort_order" type="number" min="0" max="10000" value="${caption.sort_order}" style="width:75px;"></td>
+                    <td><span class="pill">${caption.is_active ? 'Active' : 'Inactive'}</span></td>
+                    <td>
+                        <button data-action="saveHybridCaption" data-id="${caption.id}">Save</button>
+                        <button data-action="toggleHybridCaption" data-id="${caption.id}" data-active="${caption.is_active}">${caption.is_active ? 'Deactivate' : 'Activate'}</button>
+                    </td>
+                `;
+                body.appendChild(row);
+            });
+            document.getElementById('hybridCaptionStatus').textContent =
+                `${(data.captions || []).length} template(s). Allowed placeholders: ${(data.allowed_placeholders || []).map(value => `{${value}}`).join(', ')}.`;
+        }
+
+        function captionPayloadFromRow(row) {
+            return {
+                display_name: row.querySelector('[data-caption-field="display_name"]').value.trim(),
+                intent: row.querySelector('[data-caption-field="intent"]').value,
+                category: row.querySelector('[data-caption-field="category"]').value || null,
+                template_text: row.querySelector('[data-caption-field="template_text"]').value.trim(),
+                sort_order: Number(row.querySelector('[data-caption-field="sort_order"]').value),
+            };
+        }
+
+        async function createHybridCaption() {
+            await sendJson('/api/admin/hybrid/captions', {
+                body: {
+                    code: document.getElementById('newCaptionCode').value.trim(),
+                    display_name: document.getElementById('newCaptionName').value.trim(),
+                    intent: document.getElementById('newCaptionIntent').value,
+                    category: document.getElementById('newCaptionCategory').value || null,
+                    template_text: document.getElementById('newCaptionText').value.trim(),
+                    sort_order: Number(document.getElementById('newCaptionOrder').value),
+                    is_active: true,
+                },
+            });
+            document.getElementById('newCaptionCode').value = '';
+            document.getElementById('newCaptionName').value = '';
+            document.getElementById('newCaptionText').value = '';
+            await fetchHybridCaptions();
+        }
+
+        async function saveHybridSettings() {
+            syncHybridSettingDependencies();
+            const payload = {
+                HYBRID_ENABLED: document.getElementById('settingHybridEnabled').checked,
+                HYBRID_PROFILE_ENABLED: document.getElementById('settingHybridProfile').checked,
+                HYBRID_MATCHING_SHADOW_ENABLED: document.getElementById('settingHybridShadow').checked,
+                HYBRID_MATCHING_ENABLED: document.getElementById('settingHybridLive').checked,
+                HYBRID_CHAT_ENABLED: document.getElementById('settingHybridChat').checked,
+            };
+            const response = await fetch('/api/admin/hybrid/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Could not save Hybrid settings');
+            document.getElementById('hybridSettingsStatus').textContent = data.message;
+            await fetchHybridSettings();
+            await fetchHybridProfiles();
+            await fetchHybridReports();
+            await fetchHybridMatchAudits();
+            await fetchHybridPilotMetrics();
         }
 
         async function fetchHybridReports() {
@@ -729,6 +983,109 @@
             });
             if (!(data.reports || []).length) {
                 body.innerHTML = '<tr><td colspan="9">No Hybrid safety reports found.</td></tr>';
+            }
+            panel.style.display = '';
+        }
+
+        async function fetchHybridPilotMetrics() {
+            const status = document.getElementById('hybridPilotMetricsStatus');
+            const grid = document.getElementById('hybridPilotMetricsGrid');
+            const response = await fetch('/api/admin/hybrid/pilot-metrics', {
+                credentials: 'same-origin',
+            });
+            if (!response.ok) {
+                status.textContent = 'Pilot measurements are temporarily unavailable.';
+                grid.innerHTML = '';
+                return;
+            }
+            const metrics = (await response.json()).metrics;
+            const adoption = metrics.adoption || {};
+            const matching = metrics.matching || {};
+            const chat = metrics.qmessanger || {};
+            const safety = metrics.safety || {};
+            const tournaments = metrics.tournaments || {};
+            const card = (label, value, detail) => `
+                <article class="summary-card">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(value)}</strong>
+                    <small>${escapeHtml(detail || '')}</small>
+                </article>`;
+            grid.innerHTML = [
+                card('Profile opt-in', `${Number(adoption.opt_in_rate_pct || 0).toFixed(1)}%`, `${adoption.profiles_enabled || 0} of ${adoption.player_accounts || 0} player accounts`),
+                card('Profile completion', `${Number(adoption.profile_completion_rate_pct || 0).toFixed(1)}%`, `${adoption.profiles_complete || 0} of ${adoption.profiles_enabled || 0} enabled profiles`),
+                card('Relevant Hybrid pairs', matching.relevant_pairs || 0, `${Number(matching.relevant_pair_rate_pct || 0).toFixed(1)}% of ${matching.possible_pairs || 0} observed pairs`),
+                card('Legacy fallbacks', matching.fallback_audits || 0, `${Number(matching.fallback_rate_pct || 0).toFixed(1)}% of ${matching.audit_runs || 0} matcher runs`),
+                card('Matcher latency', matching.average_latency_ms == null ? 'No data' : `${Number(matching.average_latency_ms).toFixed(3)} ms`, matching.maximum_latency_ms == null ? '' : `Maximum ${Number(matching.maximum_latency_ms).toFixed(3)} ms`),
+                card('Q-messànger usage', chat.messages_delivered || 0, `${chat.storage_failures || 0} storage failures`),
+                card('Safety activity', `${safety.active_blocks || 0} blocks`, `${safety.reports_total || 0} reports · ${safety.reports_awaiting_action || 0} awaiting action`),
+                card('Tournament completion', `${Number(tournaments.completion_rate_pct || 0).toFixed(1)}%`, `${tournaments.ordinary_completed || 0} of ${tournaments.ordinary_started || 0} started ordinary tournaments`),
+            ].join('');
+            status.textContent = `${metrics.scope}. ${metrics.privacy_note}`;
+        }
+
+        async function fetchHybridMatchAudits() {
+            const panel = document.getElementById('hybridMatchAuditsPanel');
+            const response = await fetch('/api/admin/hybrid/match-audits', {
+                credentials: 'same-origin',
+            });
+            if (response.status === 404) {
+                panel.style.display = 'none';
+                return;
+            }
+            if (!response.ok) return;
+            const data = await response.json();
+            const body = document.querySelector('#hybridMatchAuditsTable tbody');
+            body.innerHTML = '';
+            (data.audits || []).forEach(audit => {
+                const playerLabel = (username, id) =>
+                    `${escapeHtml(username || `Player #${id}`)}${id == null ? '' : ` <small>(#${escapeHtml(id)})</small>`}`;
+                const livePairs = (audit.legacy_pairs || []).map(pair => {
+                    const status = pair.comparison_status === 'same_as_proposed'
+                        ? 'Same in proposal' : 'Changed in proposal';
+                    return `<div style="margin-bottom:8px;">
+                        <strong>${playerLabel(pair.player1_username, pair.player1_id)}</strong>
+                        vs <strong>${playerLabel(pair.player2_username, pair.player2_id)}</strong><br>
+                        <span class="pill">${escapeHtml(status)}</span>
+                    </div>`;
+                }).join('');
+                const proposedPairs = (audit.proposed_pairs || []).map(pair => {
+                    const reasons = (pair.reason_labels || []).length
+                        ? pair.reason_labels.map(escapeHtml).join(' · ')
+                        : 'No commercial match; game pairing only';
+                    const change = pair.comparison_status === 'same_as_live'
+                        ? 'Same as live' : 'Changed from live';
+                    return `<div style="margin-bottom:10px;">
+                        <strong>${playerLabel(pair.player1_username, pair.player1_id)}</strong>
+                        vs <strong>${playerLabel(pair.player2_username, pair.player2_id)}</strong><br>
+                        <span class="pill">${escapeHtml(pair.pair_label_display)}</span>
+                        <span class="pill">${escapeHtml(change)}</span><br>
+                        <small>${reasons}</small>
+                    </div>`;
+                }).join('');
+                const duration = audit.matching_duration_ms == null
+                    ? 'Not recorded' : `${Number(audit.matching_duration_ms).toFixed(3)} ms`;
+                const review = audit.legacy_fallback_recommended
+                    ? 'Legacy fallback recommended'
+                    : audit.pairing_changed
+                        ? 'Hybrid proposed different pairs'
+                        : 'Hybrid agreed with live pairs';
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>#${audit.tournament_id} ${escapeHtml(audit.tournament_name || '')}</td>
+                    <td>${escapeHtml(audit.algorithm_version)}<br><small>${escapeHtml(audit.created_at || '')}</small></td>
+                    <td>${audit.participant_count}</td>
+                    <td><span class="pill">${escapeHtml((audit.status || '').replaceAll('_', ' '))}</span><br>
+                        ${audit.hybrid_pair_count} commercial / ${Math.max(0, Math.floor(audit.participant_count / 2) - audit.hybrid_pair_count)} game-only<br>
+                        <small>Score ${audit.total_score}</small></td>
+                    <td>${escapeHtml(duration)}</td>
+                    <td>${livePairs || 'No live pairs recorded'}</td>
+                    <td>${proposedPairs || 'No proposed pairs recorded'}</td>
+                    <td><span class="pill">${escapeHtml(review)}</span></td>
+                `;
+                body.appendChild(row);
+            });
+            if (!(data.audits || []).length) {
+                body.innerHTML = '<tr><td colspan="8">No shadow audits recorded yet.</td></tr>';
             }
             panel.style.display = '';
         }
@@ -867,6 +1224,19 @@
                         method: 'PATCH', body: { decision, note },
                     });
                 }
+                if (action === 'saveHybridCaption') {
+                    await sendJson(`/api/admin/hybrid/captions/${button.dataset.id}`, {
+                        method: 'PATCH', body: captionPayloadFromRow(row),
+                    });
+                    await fetchHybridCaptions();
+                }
+                if (action === 'toggleHybridCaption') {
+                    await sendJson(`/api/admin/hybrid/captions/${button.dataset.id}`, {
+                        method: 'PATCH',
+                        body: { is_active: button.dataset.active !== 'true' },
+                    });
+                    await fetchHybridCaptions();
+                }
                 if (action === 'reviewHybridReport') {
                     const status = button.dataset.status;
                     const resolution = prompt(
@@ -960,6 +1330,9 @@
                 await fetchCupRoster();
                 await fetchHybridProfiles();
                 await fetchHybridReports();
+                await fetchHybridMatchAudits();
+                await fetchHybridPilotMetrics();
+                await fetchHybridCaptions();
                 if (currentAuditUserId) { await viewUserActivity(currentAuditUserId); } else { await fetchAuditLogs(); }
             } catch (err) {
                 statusEl.textContent = 'Update failed: ' + err.message;
@@ -978,8 +1351,35 @@
         document.getElementById('cupStatusFilter').addEventListener('change', fetchCupRoster);
         document.getElementById('reloadCupRoster').addEventListener('click', fetchCupRoster);
         document.getElementById('reloadHybridProfiles').addEventListener('click', fetchHybridProfiles);
+        document.getElementById('reloadHybridCaptions').addEventListener('click', fetchHybridCaptions);
+        document.getElementById('createHybridCaption').addEventListener('click', async () => {
+            try {
+                await createHybridCaption();
+            } catch (err) {
+                document.getElementById('hybridCaptionStatus').textContent = 'Create failed: ' + err.message;
+            }
+        });
+        document.getElementById('settingHybridEnabled').addEventListener('change', syncHybridSettingDependencies);
+        document.getElementById('settingHybridProfile').addEventListener('change', syncHybridSettingDependencies);
+        document.getElementById('settingHybridShadow').addEventListener('change', event => {
+            if (event.target.checked) document.getElementById('settingHybridLive').checked = false;
+            syncHybridSettingDependencies();
+        });
+        document.getElementById('settingHybridLive').addEventListener('change', event => {
+            if (event.target.checked) document.getElementById('settingHybridShadow').checked = false;
+            syncHybridSettingDependencies();
+        });
+        document.getElementById('saveHybridSettings').addEventListener('click', async () => {
+            try {
+                await saveHybridSettings();
+            } catch (err) {
+                document.getElementById('hybridSettingsStatus').textContent = 'Save failed: ' + err.message;
+            }
+        });
         document.getElementById('hybridReportStatus').addEventListener('change', fetchHybridReports);
         document.getElementById('reloadHybridReports').addEventListener('click', fetchHybridReports);
+        document.getElementById('reloadHybridMatchAudits').addEventListener('click', fetchHybridMatchAudits);
+        document.getElementById('reloadHybridPilotMetrics').addEventListener('click', fetchHybridPilotMetrics);
 
         fetchDashboard();
         fetchUsers();
@@ -987,7 +1387,11 @@
         fetchDisputes();
         fetchCupRoster();
         fetchHybridProfiles();
+        fetchHybridSettings();
+        fetchHybridCaptions();
         fetchHybridReports();
+        fetchHybridMatchAudits();
+        fetchHybridPilotMetrics();
         fetchAuditLogs();
         bindLogControls();
         fetchBackendLogs();

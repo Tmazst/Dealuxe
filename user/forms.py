@@ -58,3 +58,12 @@ class IDPhotoForm(FlaskForm):
         validators=[FileAllowed(IMAGE_EXTENSIONS, 'Images (png/jpg) only')],
     )
     submit = SubmitField('Upload ID Photos')
+
+
+class ProfileImageForm(FlaskForm):
+    """Upload the user's public-facing Q-messànger profile image."""
+    profile_image = FileField(
+        'Public Profile Image',
+        validators=[FileAllowed(IMAGE_EXTENSIONS, 'Images (png/jpg) only')],
+    )
+    submit = SubmitField('Upload Profile Image')

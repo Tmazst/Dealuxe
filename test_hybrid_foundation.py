@@ -20,7 +20,12 @@ from hybrid.service import users_are_blocked
 class TestHybridConfiguration(unittest.TestCase):
     def test_hybrid_is_disabled_by_default(self):
         config = build_hybrid_config({})
-        self.assertTrue(all(value is False for value in config.values()))
+        self.assertEqual(config['HYBRID_MATCHING_TIMEOUT_MS'], 250)
+        self.assertTrue(all(
+            value is False
+            for key, value in config.items()
+            if key != 'HYBRID_MATCHING_TIMEOUT_MS'
+        ))
 
     def test_profile_requires_master_switch(self):
         with self.assertRaisesRegex(RuntimeError, 'HYBRID_ENABLED'):
@@ -34,7 +39,8 @@ class TestHybridConfiguration(unittest.TestCase):
         self.assertTrue(config['HYBRID_ENABLED'])
         self.assertTrue(config['HYBRID_PROFILE_ENABLED'])
         for flag in (
-            'HYBRID_MATCHING_ENABLED', 'HYBRID_CHAT_ENABLED',
+            'HYBRID_CHAT_ENABLED',
+            'HYBRID_MATCHING_SHADOW_ENABLED',
             'HYBRID_BRACKET_DISCOVERY_ENABLED', 'HYBRID_PAYMENTS_ENABLED',
             'HYBRID_RELATIONSHIP_ENABLED',
         ):
@@ -42,12 +48,56 @@ class TestHybridConfiguration(unittest.TestCase):
 
     def test_unimplemented_or_post_pilot_features_fail_closed(self):
         for flag in (
-            'HYBRID_MATCHING_ENABLED', 'HYBRID_CHAT_ENABLED',
+            'HYBRID_MATCHING_ENABLED',
             'HYBRID_BRACKET_DISCOVERY_ENABLED', 'HYBRID_PAYMENTS_ENABLED',
             'HYBRID_RELATIONSHIP_ENABLED',
         ):
             with self.subTest(flag=flag), self.assertRaises(RuntimeError):
                 build_hybrid_config({'HYBRID_ENABLED': 'true', flag: 'true'})
+
+    def test_chat_requires_master_and_can_be_enabled_with_profiles(self):
+        with self.assertRaisesRegex(RuntimeError, 'HYBRID_ENABLED'):
+            build_hybrid_config({'HYBRID_CHAT_ENABLED': 'true'})
+        config = build_hybrid_config({
+            'HYBRID_ENABLED': 'true',
+            'HYBRID_PROFILE_ENABLED': 'true',
+            'HYBRID_CHAT_ENABLED': 'true',
+        })
+        self.assertTrue(config['HYBRID_CHAT_ENABLED'])
+
+    def test_live_matching_requires_profiles_and_is_mutually_exclusive_with_shadow(self):
+        with self.assertRaisesRegex(RuntimeError, 'HYBRID_PROFILE_ENABLED'):
+            build_hybrid_config({
+                'HYBRID_ENABLED': 'true',
+                'HYBRID_MATCHING_ENABLED': 'true',
+            })
+        config = build_hybrid_config({
+            'HYBRID_ENABLED': 'true',
+            'HYBRID_PROFILE_ENABLED': 'true',
+            'HYBRID_MATCHING_ENABLED': 'true',
+        })
+        self.assertTrue(config['HYBRID_MATCHING_ENABLED'])
+        with self.assertRaisesRegex(RuntimeError, 'either'):
+            build_hybrid_config({
+                'HYBRID_ENABLED': 'true',
+                'HYBRID_PROFILE_ENABLED': 'true',
+                'HYBRID_MATCHING_ENABLED': 'true',
+                'HYBRID_MATCHING_SHADOW_ENABLED': 'true',
+            })
+
+    def test_shadow_mode_requires_master_and_profile_but_not_live_matching(self):
+        with self.assertRaisesRegex(RuntimeError, 'HYBRID_PROFILE_ENABLED'):
+            build_hybrid_config({
+                'HYBRID_ENABLED': 'true',
+                'HYBRID_MATCHING_SHADOW_ENABLED': 'true',
+            })
+        config = build_hybrid_config({
+            'HYBRID_ENABLED': 'true',
+            'HYBRID_PROFILE_ENABLED': 'true',
+            'HYBRID_MATCHING_SHADOW_ENABLED': 'true',
+        })
+        self.assertTrue(config['HYBRID_MATCHING_SHADOW_ENABLED'])
+        self.assertFalse(config['HYBRID_MATCHING_ENABLED'])
 
 
 class TestHybridProfileFoundation(unittest.TestCase):
@@ -55,6 +105,7 @@ class TestHybridProfileFoundation(unittest.TestCase):
         self.hybrid_flags = (
             'HYBRID_ENABLED', 'HYBRID_PROFILE_ENABLED',
             'HYBRID_MATCHING_ENABLED', 'HYBRID_CHAT_ENABLED',
+            'HYBRID_MATCHING_SHADOW_ENABLED',
             'HYBRID_BRACKET_DISCOVERY_ENABLED', 'HYBRID_PAYMENTS_ENABLED',
             'HYBRID_RELATIONSHIP_ENABLED',
         )
@@ -67,6 +118,7 @@ class TestHybridProfileFoundation(unittest.TestCase):
             HYBRID_ENABLED=False,
             HYBRID_PROFILE_ENABLED=False,
             HYBRID_MATCHING_ENABLED=False,
+            HYBRID_MATCHING_SHADOW_ENABLED=False,
             HYBRID_CHAT_ENABLED=False,
             HYBRID_BRACKET_DISCOVERY_ENABLED=False,
             HYBRID_PAYMENTS_ENABLED=False,
@@ -142,7 +194,7 @@ class TestHybridProfileFoundation(unittest.TestCase):
         self.assertEqual(DiscoveryProfile.query.count(), 1)
 
         page = self.client.get('/account')
-        self.assertIn(b'Discovery &amp; Matching', page.data)
+        self.assertIn(b'Hybrid Discovery', page.data)
         account = self.client.get('/account/api').get_json()['account']
         self.assertEqual(account['discovery_profile']['location'], 'Mbabane')
 

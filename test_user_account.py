@@ -76,6 +76,27 @@ class TestUserAccount(unittest.TestCase):
         self.assertIn(b'My Account', r.data)
         self.assertIn(b'+26876000000', r.data)
 
+    def test_account_page_populates_hybrid_profile_choices_when_enabled(self):
+        original = {
+            key: app.config.get(key)
+            for key in ('HYBRID_ENABLED', 'HYBRID_PROFILE_ENABLED')
+        }
+        try:
+            app.config.update(
+                HYBRID_ENABLED=True,
+                HYBRID_PROFILE_ENABLED=True,
+            )
+            self._login(self.user)
+            response = self.client.get('/account')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b'Hybrid Discovery', response.data)
+            self.assertIn(b'Selling products', response.data)
+            self.assertIn(b'Looking to buy', response.data)
+            self.assertIn(b'data-intent="selling"', response.data)
+            self.assertIn(b'id="hybridCaptionPreview"', response.data)
+        finally:
+            app.config.update(original)
+
     def test_account_api_returns_profile_and_kyc(self):
         self._login(self.user)
         r = self.client.get('/account/api')
@@ -205,4 +226,3 @@ class TestUserAccount(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

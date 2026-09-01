@@ -571,6 +571,81 @@ class TestAdminExpansion(unittest.TestCase):
             ).all()
         ))
 
+    def test_64_player_cup_supports_one_complete_distinct_top_ten_result(self):
+        cup_id, quarter_final_losers, manual_candidates, quarter_finalists = (
+            self._seed_cup_placement_state()
+        )
+
+        ordered_losers = list(reversed(quarter_final_losers))
+        positions_5_8 = self.client.patch(
+            f'/api/admin/cup-tournaments/{cup_id}/placements/5-8',
+            json={
+                'ordered_user_ids': ordered_losers,
+                'reason': 'Approved final Cup ordering for positions 5-8',
+            },
+        )
+        self.assertEqual(positions_5_8.status_code, 200, positions_5_8.get_json())
+        positions_9_10 = self.client.patch(
+            f'/api/admin/cup-tournaments/{cup_id}/placements/9-10',
+            json={
+                'ordered_user_ids': manual_candidates,
+                'reason': 'Approved final Cup selections for positions 9-10',
+            },
+        )
+        self.assertEqual(positions_9_10.status_code, 200, positions_9_10.get_json())
+
+        cup = db.session.get(Tournament, cup_id)
+        cup.winner_id = quarter_finalists[0].user_id
+        cup.runner_up_id = quarter_finalists[2].user_id
+        cup.third_place_id = quarter_finalists[4].user_id
+        fourth_id = quarter_finalists[6].user_id
+        third_bracket = TournamentBracket.query.filter_by(
+            tournament_id=cup_id, round_name='Third-Place'
+        ).one()
+        third_match = TournamentMatch(
+            tournament_id=cup_id,
+            bracket_id=third_bracket.id,
+            player1_id=cup.third_place_id,
+            player2_id=fourth_id,
+            winner_id=cup.third_place_id,
+            loser_id=fourth_id,
+            status='completed',
+            card_count=6,
+            bet_amount=0.0,
+        )
+        db.session.add(third_match)
+        db.session.flush()
+        third_bracket.match_id = third_match.id
+        third_bracket.status = 'completed'
+
+        from controllers.tournament_controller import _finalize_tournament
+        _finalize_tournament(cup)
+        db.session.commit()
+
+        placed = {
+            participant.final_placement: participant.user_id
+            for participant in TournamentParticipant.query.filter_by(
+                tournament_id=cup_id
+            ).all()
+            if participant.final_placement is not None
+        }
+        self.assertEqual(set(placed), set(range(1, 11)))
+        self.assertEqual(len(set(placed.values())), 10)
+        self.assertEqual(placed[1], cup.winner_id)
+        self.assertEqual(placed[2], cup.runner_up_id)
+        self.assertEqual(placed[3], cup.third_place_id)
+        self.assertEqual(placed[4], fourth_id)
+        self.assertEqual(
+            [placed[position] for position in range(5, 9)], ordered_losers
+        )
+        self.assertEqual(
+            [placed[position] for position in (9, 10)], manual_candidates
+        )
+        self.assertEqual(
+            TournamentParticipant.query.filter_by(tournament_id=cup_id).count(),
+            64,
+        )
+
     def test_user_activity_requires_admin(self):
         self._login(self.regular)
         r = self.client.get(f'/api/admin/users/{self.admin.id}/activity')
