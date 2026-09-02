@@ -11,10 +11,10 @@ EDITABLE_FLAGS = (
     'HYBRID_MATCHING_SHADOW_ENABLED',
     'HYBRID_MATCHING_ENABLED',
     'HYBRID_CHAT_ENABLED',
+    'HYBRID_BRACKET_DISCOVERY_ENABLED',
 )
 
 LOCKED_FLAGS = (
-    ('HYBRID_BRACKET_DISCOVERY_ENABLED', 'Public bracket discovery is not implemented'),
     ('HYBRID_PAYMENTS_ENABLED', 'Discovery payments require post-pilot approval'),
     ('HYBRID_RELATIONSHIP_ENABLED', 'Relationship features are unavailable in Version 3'),
 )
@@ -37,10 +37,12 @@ def _normalize_dependencies(values):
         values['HYBRID_MATCHING_SHADOW_ENABLED'] = False
         values['HYBRID_MATCHING_ENABLED'] = False
         values['HYBRID_CHAT_ENABLED'] = False
+        values['HYBRID_BRACKET_DISCOVERY_ENABLED'] = False
     elif not values['HYBRID_PROFILE_ENABLED']:
         values['HYBRID_MATCHING_SHADOW_ENABLED'] = False
         values['HYBRID_MATCHING_ENABLED'] = False
         values['HYBRID_CHAT_ENABLED'] = False
+        values['HYBRID_BRACKET_DISCOVERY_ENABLED'] = False
     if (
         values['HYBRID_MATCHING_SHADOW_ENABLED']
         and values['HYBRID_MATCHING_ENABLED']

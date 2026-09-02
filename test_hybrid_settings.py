@@ -29,6 +29,7 @@ class TestHybridAdminSettings(unittest.TestCase):
             'HYBRID_MATCHING_SHADOW_ENABLED',
             'HYBRID_MATCHING_ENABLED',
             'HYBRID_CHAT_ENABLED',
+            'HYBRID_BRACKET_DISCOVERY_ENABLED',
         )
         self.original = {
             key: app.config.get(key) for key in self.editable_flags
@@ -105,7 +106,7 @@ class TestHybridAdminSettings(unittest.TestCase):
         self.assertTrue(app.config['HYBRID_ENABLED'])
         self.assertTrue(app.config['HYBRID_PROFILE_ENABLED'])
         self.assertTrue(app.config['HYBRID_MATCHING_SHADOW_ENABLED'])
-        self.assertEqual(HybridFeatureSetting.query.count(), 5)
+        self.assertEqual(HybridFeatureSetting.query.count(), 6)
         self.assertEqual(
             AdminAuditLog.query.filter_by(
                 action='hybrid_feature_settings_updated'
@@ -156,7 +157,7 @@ class TestHybridAdminSettings(unittest.TestCase):
                 self.assertEqual(response.status_code, 400)
         self.assertFalse(app.config['HYBRID_MATCHING_ENABLED'])
         self.assertTrue(app.config['HYBRID_CHAT_ENABLED'])
-        self.assertEqual(HybridFeatureSetting.query.count(), 5)
+        self.assertEqual(HybridFeatureSetting.query.count(), 6)
 
     def test_admin_can_switch_from_shadow_to_live_but_not_enable_both(self):
         self.login(self.admin)
@@ -182,6 +183,8 @@ class TestHybridAdminSettings(unittest.TestCase):
         self.assertIn(b'Hybrid MVP Settings', response.data)
         self.assertIn(b'Hybrid Caption Catalogue', response.data)
         self.assertIn(b'settingHybridChat', response.data)
+        self.assertIn(b'settingHybridDiscovery', response.data)
+        self.assertIn(b'Paid Plan Settings', response.data)
         self.assertIn(b'Hybrid MVP Pilot Measurements', response.data)
         self.assertIn(b'Manage seeking, selling and collaboration wording', response.data)
         self.assertIn(b'Locked for this MVP stage', response.data)

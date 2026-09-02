@@ -284,6 +284,49 @@ class MojaPOSService:
         }
 
     # -----------------------------
+    # VERSION 3 PLAN PASSES
+    # -----------------------------
+
+    def initiate_plan_purchase(self, external_ref_id, user_id, amount,
+                               phone_number, plan_code, txn=None):
+        """Initiate a non-renewing pricing-plan payment."""
+        if self._mock_mode:
+            return {
+                'success': True,
+                'external_transaction_id': f'mock_plan_{external_ref_id}',
+                'external_payment_id': external_ref_id,
+                'payment_url': None,
+                'mock': True,
+            }
+        payload = {
+            'provider': 'MTN_MOMO',
+            'amount': float(amount),
+            'currency': 'SZL',
+            'phoneNumber': phone_number,
+            'metadata': {
+                'externalId': external_ref_id,
+                'payerMessage': f'uMshova {plan_code} plan pass',
+                'payeeNote': 'uMshova plan payment',
+            },
+        }
+        response = self._make_request(PAYMENT_INITIATE_ENDPOINT, data=payload)
+        if response and response.get('transactionId'):
+            if txn is not None and txn.status != 'completed':
+                txn.status = 'pending'
+            return {
+                'success': True,
+                'external_transaction_id': response.get('transactionId'),
+                'provider_reference': response.get('providerReference'),
+                'external_payment_id': external_ref_id,
+                'payment_url': None,
+                'status': response.get('status'),
+            }
+        return {
+            'success': False,
+            'error': (response or {}).get('message', 'Plan payment initiation failed'),
+        }
+
+    # -----------------------------
     # STATUS LOOKUP
     # -----------------------------
 

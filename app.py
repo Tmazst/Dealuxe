@@ -43,6 +43,7 @@ from controllers.tournament_controller import tournament_bp, init_tournament_eve
 from admin.routes import admin_bp
 from user.routes import user_bp
 from hybrid.routes import hybrid_bp
+from pricing.routes import pricing_bp
 from Forms import  *
 from database import db, init_db, Tournament, User
 from database import Player
@@ -53,6 +54,8 @@ from config import (
     LogConfig,
     build_pilot_economy_config,
     build_hybrid_config,
+    build_openwa_scaffold_config,
+    build_pricing_config,
     build_runtime_security_config,
 )
 from security import init_security_scaffold
@@ -64,6 +67,8 @@ runtime_security = build_runtime_security_config()
 app.config.update(runtime_security)
 app.config.update(build_pilot_economy_config())
 app.config.update(build_hybrid_config())
+app.config.update(build_openwa_scaffold_config())
+app.config.update(build_pricing_config())
 
 # allow Flask to load spectator templates from the livescores_fixtures_updates folder
 app.jinja_loader = ChoiceLoader([
@@ -149,6 +154,8 @@ with app.app_context():
     from hybrid.settings import apply_persisted_settings
     from hybrid.catalog import ensure_default_caption_templates
     apply_persisted_settings(app)
+    from pricing.settings import apply_persisted_pricing_settings
+    apply_persisted_pricing_settings(app)
     ensure_default_caption_templates()
 
 # -----------------------------
@@ -161,6 +168,7 @@ app.register_blueprint(tournament_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(hybrid_bp)
+app.register_blueprint(pricing_bp)
 
 # Ensure the upload directory exists for user KYC / ID files
 try:
@@ -456,6 +464,7 @@ from database import (
     TX_WALLET_TOPUP,
     TX_PRIZE_AWARD,
     TX_WITHDRAWAL,
+    TX_PLAN_PURCHASE,
 )
 
 
@@ -541,7 +550,10 @@ def payment_callback():
 
         # Idempotency: skip if this gateway transaction was already processed.
         if transaction_id:
-            already = Transaction.query.filter_by(description=transaction_id).first()
+            already = Transaction.query.filter_by(
+                description=transaction_id,
+                status='completed',
+            ).first()
             if already:
                 return jsonify({'status': 'received'}), 200
 
@@ -563,6 +575,8 @@ def payment_callback():
                 _handle_entry_fee_callback(payload, data, transaction, status)
             elif ttype == TX_WALLET_TOPUP:
                 _handle_wallet_topup_callback(payload, data, transaction, status)
+            elif ttype == TX_PLAN_PURCHASE:
+                _handle_plan_purchase_callback(payload, data, transaction, status)
             elif ttype in (TX_PRIZE_AWARD, TX_WITHDRAWAL):
                 _handle_prize_payout_callback(payload, data, transaction, status)
             else:
@@ -789,6 +803,29 @@ def _handle_wallet_topup_callback(payload, data, transaction, status):
         transaction.balance_after = player.real_balance
         transaction.description = transaction_id or transaction.description
 
+    db.session.commit()
+
+
+def _handle_plan_purchase_callback(payload, data, transaction, status):
+    """Activate one plan pass after an exact, idempotent payment callback."""
+    transaction_id = (
+        data.get('transactionId')
+        or payload.get('transactionId')
+        or payload.get('transaction_id')
+    )
+    try:
+        amount = float(data.get('amount') or payload.get('amount') or 0)
+    except (TypeError, ValueError):
+        amount = 0.0
+    currency = data.get('currency') or payload.get('currency') or ''
+    from pricing.service import handle_plan_payment_callback
+    handle_plan_payment_callback(
+        transaction,
+        status,
+        amount,
+        transaction_id,
+        currency,
+    )
     db.session.commit()
 
 

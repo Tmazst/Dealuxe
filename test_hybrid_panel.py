@@ -174,6 +174,82 @@ class TestHybridGameContext(unittest.TestCase):
             'own_profile_visible': True,
         })
 
+    def test_inactive_room_or_opponent_never_discloses_identity_or_contact(self):
+        self.login(self.first)
+        room = GameRoom.query.filter_by(room_code='PANEL123').one()
+        room.status = 'completed'
+        db.session.commit()
+
+        inactive_room = self.client.get(
+            '/api/hybrid/game/PANEL123/context'
+        ).get_json()['context']
+        self.assertEqual(inactive_room, {
+            'available': False,
+            'reason': 'room_inactive',
+            'own_profile_visible': True,
+        })
+        self.assertNotIn('panel-second@test.com', str(inactive_room))
+        self.assertNotIn('+26876000000', str(inactive_room))
+
+        room.status = 'in_progress'
+        self.second.is_active = False
+        db.session.commit()
+        inactive_opponent = self.client.get(
+            '/api/hybrid/game/PANEL123/context'
+        ).get_json()['context']
+        self.assertEqual(inactive_opponent, {
+            'available': False,
+            'reason': 'opponent_unavailable',
+            'own_profile_visible': True,
+        })
+
+    def test_private_identity_fields_never_enter_requester_context(self):
+        self.second.full_name = 'Private Legal Name'
+        self.second.address = 'Private Home Address'
+        self.second.id_number = 'PRIVATE-ID-123'
+        self.second.kyc_document_path = '2/private-kyc.pdf'
+        self.second.id_photo_path = '2/private-id-front.jpg'
+        self.second.id_photo_back_path = '2/private-id-back.jpg'
+        db.session.commit()
+
+        self.login(self.first)
+        body = self.client.get(
+            '/api/hybrid/game/PANEL123/context'
+        ).get_data(as_text=True)
+        for private_value in (
+            'Private Legal Name', 'Private Home Address', 'PRIVATE-ID-123',
+            'private-kyc.pdf', 'private-id-front.jpg', 'private-id-back.jpg',
+        ):
+            with self.subTest(private_value=private_value):
+                self.assertNotIn(private_value, body)
+
+    def test_unapproved_custom_caption_fails_closed_even_with_stale_visibility(self):
+        profile = DiscoveryProfile.query.filter_by(user_id=self.second.id).one()
+        profile.custom_caption = 'UNREVIEWED PRIVATE CAPTION'
+        profile.moderation_status = 'pending_review'
+        profile.is_visible = True
+        db.session.commit()
+
+        self.login(self.first)
+        response = self.client.get('/api/hybrid/game/PANEL123/context')
+        context = response.get_json()['context']
+        self.assertEqual(context, {
+            'available': False,
+            'reason': 'profile_unavailable',
+            'own_profile_visible': True,
+        })
+        self.assertNotIn('UNREVIEWED PRIVATE CAPTION', response.get_data(as_text=True))
+
+        profile.moderation_status = 'approved'
+        db.session.commit()
+        approved = self.client.get(
+            '/api/hybrid/game/PANEL123/context'
+        ).get_json()['context']
+        self.assertTrue(approved['available'])
+        self.assertEqual(
+            approved['opponent']['caption'], 'UNREVIEWED PRIVATE CAPTION'
+        )
+
     def test_profile_sharing_is_default_on_and_optional_per_game(self):
         self.login(self.second)
         context = self.client.get(
@@ -408,10 +484,26 @@ class TestHybridGameContext(unittest.TestCase):
             response.data,
         )
 
+        self.second.full_name = 'Bracket Private Legal Name'
+        self.second.phone = '+26876123456'
+        self.second.address = 'Bracket Private Address'
+        self.second.id_number = 'BRACKET-PRIVATE-ID'
+        self.second.kyc_document_path = '2/bracket-private-kyc.pdf'
+        self.second.id_photo_path = '2/bracket-private-id-front.jpg'
+        db.session.commit()
+
         overview = self.client.get(
             '/api/tournaments/{0}/overview'.format(tournament.id)
         )
         self.assertEqual(overview.status_code, 200)
+        overview_body = overview.get_data(as_text=True)
+        for private_value in (
+            'Bracket Private Legal Name', '+26876123456',
+            'Bracket Private Address', 'BRACKET-PRIVATE-ID',
+            'bracket-private-kyc.pdf', 'bracket-private-id-front.jpg',
+        ):
+            with self.subTest(private_value=private_value):
+                self.assertNotIn(private_value, overview_body)
         slot = overview.get_json()['rounds'][0]['matches'][0]
         avatar_url = slot['player2_avatar_url']
         self.assertIn('/players/{0}/profile-image?v=profile_'.format(self.second.id), avatar_url)

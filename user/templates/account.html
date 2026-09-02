@@ -437,6 +437,50 @@
             </section>
         </div>
 
+        <section class="card" style="margin-top:18px;">
+            <h2>🤝 Invite &amp; Earn Tournament Credit</h2>
+            <p class="page-sub">
+                Referral codes are available to every user on every plan. Share your code;
+                after the new player completes their first valid tournament, you receive
+                E10 non-withdrawable promotional credit.
+            </p>
+            <div class="form-group">
+                <label class="form-label" for="referralCode">Your referral code</label>
+                <input id="referralCode" class="form-control" type="text"
+                       value="{{ referral.code }}" readonly aria-describedby="referralStats">
+            </div>
+            <p id="referralStats" class="page-sub">
+                {{ referral.rewarded_referrals }} rewarded · {{ referral.pending_referrals }} pending
+            </p>
+        </section>
+
+        <section class="card" style="margin-top:18px;" aria-labelledby="pricingTitle">
+            <h2 id="pricingTitle">📣 Hybrid Plans</h2>
+            <p class="page-sub">
+                Current plan: <strong>{{ pricing_entitlement.plan_code|replace('_', ' ')|title }}</strong>
+                {% if pricing_entitlement.expires_at %}· expires {{ pricing_entitlement.expires_at }}{% endif %}
+            </p>
+            <div class="grid">
+                {% for plan in pricing_catalog.plans %}
+                    <article class="upload-block">
+                        <h3>{{ plan.name }} · E{{ '%.2f'|format(plan.price_emalangeni) }}</h3>
+                        <p class="page-sub">{{ plan.summary }}</p>
+                        {% if plan.duration_days %}<p>{{ plan.duration_days }}-day non-renewing pass</p>{% endif %}
+                        {% if plan.code == 'free' %}
+                            <span class="pill">Always available</span>
+                        {% elif plan.purchasable %}
+                            <button class="btn plan-purchase" data-plan-code="{{ plan.code }}">
+                                Buy {{ plan.name }}
+                            </button>
+                        {% else %}
+                            <span class="pill">Currently unavailable</span>
+                        {% endif %}
+                    </article>
+                {% endfor %}
+            </div>
+            <p id="pricingPurchaseStatus" class="page-sub" role="status" aria-live="polite"></p>
+        </section>
+
         <!-- Recent transactions -->
         <section class="card" style="margin-top:18px;">
             <h2>🧾 Recent Transactions</h2>
@@ -466,6 +510,33 @@
 
 
     <script>
+        document.querySelectorAll('.plan-purchase').forEach(function (button) {
+            button.addEventListener('click', async function () {
+                var status = document.getElementById('pricingPurchaseStatus');
+                if (!confirm('Start this non-renewing plan payment?')) return;
+                button.disabled = true;
+                status.textContent = 'Starting payment…';
+                try {
+                    var response = await fetch('/api/pricing/purchases', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({plan_code: button.dataset.planCode})
+                    });
+                    var payload = await response.json();
+                    if (!response.ok) throw new Error(payload.error || 'Payment could not start');
+                    status.textContent = payload.message;
+                    if (payload.purchase && payload.purchase.status === 'completed') {
+                        setTimeout(function () { window.location.reload(); }, 800);
+                    }
+                } catch (error) {
+                    status.textContent = error.message;
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        });
+
         (function () {
             var btn = document.getElementById('topupBtn');
             var amountInput = document.getElementById('topupAmount');

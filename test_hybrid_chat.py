@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ['ENV'] = 'development'
 
@@ -193,6 +194,27 @@ class TestHybridChatEvents(unittest.TestCase):
             self.assertFalse(context['available'])
             self.assertEqual(context['reason'], 'hidden_for_game')
 
+    def test_unapproved_caption_and_inactive_opponent_fail_closed(self):
+        first = self._socket(self.first)
+        profile = DiscoveryProfile.query.filter_by(user_id=self.second.id).one()
+        profile.custom_caption = 'Unreviewed caption'
+        profile.moderation_status = 'pending_review'
+        db.session.commit()
+
+        first.emit('hybrid_chat_context', {'room_code': 'CHATROOM'})
+        pending = self._event(first, 'hybrid_chat_context')[0]['args'][0]
+        self.assertFalse(pending['available'])
+        self.assertEqual(pending['reason'], 'caption_review_required')
+
+        profile.custom_caption = None
+        profile.moderation_status = 'not_required'
+        self.second.is_active = False
+        db.session.commit()
+        first.emit('hybrid_chat_context', {'room_code': 'CHATROOM'})
+        inactive = self._event(first, 'hybrid_chat_context')[0]['args'][0]
+        self.assertFalse(inactive['available'])
+        self.assertEqual(inactive['reason'], 'opponent_unavailable')
+
     def test_duplicate_control_character_and_rate_limits_are_enforced(self):
         first = self._socket(self.first)
         payload = {
@@ -257,6 +279,30 @@ class TestHybridChatEvents(unittest.TestCase):
             ).one().total_count,
             2,
         )
+
+    def test_authorization_failure_is_fail_closed_without_ending_game_session(self):
+        first = self._socket(self.first)
+
+        with patch(
+            'hybrid.chat._authorized_chat_context',
+            side_effect=RuntimeError('authorization dependency offline'),
+        ):
+            first.emit('hybrid_chat_context', {'room_code': 'CHATROOM'})
+            context = self._event(first, 'hybrid_chat_context')[0]['args'][0]
+            self.assertFalse(context['available'])
+            self.assertEqual(context['reason'], 'authorization_unavailable')
+            self.assertTrue(first.is_connected())
+
+            first.emit('hybrid_chat_send', {
+                'room_code': 'CHATROOM',
+                'message': 'Gameplay must continue',
+                'client_message_id': 'authfail_12345678',
+            })
+            error = self._event(first, 'hybrid_chat_error')[0]['args'][0]
+            self.assertEqual(error['code'], 'authorization_unavailable')
+
+        self.assertTrue(first.is_connected())
+        self.assertEqual(db.session.get(GameRoom, self.room.id).status, 'in_progress')
 
 
 if __name__ == '__main__':

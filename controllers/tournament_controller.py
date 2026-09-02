@@ -868,6 +868,10 @@ def _tournament_profile_image_url(tournament_id, user_id):
     if not (
         user and user.profile_image_path
         and profile and profile.is_enabled and profile.is_visible
+        and (
+            not profile.custom_caption
+            or profile.moderation_status == 'approved'
+        )
     ):
         return None
     version = user.profile_image_path.rsplit('/', 1)[-1]
@@ -1020,6 +1024,16 @@ def _finalize_tournament(tournament):
             season=current_app.config['CUP_SEASON'],
             capacity=current_app.config.get('CUP_CAPACITY', 64),
         )
+
+    # Universal referral rewards are commercial-plan independent and become
+    # eligible only after the referred account completes a valid ordinary
+    # tournament. The service is idempotent, so recovery/replay cannot double
+    # credit the referrer.
+    from pricing.referrals import reward_referral_for_completed_tournament
+    for participant in TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id
+    ).all():
+        reward_referral_for_completed_tournament(participant.user_id, tournament)
 
 
 def _maybe_finalize(tournament):

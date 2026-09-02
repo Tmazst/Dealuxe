@@ -41,6 +41,9 @@ from hybrid.service import (
     list_own_reports,
     profile_options,
 )
+from pricing.referrals import referral_summary
+from pricing.catalog import serialize_catalog
+from pricing.service import entitlement_payload
 
 user_bp = Blueprint('user', __name__, url_prefix='/account', template_folder='templates')
 
@@ -91,6 +94,9 @@ def account_page():
         hybrid_options=profile_options() if hybrid_available else None,
         hybrid_blocks=list_blocks(user.id) if hybrid_available else (),
         hybrid_reports=list_own_reports(user.id) if hybrid_available else (),
+        referral=referral_summary(user.id),
+        pricing_catalog=serialize_catalog(current_app.config),
+        pricing_entitlement=entitlement_payload(user.id),
     )
 
 

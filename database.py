@@ -259,8 +259,7 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     is_admin = db.Column(db.Boolean, default=False)
     is_super_admin = db.Column(db.Boolean, default=False)  # CLI-bootstrap-only role (promotes/demotes admins)
-    # MVP referral-leader count is verified and maintained by administrators.
-    # Automated referral attribution/rewards remain a later milestone.
+    # Denormalized count of rewarded referrals for roster/admin reporting.
     verified_referral_count = db.Column(db.Integer, nullable=False, default=0)
     
     # Timestamps
@@ -660,6 +659,8 @@ TX_WIN = 'win'                    # Versus winnings (v1 practice)
 TX_PROMOTIONAL_CREDIT = 'promotional_credit'
 TX_PROMOTIONAL_ENTRY = 'promotional_entry'
 TX_PROMOTIONAL_ENTRY_REVERSAL = 'promotional_entry_reversal'
+TX_REFERRAL_REWARD = 'referral_reward'
+TX_PLAN_PURCHASE = 'plan_purchase'
 TX_FREE_CASH = TX_PROMOTIONAL_CREDIT  # Deprecated compatibility name
 
 
@@ -694,6 +695,120 @@ class Transaction(db.Model):
     
     def __repr__(self):
         return f'<Transaction {self.id} - {self.transaction_type}: {self.amount}>'
+
+
+class ReferralCode(db.Model):
+    """One reusable referral code available to every active user."""
+    __tablename__ = 'referral_codes'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
+    code = db.Column(db.String(20), nullable=False, unique=True, index=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+
+
+class Referral(db.Model):
+    """Immutable attribution plus idempotent qualification/reward state."""
+    __tablename__ = 'referrals'
+    __table_args__ = (
+        db.CheckConstraint('referrer_id != referred_user_id', name='ck_referrals_not_self'),
+        db.Index('idx_referrals_referrer', 'referrer_id'),
+        db.Index('idx_referrals_status', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    referral_code_id = db.Column(
+        db.Integer, db.ForeignKey('referral_codes.id'), nullable=False
+    )
+    referrer_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    referred_user_id = db.Column(
+        db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True
+    )
+    status = db.Column(db.String(20), nullable=False, default='pending')
+    reward_amount = db.Column(db.Float, nullable=False, default=10.0)
+    first_valid_tournament_id = db.Column(
+        db.Integer, db.ForeignKey('tournaments.id'), nullable=True
+    )
+    reward_transaction_id = db.Column(
+        db.Integer, db.ForeignKey('transactions.id'), nullable=True, unique=True
+    )
+    qualified_at = db.Column(db.DateTime, nullable=True)
+    rewarded_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    referral_code = db.relationship('ReferralCode')
+    referrer = db.relationship('User', foreign_keys=[referrer_id])
+    referred_user = db.relationship('User', foreign_keys=[referred_user_id])
+    first_valid_tournament = db.relationship('Tournament')
+    reward_transaction = db.relationship('Transaction')
+
+
+class PricingFeatureSetting(db.Model):
+    """Persistent administrator override for paid-plan availability."""
+    __tablename__ = 'pricing_feature_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    setting_key = db.Column(db.String(80), unique=True, nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=False)
+    updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class PlanPurchase(db.Model):
+    """One idempotent request to purchase a non-renewing plan pass."""
+    __tablename__ = 'plan_purchases'
+    __table_args__ = (
+        db.Index('idx_plan_purchases_user', 'user_id'),
+        db.Index('idx_plan_purchases_status', 'status'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    plan_code = db.Column(db.String(30), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    duration_days = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='initiated')
+    external_ref_id = db.Column(db.String(64), nullable=False, unique=True)
+    gateway_transaction_id = db.Column(db.String(255), nullable=True, unique=True)
+    transaction_id = db.Column(
+        db.Integer, db.ForeignKey('transactions.id'), nullable=True, unique=True
+    )
+    completed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+    transaction = db.relationship('Transaction')
+
+
+class PlanEntitlement(db.Model):
+    """Historical and current access granted by a completed plan purchase."""
+    __tablename__ = 'plan_entitlements'
+    __table_args__ = (
+        db.Index('idx_plan_entitlements_user_status', 'user_id', 'status'),
+        db.Index('idx_plan_entitlements_expiry', 'expires_at'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    plan_code = db.Column(db.String(30), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='active')
+    purchase_id = db.Column(
+        db.Integer, db.ForeignKey('plan_purchases.id'), nullable=False, unique=True
+    )
+    starts_at = db.Column(db.DateTime, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    revoked_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+    purchase = db.relationship('PlanPurchase')
 
 
 class Tournament(db.Model):
@@ -1266,7 +1381,10 @@ class MatchRoll(db.Model):
 # HELPER FUNCTIONS
 # ========================================
 
-def create_user(username, email, password, phone=None, full_name=None, country=None):
+def create_user(
+    username, email, password, phone=None, full_name=None, country=None,
+    *, commit=True,
+):
     """Create a new user and associated player"""
     user = User(
         username=username,
@@ -1283,7 +1401,10 @@ def create_user(username, email, password, phone=None, full_name=None, country=N
     player = Player(user_id=user.id)
     db.session.add(player)
     
-    db.session.commit()
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
     return user, player
 
 
@@ -1320,8 +1441,9 @@ def create_bet_session(game_id, player_id, opponent_type, bet_type, bet_amount, 
     return session
 
 
-def log_transaction(player_id, transaction_type, amount, balance_type, balance_before, balance_after, 
-                    session_id=None, game_id=None, description=None, tournament_id=None):
+def log_transaction(player_id, transaction_type, amount, balance_type, balance_before, balance_after,
+                    session_id=None, game_id=None, description=None, tournament_id=None,
+                    *, commit=True):
     """Log a wallet transaction"""
     transaction = Transaction(
         player_id=player_id,
@@ -1336,7 +1458,10 @@ def log_transaction(player_id, transaction_type, amount, balance_type, balance_b
         tournament_id=tournament_id,
     )
     db.session.add(transaction)
-    db.session.commit()
+    if commit:
+        db.session.commit()
+    else:
+        db.session.flush()
     return transaction
 
 

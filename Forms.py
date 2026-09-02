@@ -33,6 +33,9 @@ class RegistrationForm(FlaskForm):
         ('Namibia', 'Namibia'), ('Botswana', 'Botswana'),
         ('Zimbabwe', 'Zimbabwe'), ('Malawi', 'Malawi'),
     ])
+    referral_code = StringField(
+        'Referral Code (optional)', validators=[Length(max=20)]
+    )
     submit = SubmitField('Create Account')
 
 class GameStartForm(FlaskForm):

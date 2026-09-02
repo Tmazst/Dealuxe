@@ -93,20 +93,6 @@ def build_hybrid_config(environ=None):
         raise RuntimeError('HYBRID_RELATIONSHIP_ENABLED is unavailable in the MVP')
     if payments:
         raise RuntimeError('HYBRID_PAYMENTS_ENABLED requires post-pilot approval')
-    locked_runtime_flags = [
-        name
-        for name, enabled in (
-            ('HYBRID_BRACKET_DISCOVERY_ENABLED', bracket_discovery),
-        )
-        if enabled
-    ]
-    if locked_runtime_flags:
-        raise RuntimeError(
-            'These Hybrid flags are locked during the MVP shadow stage: '
-            + ', '.join(locked_runtime_flags)
-            + '. Keep them false; use HYBRID_MATCHING_SHADOW_ENABLED=true '
-              'to observe proposed pairs without changing live brackets.'
-        )
     if matching_shadow and not profile:
         raise RuntimeError(
             'HYBRID_PROFILE_ENABLED is required for Hybrid matching shadow mode'
@@ -119,6 +105,10 @@ def build_hybrid_config(environ=None):
         raise RuntimeError(
             'HYBRID_PROFILE_ENABLED is required for Q-messànger chat'
         )
+    if bracket_discovery and not profile:
+        raise RuntimeError(
+            'HYBRID_PROFILE_ENABLED is required for open-bracket discovery'
+        )
     if matching and matching_shadow:
         raise RuntimeError(
             'Choose either HYBRID_MATCHING_ENABLED or '
@@ -128,6 +118,107 @@ def build_hybrid_config(environ=None):
         'HYBRID_ENABLED': master,
         'HYBRID_MATCHING_TIMEOUT_MS': 250,
         **children,
+    }
+
+
+def build_openwa_scaffold_config(environ=None):
+    """Describe the future openWA boundary without activating an integration.
+
+    V3-0908 is documentation and scaffolding only.  Keeping this validation in
+    startup configuration prevents an environment variable from accidentally
+    turning the placeholder into a live WhatsApp channel.
+    """
+    environ = os.environ if environ is None else environ
+    master = _env_bool(environ, 'OPENWA_ENABLED', default=False)
+    children = {
+        'OPENWA_SUPPORT_ENABLED': _env_bool(
+            environ, 'OPENWA_SUPPORT_ENABLED', default=False
+        ),
+        'OPENWA_ALERTS_ENABLED': _env_bool(
+            environ, 'OPENWA_ALERTS_ENABLED', default=False
+        ),
+        'OPENWA_FEEDBACK_ENABLED': _env_bool(
+            environ, 'OPENWA_FEEDBACK_ENABLED', default=False
+        ),
+        'OPENWA_MESSAGING_ENABLED': _env_bool(
+            environ, 'OPENWA_MESSAGING_ENABLED', default=False
+        ),
+    }
+    enabled_children = [name for name, enabled in children.items() if enabled]
+    if enabled_children and not master:
+        raise RuntimeError(
+            'OPENWA_ENABLED is required when enabling: '
+            + ', '.join(enabled_children)
+        )
+    if master:
+        raise RuntimeError(
+            'openWA is scaffolded but not implemented or approved; '
+            'keep OPENWA_ENABLED=false'
+        )
+    return {
+        'OPENWA_ENABLED': False,
+        'OPENWA_IMPLEMENTATION_STATUS': 'scaffold_only',
+        **children,
+    }
+
+
+def _env_positive_number(environ, key, default, *, integer=False):
+    raw = environ.get(key, default)
+    try:
+        value = int(raw) if integer else float(raw)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f'{key} must be a positive number') from exc
+    if value <= 0:
+        raise RuntimeError(f'{key} must be a positive number')
+    return value
+
+
+def build_pricing_config(environ=None):
+    """Build the configurable, default-off paid-plan purchase settings."""
+    environ = os.environ if environ is None else environ
+    master = _env_bool(environ, 'PRICING_ENABLED', default=False)
+    children = {
+        'PRICING_HYBRID_ENABLED': _env_bool(
+            environ, 'PRICING_HYBRID_ENABLED', default=False
+        ),
+        'PRICING_HYBRID_PLUS_ENABLED': _env_bool(
+            environ, 'PRICING_HYBRID_PLUS_ENABLED', default=False
+        ),
+        'PRICING_PREMIUM_ENABLED': _env_bool(
+            environ, 'PRICING_PREMIUM_ENABLED', default=False
+        ),
+    }
+    enabled_children = [name for name, enabled in children.items() if enabled]
+    if enabled_children and not master:
+        raise RuntimeError(
+            'PRICING_ENABLED is required when enabling: '
+            + ', '.join(enabled_children)
+        )
+    if children['PRICING_PREMIUM_ENABLED']:
+        raise RuntimeError(
+            'PRICING_PREMIUM_ENABLED requires the approved live openWA adapter'
+        )
+    return {
+        'PRICING_ENABLED': master,
+        **children,
+        'PRICING_HYBRID_PRICE': _env_positive_number(
+            environ, 'PRICING_HYBRID_PRICE', 20
+        ),
+        'PRICING_HYBRID_PLUS_PRICE': _env_positive_number(
+            environ, 'PRICING_HYBRID_PLUS_PRICE', 40
+        ),
+        'PRICING_PREMIUM_PRICE': _env_positive_number(
+            environ, 'PRICING_PREMIUM_PRICE', 60
+        ),
+        'PRICING_HYBRID_DURATION_DAYS': _env_positive_number(
+            environ, 'PRICING_HYBRID_DURATION_DAYS', 7, integer=True
+        ),
+        'PRICING_HYBRID_PLUS_DURATION_DAYS': _env_positive_number(
+            environ, 'PRICING_HYBRID_PLUS_DURATION_DAYS', 7, integer=True
+        ),
+        'PRICING_PREMIUM_DURATION_DAYS': _env_positive_number(
+            environ, 'PRICING_PREMIUM_DURATION_DAYS', 7, integer=True
+        ),
     }
 
 

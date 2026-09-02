@@ -10,6 +10,12 @@ from database import (
 from config import GameConfig
 from Forms import LoginForm, RegistrationForm
 from functools import wraps
+from pricing.referrals import (
+    attribute_referral,
+    find_active_referral_code,
+    get_or_create_referral_code,
+    normalize_referral_code,
+)
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -27,7 +33,40 @@ def _grant_registration_promotional_credits(player):
         balance_before=balance_before,
         balance_after=player.promotional_credit_balance,
         description='Version 3 registration promotional credit',
+        commit=False,
     )
+
+
+def _validate_optional_referral_code(value):
+    code = normalize_referral_code(value)
+    if not code:
+        return None
+    if find_active_referral_code(code) is None:
+        raise ValueError('Referral code is invalid or inactive')
+    return code
+
+
+def _complete_registration(
+    *, username, email, password, phone=None, full_name=None, country=None,
+    referral_code=None,
+):
+    """Create the account, wallet grant, own code and attribution atomically."""
+    referral_code = _validate_optional_referral_code(referral_code)
+    user, player = create_user(
+        username=username,
+        email=email,
+        password=password,
+        phone=phone,
+        full_name=full_name,
+        country=country,
+        commit=False,
+    )
+    _grant_registration_promotional_credits(player)
+    get_or_create_referral_code(user.id, commit=False)
+    if referral_code:
+        attribute_referral(referral_code, user.id, commit=False)
+    db.session.commit()
+    return user, player
 
 
 def login_required(f):
@@ -84,16 +123,15 @@ def register():
         
         try:
             # Create user and player
-            user, player = create_user(
+            user, player = _complete_registration(
                 username=username,
                 email=email,
                 password=password,
                 phone=phone,
                 full_name=full_name,
-                country=form.country.data
+                country=form.country.data,
+                referral_code=form.referral_code.data,
             )
-            
-            _grant_registration_promotional_credits(player)
             
             # Log user in
             session['user_id'] = user.id
@@ -129,16 +167,15 @@ def register_api_internal():
     
     try:
         # Create user and player
-        user, player = create_user(
+        user, player = _complete_registration(
             username=data['username'],
             email=data['email'],
             password=data['password'],
             phone=data.get('phone'),
             full_name=data.get('full_name'),
-            country=data.get('country')
+            country=data.get('country'),
+            referral_code=data.get('referral_code'),
         )
-        
-        _grant_registration_promotional_credits(player)
         
         # Log user in
         session['user_id'] = user.id
@@ -154,6 +191,9 @@ def register_api_internal():
             'player': player.to_dict()
         }), 201
         
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -413,16 +453,15 @@ def register_api():
     
     try:
         # Create user and player
-        user, player = create_user(
+        user, player = _complete_registration(
             username=data['username'],
             email=data['email'],
             password=data['password'],
             phone=data.get('phone'),
             full_name=data.get('full_name'),
-            country=data.get('country')
+            country=data.get('country'),
+            referral_code=data.get('referral_code'),
         )
-        
-        _grant_registration_promotional_credits(player)
         
         # Log user in
         session['user_id'] = user.id
@@ -438,6 +477,9 @@ def register_api():
             'player': player.to_dict()
         }), 201
         
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

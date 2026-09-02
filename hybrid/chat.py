@@ -191,6 +191,9 @@ def _authorized_chat_context(app, user_id, room_code):
     opponent_id = room.get_opponent_id(user_id)
     if not opponent_id:
         raise PermissionError('opponent_unavailable')
+    opponent = db.session.get(User, opponent_id)
+    if not opponent or not opponent.is_active:
+        raise PermissionError('opponent_unavailable')
     if users_are_blocked(user_id, opponent_id):
         raise PermissionError('blocked')
 
@@ -211,6 +214,14 @@ def _authorized_chat_context(app, user_id, room_code):
         and opponent_profile.chat_preference_enabled
     ):
         raise PermissionError('chat_preference_required')
+    if (
+        own_profile.custom_caption
+        and own_profile.moderation_status != 'approved'
+    ) or (
+        opponent_profile.custom_caption
+        and opponent_profile.moderation_status != 'approved'
+    ):
+        raise PermissionError('caption_review_required')
     own_room_visible = (
         room.player1_profile_visible if user_id == room.player1_id
         else room.player2_profile_visible
@@ -275,6 +286,18 @@ def init_hybrid_chat_events(socketio, app):
                 'reason': str(exc),
             })
             return
+        except Exception:
+            db.session.rollback()
+            app.logger.exception(
+                'Optional Q-messanger authorization failed for room %s',
+                room_code,
+            )
+            emit('hybrid_chat_context', {
+                'room_code': room_code,
+                'available': False,
+                'reason': 'authorization_unavailable',
+            })
+            return
         try:
             latest = app.extensions['hybrid_chat_store'].latest(room_code)
         except Exception:
@@ -304,6 +327,17 @@ def init_hybrid_chat_events(socketio, app):
             return
         except PermissionError as exc:
             _chat_error(str(exc), 'Q-messànger is unavailable for this game')
+            return
+        except Exception:
+            db.session.rollback()
+            app.logger.exception(
+                'Optional Q-messanger authorization failed for room %s',
+                data.get('room_code') if isinstance(data, dict) else None,
+            )
+            _chat_error(
+                'authorization_unavailable',
+                'Q-messànger is temporarily unavailable',
+            )
             return
 
         store = app.extensions['hybrid_chat_store']

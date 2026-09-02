@@ -244,10 +244,41 @@
                 <span class="pill">Private game chat</span>
                 <strong><input type="checkbox" id="settingHybridChat"> Enable Q-messànger for consenting opponents</strong>
             </label>
+            <label class="summary-card">
+                <span class="pill">Open brackets</span>
+                <strong><input type="checkbox" id="settingHybridDiscovery"> Enable privacy-safe bracket discovery</strong>
+            </label>
         </div>
         <h3>Locked for this MVP stage</h3>
         <div id="hybridLockedSettings" class="status"></div>
         <p class="status">Manage seeking, selling and collaboration wording in the caption catalogue below. Custom player captions still require moderation.</p>
+    </div>
+
+    <div class="panel" id="pricingSettingsPanel">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Paid Plan Settings</h2>
+            <button id="savePricingSettings">Save plan settings</button>
+        </div>
+        <p class="status" id="pricingSettingsStatus" role="status" aria-live="polite">Loading paid plan settings...</p>
+        <div class="summary-grid">
+            <label class="summary-card">
+                <span class="pill">Master sales switch</span>
+                <strong><input type="checkbox" id="settingPricingEnabled"> Allow paid-plan purchases</strong>
+            </label>
+            <label class="summary-card">
+                <span class="pill">E20 pass</span>
+                <strong><input type="checkbox" id="settingPricingHybrid"> Sell Hybrid</strong>
+            </label>
+            <label class="summary-card">
+                <span class="pill">E40 pass</span>
+                <strong><input type="checkbox" id="settingPricingHybridPlus"> Sell Hybrid+</strong>
+            </label>
+        </div>
+        <h3>Plan terms</h3>
+        <div id="pricingPlanTerms" class="status"></div>
+        <h3>Locked until its benefit is live</h3>
+        <div id="pricingLockedSettings" class="status"></div>
+        <p class="status">The master switch stops all new sales immediately. Existing passes keep their recorded expiry, while Hybrid capability switches remain the operational kill switches.</p>
     </div>
 
     <div class="panel" id="hybridCaptionCataloguePanel">
@@ -836,21 +867,25 @@
             const shadow = document.getElementById('settingHybridShadow');
             const live = document.getElementById('settingHybridLive');
             const chat = document.getElementById('settingHybridChat');
+            const discovery = document.getElementById('settingHybridDiscovery');
             if (!master.checked) {
                 profile.checked = false;
                 shadow.checked = false;
                 live.checked = false;
                 chat.checked = false;
+                discovery.checked = false;
             }
             profile.disabled = !master.checked;
             if (!profile.checked) {
                 shadow.checked = false;
                 live.checked = false;
                 chat.checked = false;
+                discovery.checked = false;
             }
             shadow.disabled = !master.checked || !profile.checked;
             live.disabled = !master.checked || !profile.checked;
             chat.disabled = !master.checked || !profile.checked;
+            discovery.disabled = !master.checked || !profile.checked;
         }
 
         async function fetchHybridSettings() {
@@ -868,6 +903,7 @@
             document.getElementById('settingHybridShadow').checked = Boolean(values.HYBRID_MATCHING_SHADOW_ENABLED?.enabled);
             document.getElementById('settingHybridLive').checked = Boolean(values.HYBRID_MATCHING_ENABLED?.enabled);
             document.getElementById('settingHybridChat').checked = Boolean(values.HYBRID_CHAT_ENABLED?.enabled);
+            document.getElementById('settingHybridDiscovery').checked = Boolean(values.HYBRID_BRACKET_DISCOVERY_ENABLED?.enabled);
             document.getElementById('hybridLockedSettings').innerHTML = (settings.locked || []).map(item =>
                 `<div><strong>${escapeHtml(item.key)}</strong>: ${escapeHtml(item.reason)}</div>`
             ).join('');
@@ -876,6 +912,59 @@
                 ? `Active settings loaded. ${overridden} value(s) are stored as administrator overrides.`
                 : 'Using environment defaults. Saving will create persistent administrator overrides.';
             syncHybridSettingDependencies();
+        }
+
+        function syncPricingSettingDependencies() {
+            const master = document.getElementById('settingPricingEnabled');
+            const hybrid = document.getElementById('settingPricingHybrid');
+            const hybridPlus = document.getElementById('settingPricingHybridPlus');
+            if (!master.checked) {
+                hybrid.checked = false;
+                hybridPlus.checked = false;
+            }
+            hybrid.disabled = !master.checked;
+            hybridPlus.disabled = !master.checked;
+        }
+
+        async function fetchPricingSettings() {
+            const response = await fetch('/api/admin/pricing/settings', { credentials: 'same-origin' });
+            if (!response.ok) return;
+            const data = await response.json();
+            const settings = data.settings || {};
+            const values = Object.fromEntries((settings.editable || []).map(item => [item.key, item]));
+            document.getElementById('settingPricingEnabled').checked = Boolean(values.PRICING_ENABLED?.enabled);
+            document.getElementById('settingPricingHybrid').checked = Boolean(values.PRICING_HYBRID_ENABLED?.enabled);
+            document.getElementById('settingPricingHybridPlus').checked = Boolean(values.PRICING_HYBRID_PLUS_ENABLED?.enabled);
+            document.getElementById('pricingLockedSettings').innerHTML = (settings.locked || []).map(item =>
+                `<div><strong>${escapeHtml(item.key)}</strong>: ${escapeHtml(item.reason)}</div>`
+            ).join('');
+            document.getElementById('pricingPlanTerms').innerHTML = (data.catalog?.plans || [])
+                .filter(plan => plan.code !== 'free')
+                .map(plan => `<div><strong>${escapeHtml(plan.name)}</strong>: E${Number(plan.price_emalangeni).toFixed(0)} for ${plan.duration_days} day(s) — ${plan.purchasable ? 'available' : 'not for sale'}</div>`)
+                .join('');
+            const overridden = (settings.editable || []).filter(item => item.source === 'admin_override').length;
+            document.getElementById('pricingSettingsStatus').textContent = overridden
+                ? `Plan controls loaded. ${overridden} value(s) are stored as administrator overrides.`
+                : 'Using environment defaults. Saving will create persistent administrator overrides.';
+            syncPricingSettingDependencies();
+        }
+
+        async function savePricingSettings() {
+            syncPricingSettingDependencies();
+            const response = await fetch('/api/admin/pricing/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    PRICING_ENABLED: document.getElementById('settingPricingEnabled').checked,
+                    PRICING_HYBRID_ENABLED: document.getElementById('settingPricingHybrid').checked,
+                    PRICING_HYBRID_PLUS_ENABLED: document.getElementById('settingPricingHybridPlus').checked,
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Could not save paid plan settings');
+            document.getElementById('pricingSettingsStatus').textContent = data.message;
+            await fetchPricingSettings();
         }
 
         function captionSelectOptions(values, selected, includeAny = false) {
@@ -953,6 +1042,7 @@
                 HYBRID_MATCHING_SHADOW_ENABLED: document.getElementById('settingHybridShadow').checked,
                 HYBRID_MATCHING_ENABLED: document.getElementById('settingHybridLive').checked,
                 HYBRID_CHAT_ENABLED: document.getElementById('settingHybridChat').checked,
+                HYBRID_BRACKET_DISCOVERY_ENABLED: document.getElementById('settingHybridDiscovery').checked,
             };
             const response = await fetch('/api/admin/hybrid/settings', {
                 method: 'PATCH',
@@ -968,6 +1058,7 @@
             await fetchHybridReports();
             await fetchHybridMatchAudits();
             await fetchHybridPilotMetrics();
+            await fetchPricingSettings();
         }
 
         async function fetchHybridReports() {
@@ -1385,6 +1476,7 @@
         });
         document.getElementById('settingHybridEnabled').addEventListener('change', syncHybridSettingDependencies);
         document.getElementById('settingHybridProfile').addEventListener('change', syncHybridSettingDependencies);
+        document.getElementById('settingHybridDiscovery').addEventListener('change', syncHybridSettingDependencies);
         document.getElementById('settingHybridShadow').addEventListener('change', event => {
             if (event.target.checked) document.getElementById('settingHybridLive').checked = false;
             syncHybridSettingDependencies();
@@ -1400,6 +1492,14 @@
                 document.getElementById('hybridSettingsStatus').textContent = 'Save failed: ' + err.message;
             }
         });
+        document.getElementById('settingPricingEnabled').addEventListener('change', syncPricingSettingDependencies);
+        document.getElementById('savePricingSettings').addEventListener('click', async () => {
+            try {
+                await savePricingSettings();
+            } catch (err) {
+                document.getElementById('pricingSettingsStatus').textContent = 'Save failed: ' + err.message;
+            }
+        });
         document.getElementById('hybridReportStatus').addEventListener('change', fetchHybridReports);
         document.getElementById('reloadHybridReports').addEventListener('click', fetchHybridReports);
         document.getElementById('reloadHybridMatchAudits').addEventListener('click', fetchHybridMatchAudits);
@@ -1412,6 +1512,7 @@
         fetchCupRoster();
         fetchHybridProfiles();
         fetchHybridSettings();
+        fetchPricingSettings();
         fetchHybridCaptions();
         fetchHybridReports();
         fetchHybridMatchAudits();

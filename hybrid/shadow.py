@@ -48,7 +48,7 @@ def _load_json(value, fallback):
         return fallback
 
 
-def build_participant_snapshots(user_ids):
+def build_participant_snapshots(user_ids, config=None):
     """Capture only the structured, non-caption fields required by the matcher."""
     ordered_ids = tuple(dict.fromkeys(int(user_id) for user_id in user_ids))
     users = {
@@ -82,11 +82,21 @@ def build_participant_snapshots(user_ids):
             raise LookupError(f'Tournament participant user {user_id} was not found')
         profile = profiles.get(user_id)
         profile_enabled = bool(profile and profile.is_enabled)
+        pricing_active = bool(config and config.get('PRICING_ENABLED'))
+        if pricing_active and profile and profile.intent != 'seeking':
+            from pricing.service import entitlement_payload
+            entitlement = entitlement_payload(user_id)
+            entitlement_active = entitlement['plan_level'] >= 1
+            plan_level = entitlement['plan_level']
+        else:
+            # Free seekers create marketplace demand. Before paid pricing is
+            # activated, preserve the accepted internal-pilot behavior.
+            entitlement_active = profile_enabled
+            plan_level = 0
         snapshots.append(ParticipantSnapshot(
             user_id=user_id,
             profile_enabled=profile_enabled,
-            # Version 3 pilot profiles receive temporary no-payment access.
-            entitlement_active=profile_enabled,
+            entitlement_active=entitlement_active,
             suspended=not bool(user.is_active),
             is_visible=bool(profile and profile.is_visible),
             moderation_status=(
@@ -96,7 +106,7 @@ def build_participant_snapshots(user_ids):
             category=profile.category if profile else None,
             subcategory=profile.subcategory if profile else None,
             location=profile.location if profile else None,
-            plan_level=0,
+            plan_level=plan_level,
             blocked_user_ids=frozenset(blocks_by_user[user_id]),
         ))
     return tuple(snapshots)
@@ -118,7 +128,7 @@ def record_shadow_audit(tournament, participant_user_ids, legacy_seed_order, con
 
 def evaluate_matching(tournament, participant_user_ids, config):
     """Evaluate one deterministic proposal without mutating tournament state."""
-    snapshots = build_participant_snapshots(participant_user_ids)
+    snapshots = build_participant_snapshots(participant_user_ids, config)
     policy = MatchingPolicy(
         timeout_ms=int(config.get('HYBRID_MATCHING_TIMEOUT_MS', 250))
     )

@@ -1,6 +1,9 @@
 """Privacy-safe aggregate measurements for the Version 3 MVP pilot."""
 
 from datetime import datetime
+import threading
+
+from sqlalchemy.exc import IntegrityError
 
 from database import (
     DiscoveryMatchAudit,
@@ -18,6 +21,7 @@ ALLOWED_COUNTERS = {
     'chat_messages_delivered',
     'chat_storage_failures',
 }
+_COUNTER_LOCK = threading.RLock()
 
 
 def _percentage(numerator, denominator):
@@ -36,17 +40,42 @@ def increment_pilot_counter(metric_key, amount=1):
         return False
     if amount <= 0:
         return False
-    try:
-        metric = HybridPilotMetric.query.filter_by(metric_key=metric_key).first()
-        if metric is None:
-            metric = HybridPilotMetric(metric_key=metric_key, total_count=0)
-            db.session.add(metric)
-        metric.total_count += amount
-        db.session.commit()
-        return True
-    except Exception:
-        db.session.rollback()
-        return False
+    with _COUNTER_LOCK:
+        try:
+            updated = HybridPilotMetric.query.filter_by(
+                metric_key=metric_key
+            ).update({
+                HybridPilotMetric.total_count:
+                    HybridPilotMetric.total_count + amount,
+                HybridPilotMetric.updated_at: datetime.utcnow(),
+            }, synchronize_session=False)
+            if updated:
+                db.session.commit()
+                return True
+
+            db.session.add(HybridPilotMetric(
+                metric_key=metric_key,
+                total_count=amount,
+            ))
+            try:
+                db.session.commit()
+                return True
+            except IntegrityError:
+                # Another process may have created the unique counter row after
+                # our UPDATE. Retry as an atomic increment without losing data.
+                db.session.rollback()
+                updated = HybridPilotMetric.query.filter_by(
+                    metric_key=metric_key
+                ).update({
+                    HybridPilotMetric.total_count:
+                        HybridPilotMetric.total_count + amount,
+                    HybridPilotMetric.updated_at: datetime.utcnow(),
+                }, synchronize_session=False)
+                db.session.commit()
+                return bool(updated)
+        except Exception:
+            db.session.rollback()
+            return False
 
 
 def pilot_metrics_snapshot():

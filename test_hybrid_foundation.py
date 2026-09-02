@@ -49,11 +49,24 @@ class TestHybridConfiguration(unittest.TestCase):
     def test_unimplemented_or_post_pilot_features_fail_closed(self):
         for flag in (
             'HYBRID_MATCHING_ENABLED',
-            'HYBRID_BRACKET_DISCOVERY_ENABLED', 'HYBRID_PAYMENTS_ENABLED',
+            'HYBRID_PAYMENTS_ENABLED',
             'HYBRID_RELATIONSHIP_ENABLED',
         ):
             with self.subTest(flag=flag), self.assertRaises(RuntimeError):
                 build_hybrid_config({'HYBRID_ENABLED': 'true', flag: 'true'})
+
+    def test_bracket_discovery_requires_profiles_and_can_be_enabled(self):
+        with self.assertRaisesRegex(RuntimeError, 'HYBRID_PROFILE_ENABLED'):
+            build_hybrid_config({
+                'HYBRID_ENABLED': 'true',
+                'HYBRID_BRACKET_DISCOVERY_ENABLED': 'true',
+            })
+        config = build_hybrid_config({
+            'HYBRID_ENABLED': 'true',
+            'HYBRID_PROFILE_ENABLED': 'true',
+            'HYBRID_BRACKET_DISCOVERY_ENABLED': 'true',
+        })
+        self.assertTrue(config['HYBRID_BRACKET_DISCOVERY_ENABLED'])
 
     def test_chat_requires_master_and_can_be_enabled_with_profiles(self):
         with self.assertRaisesRegex(RuntimeError, 'HYBRID_ENABLED'):

@@ -331,6 +331,10 @@ def get_game_context(user_id, room_code):
     if not room.is_player_in_room(user_id):
         raise PermissionError('You are not a participant in this game room')
 
+    requester = db.session.get(User, user_id)
+    if requester is None or not requester.is_active:
+        raise PermissionError('Your account is not active')
+
     opponent_id = room.get_opponent_id(user_id)
     own_profile_visible = bool(
         room.player1_profile_visible
@@ -338,6 +342,19 @@ def get_game_context(user_id, room_code):
         else room.player2_profile_visible
     )
     if opponent_id is None:
+        return {
+            'available': False,
+            'reason': 'opponent_unavailable',
+            'own_profile_visible': own_profile_visible,
+        }
+    if room.status not in ('in_progress', 'paused'):
+        return {
+            'available': False,
+            'reason': 'room_inactive',
+            'own_profile_visible': own_profile_visible,
+        }
+    opponent = db.session.get(User, opponent_id)
+    if opponent is None or not opponent.is_active:
         return {
             'available': False,
             'reason': 'opponent_unavailable',
@@ -363,7 +380,15 @@ def get_game_context(user_id, room_code):
         }
 
     profile = DiscoveryProfile.query.filter_by(user_id=opponent_id).first()
-    if profile is None or not profile.is_enabled or not profile.is_visible:
+    if (
+        profile is None
+        or not profile.is_enabled
+        or not profile.is_visible
+        or (
+            profile.custom_caption
+            and profile.moderation_status != 'approved'
+        )
+    ):
         return {
             'available': False,
             'reason': 'profile_unavailable',
@@ -371,7 +396,6 @@ def get_game_context(user_id, room_code):
         }
 
     serialized = serialize_profile(profile)
-    opponent = db.session.get(User, opponent_id)
     caption = serialized.get('caption_preview')
     if not caption:
         return {

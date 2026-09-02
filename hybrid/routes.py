@@ -25,6 +25,7 @@ from hybrid.service import (
 from hybrid.shadow import list_match_audits, shadow_mode_enabled
 from hybrid.settings import EDITABLE_FLAGS, serialize_settings, update_settings
 from hybrid.metrics import pilot_metrics_snapshot
+from hybrid.bracket_discovery import open_bracket_relevance
 from hybrid.catalog import (
     ALLOWED_PLACEHOLDERS,
     CATEGORIES,
@@ -57,6 +58,15 @@ def _json_object():
     if not isinstance(payload, dict):
         raise ValueError('JSON payload must be an object')
     return payload
+
+
+@hybrid_bp.get('/api/hybrid/open-brackets/relevance')
+@login_required
+def open_bracket_relevance_api():
+    results = open_bracket_relevance(session['user_id'], current_app.config)
+    if results is None:
+        abort(404)
+    return jsonify({'brackets': results})
 
 
 @hybrid_bp.route('/api/hybrid/profile', methods=['GET', 'PATCH'])

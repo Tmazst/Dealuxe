@@ -2,6 +2,8 @@ instance/*.db
 instance/*.sqlite
 instance/*.sqlite3
 *.md
+!project_upgrade_document/V3_0907_INCIDENT_RESPONSE_RUNBOOK.md
+!project_upgrade_document/V3_0908_OPERATIONS_RUNBOOK.md
 .env
 .venv
 *.zip
