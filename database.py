@@ -2,9 +2,11 @@
 Database Configuration and Models
 SQLAlchemy setup for Dealuxe Card Game
 """
+from flask import current_app
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
+from pathlib import Path
 import uuid
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import synonym
@@ -12,6 +14,26 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 
 db = SQLAlchemy()
+
+_sqlalchemy_drop_all = db.drop_all
+
+
+def _guarded_drop_all(*args, **kwargs):
+    """Refuse test cleanup against the default local development database."""
+    if current_app.config.get('TESTING') and db.engine.url.get_backend_name() == 'sqlite':
+        database_path = db.engine.url.database
+        if database_path:
+            active_path = Path(database_path).resolve()
+            protected_path = (Path(current_app.instance_path) / 'dealuxe_game.db').resolve()
+            if active_path == protected_path:
+                raise RuntimeError(
+                    'Refusing db.drop_all(): tests are still bound to the local '
+                    'development database. Set DEALUXE_DATABASE_URI before importing app.'
+                )
+    return _sqlalchemy_drop_all(*args, **kwargs)
+
+
+db.drop_all = _guarded_drop_all
 
 
 def _table_has_column(table_name, column_name):

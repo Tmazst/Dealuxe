@@ -141,7 +141,8 @@
 .hybrid-profile-toggle:focus-visible {
     border-color: #fff;
     color: #fff;
-    outline: none;
+    outline: 3px solid rgba(255, 255, 255, 0.72);
+    outline-offset: 2px;
 }
 
 .hybrid-profile-sharing {
@@ -200,7 +201,8 @@
 }
 
 .hybrid-chat-form button {
-    width: 38px;
+    width: 44px;
+    min-height: 44px;
     border: 1px solid #fff;
     border-radius: 9px;
     background: #fff;
@@ -228,11 +230,52 @@
 
 @media (max-width: 560px) {
     .agent-panel {
-        width: 94%;
-        flex-direction:column;
+        width: 100%;
+        padding: 12px;
+        flex-direction: column;
+        box-sizing: border-box;
     }
 
     .hybrid-profile-heading {
         align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .hybrid-profile-toggle {
+        min-height: 40px;
+        padding: 8px 12px;
+    }
+
+    .hybrid-profile-sharing {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        font-size: 13px;
+        line-height: 1.35;
+    }
+
+    .hybrid-profile-sharing input {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 20px;
+    }
+
+    .hybrid-profile-sharing-status {
+        width: 100%;
+        margin-left: 27px;
+    }
+
+    .hybrid-chat-form input {
+        min-height: 44px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-panel *,
+    .agent-panel *::before,
+    .agent-panel *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
     }
 }

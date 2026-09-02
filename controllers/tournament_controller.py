@@ -53,6 +53,35 @@ def _tournament_room(tournament_id):
     return f'tournament_{tournament_id}'
 
 
+def _locks_when_full(tournament):
+    """Return whether a full open bracket should start automatically.
+
+    The explicit auto-lock switch and the ``seats_filled`` start option both
+    mean the same thing once the final seat is occupied.  Treating them as
+    unrelated previously left full tournaments stuck in the waiting room when
+    the creator selected "When seats are filled" but did not also tick the
+    auto-lock checkbox.
+    """
+    schedule = tournament.schedule
+    return bool(
+        tournament.is_auto_lock
+        or (schedule is not None and schedule.start_option == 'seats_filled')
+    )
+
+
+def _recover_full_waiting_tournament(tournament):
+    """Lock a previously stuck full waiting-room tournament when it is seen."""
+    if tournament.status != 'open' or not _locks_when_full(tournament):
+        return False
+    registered = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, status='registered'
+    ).count()
+    if registered < tournament.max_players:
+        return False
+    ok, _error = _perform_tournament_lock(tournament)
+    return ok
+
+
 def _lock_consensus_info(tournament):
     """Vote status for manual-lock consensus (D3).
 
@@ -65,7 +94,7 @@ def _lock_consensus_info(tournament):
     voters_needed = [p for p in participants if p.user_id != tournament.creator_id]
     votes_received = sum(1 for p in voters_needed if p.lock_voted)
     return {
-        'mode': 'auto' if tournament.is_auto_lock else 'manual',
+        'mode': 'auto' if _locks_when_full(tournament) else 'manual',
         'votes_needed': len(voters_needed),
         'votes_received': votes_received,
         'consensus_reached': bool(voters_needed and votes_received >= len(voters_needed)),
@@ -1058,6 +1087,10 @@ def init_tournament_events(socketio, app=None):
             return
 
         join_room(_tournament_room(tournament.id))
+        # Recovery path for brackets created before the seats-filled/auto-lock
+        # rule was unified. Refreshing any participant's waiting room is enough
+        # to build the bracket and broadcast the countdown.
+        _recover_full_waiting_tournament(tournament)
         summary = _serialize_tournament(tournament)
         emit('joined_tournament', {
             'tournament': summary,
@@ -1129,7 +1162,7 @@ def init_tournament_events(socketio, app=None):
         if tournament.status != 'open':
             emit('tournament_error', {'message': 'Tournament is already locked or completed'})
             return
-        if tournament.is_auto_lock:
+        if _locks_when_full(tournament):
             emit('tournament_error', {'message': 'This tournament is set to auto lock itself when players full'})
             return
         if _can_manage_tournament(tournament, user_id):
@@ -1505,7 +1538,10 @@ def join_tournament(tournament_id):
             'current_players': tournament.current_player_count,
         }, room=_tournament_room(tournament.id))
 
-    if tournament.current_player_count >= tournament.max_players and tournament.is_auto_lock:
+    if (
+        tournament.current_player_count >= tournament.max_players
+        and _locks_when_full(tournament)
+    ):
         # Seats are full on an auto-lock bracket: lock it, build the bracket and
         # announce (tournament_locked + tournament_starting) so every waiting
         # room auto-redirects to the bracket page.

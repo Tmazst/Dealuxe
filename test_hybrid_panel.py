@@ -313,6 +313,29 @@ class TestHybridGameContext(unittest.TestCase):
         self.assertIn(b'id="card-count-1"', response.data)
         self.assertIn(b'id="card-count-2"', response.data)
 
+    def test_game_and_qmessanger_have_keyboard_mobile_accessibility_contracts(self):
+        self.login(self.first)
+        app.config['HYBRID_CHAT_ENABLED'] = True
+        page = self.client.get('/game/PANEL123')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'class="skip-link" href="#game-main"', page.data)
+        self.assertIn(b'id="game-main" tabindex="-1"', page.data)
+        self.assertIn(b'id="hybrid-chat-latest"', page.data)
+        self.assertIn(b'role="log"', page.data)
+        self.assertIn(b'id="hybrid-chat-status"', page.data)
+        self.assertIn(b'role="status"', page.data)
+        self.assertIn(b'aria-describedby="hybrid-chat-status"', page.data)
+
+        game_script = self.client.get('/static/js/game.js').get_data(as_text=True)
+        self.assertIn("div.setAttribute('role', 'button')", game_script)
+        self.assertIn("event.key !== 'Enter' && event.key !== ' '", game_script)
+        panel_css = self.client.get(
+            '/static/css/hybrid-panel.css'
+        ).get_data(as_text=True)
+        self.assertIn('@media (max-width: 560px)', panel_css)
+        self.assertIn('min-height: 44px', panel_css)
+        self.assertIn('prefers-reduced-motion: reduce', panel_css)
+
     def test_requesting_player_is_always_rendered_on_the_left(self):
         self.login(self.second)
         response = self.client.get('/game/PANEL123')

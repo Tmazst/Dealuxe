@@ -576,6 +576,27 @@ html,body{
     gap:16px;
 }
 
+.skip-link{
+    position:fixed;
+    top:8px;
+    left:8px;
+    z-index:10000;
+    padding:10px 14px;
+    border-radius:8px;
+    background:#fff;
+    color:#111827;
+    font-weight:800;
+    transform:translateY(-160%);
+}
+.skip-link:focus{transform:translateY(0);outline:3px solid #EF4036;outline-offset:2px}
+
+button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible{
+    outline:3px solid #fbbf24;
+    outline-offset:3px;
+}
+
 .brand{
     font-weight:700;
     letter-spacing:1px;
@@ -2086,6 +2107,16 @@ pre{
 .score-player-name{display:block;max-width:86px;overflow:hidden;color:#f8fafc;font-size:10px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
 
 @media(max-width:600px){
+    .site-header{padding:10px 12px;flex-wrap:wrap}
+    .site-header .controls{flex-wrap:wrap;justify-content:flex-end}
+    .app-grid{height:auto;min-height:100vh;overflow:visible;margin:10px auto;padding:0 8px 28px;gap:12px}
+    .app-grid>.panel{padding:10px}
+    .game-table{height:auto;min-height:410px;gap:12px}
+    .attack-pile{width:min(150px,42vw);height:86px}
+    .attack-pile-cont{justify-content:space-between;gap:4px}
+    .score-avatar{width:40px;height:40px}
+    .score-player-name{max-width:72px}
+    .player-cards-box{width:100%}
     .mode-caption-cont{padding:10px}
     .match-context{gap:6px 10px}
     .matchup-player strong{font-size:14px}
@@ -2093,6 +2124,15 @@ pre{
     .user-progress-bar-cont,.opponent-progress-bar-cont{width:50%;padding:6px;gap:6px}
     .user-progress-bar-cont .user-icon,.opponent-progress-bar-cont .user-icon{width:36px;height:36px;flex:0 0 36px}
     .user-progress-text{width:38px;font-size:11px}
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        scroll-behavior:auto !important;
+        animation-duration:0.01ms !important;
+        animation-iteration-count:1 !important;
+        transition-duration:0.01ms !important;
+    }
 }
 @keyframes draw-flash{
     0%{transform:translateY(0) scale(1); box-shadow:0 10px 30px rgba(255,184,77,0.14)}

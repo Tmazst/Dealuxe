@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 24px; background: #f7f8fb; color: #222; }
@@ -17,12 +18,34 @@
         .summary-card { background: #f3f6fb; border-radius: 10px; padding: 14px; }
         .summary-card strong { display: block; font-size: 1.2rem; margin-top: 6px; }
         .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #e3eeff; color: #2953bb; font-size: 0.82rem; }
+        *, *::before, *::after { box-sizing: border-box; }
+        .skip-link { position: fixed; top: 8px; left: 8px; z-index: 10000; padding: 10px 14px; border-radius: 8px; background: #111827; color: white; font-weight: 700; transform: translateY(-160%); }
+        .skip-link:focus { transform: translateY(0); outline: 3px solid #EF4036; outline-offset: 2px; }
+        button, input, select, textarea { min-height: 38px; font: inherit; }
+        button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible { outline: 3px solid #EF4036; outline-offset: 2px; }
+        .panel { overflow-x: auto; }
+        table { min-width: 720px; }
+        @media (max-width: 700px) {
+            body { margin: 10px; }
+            .panel { padding: 12px; }
+            .controls { align-items: stretch; }
+            .controls > label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
+            .controls input:not([type="checkbox"]), .controls select { width: 100%; max-width: 100%; }
+            #newCaptionText, #cupPositions58Reason, #cupPositions910Reason { min-width: 0 !important; }
+            button { min-height: 44px; }
+            .summary-grid { grid-template-columns: 1fr; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+        }
     </style>
 </head>
 <body>
+    <a class="skip-link" href="#admin-main">Skip to admin content</a>
+    <main id="admin-main" tabindex="-1">
     <div class="panel">
         <h1>Admin Dashboard</h1>
-        <p class="status" id="status">Loading...</p>
+        <p class="status" id="status" role="status" aria-live="polite">Loading...</p>
         <div class="summary-grid" id="summaryGrid"></div>
     </div>
 
@@ -36,7 +59,7 @@
             <button id="reloadButton">Reload</button>
         </div>
         <h2>Users</h2>
-        <table id="usersTable">
+        <table id="usersTable" aria-label="User administration">
             <thead>
                 <tr>
                     <th>ID</th>
@@ -57,7 +80,7 @@
 
     <div class="panel">
         <h2>Tournaments</h2>
-        <table id="tournamentsTable">
+        <table id="tournamentsTable" aria-label="Tournament administration">
             <thead>
                 <tr>
                     <th>ID</th>
@@ -93,8 +116,8 @@
             <button id="createCupTournament" data-action="createCupTournament" disabled>Create 64-player Cup</button>
         </div>
         <div class="summary-grid" id="cupSummaryGrid"></div>
-        <p class="status" id="cupRosterStatus"></p>
-        <table id="cupRosterTable">
+        <p class="status" id="cupRosterStatus" role="status" aria-live="polite"></p>
+        <table id="cupRosterTable" aria-label="uMshova Cup qualification roster">
             <thead>
                 <tr>
                     <th>Seat</th>
@@ -116,24 +139,24 @@
             <h2 style="margin-right:auto;">Cup Placement Administration</h2>
             <label>
                 Cup tournament ID:
-                <input id="cupPlacementTournamentId" type="number" min="1" style="width:100px;">
+                <input id="cupPlacementTournamentId" type="number" min="1" aria-label="Cup tournament ID" style="width:100px;">
             </label>
             <button data-action="loadCupPlacements">Load placements</button>
         </div>
-        <p class="status" id="cupPlacementStatus">Load a Cup to manage positions 5-10.</p>
+        <p class="status" id="cupPlacementStatus" role="status" aria-live="polite">Load a Cup to manage positions 5-10.</p>
         <div class="summary-grid" id="cupPlacementSummary"></div>
         <h3>Quarter-final losers: positions 5-8</h3>
         <p class="status">Order the four eligible players. Position 5 is the first selection.</p>
         <div class="controls" id="cupPositions58"></div>
         <div class="controls">
-            <input id="cupPositions58Reason" type="text" placeholder="Reason for ordering positions 5-8" style="min-width:320px;">
+            <input id="cupPositions58Reason" type="text" aria-label="Reason for ordering Cup positions 5 to 8" placeholder="Reason for ordering positions 5-8" style="min-width:320px;">
             <button data-action="saveCupPositions58">Save positions 5-8</button>
         </div>
         <h3>Administrator selections: positions 9-10</h3>
         <p class="status">Only eliminated players who did not reach the quarter-finals are available.</p>
         <div class="controls" id="cupPositions910"></div>
         <div class="controls">
-            <input id="cupPositions910Reason" type="text" placeholder="Reason for selecting positions 9-10" style="min-width:320px;">
+            <input id="cupPositions910Reason" type="text" aria-label="Reason for selecting Cup positions 9 and 10" placeholder="Reason for selecting positions 9-10" style="min-width:320px;">
             <button data-action="saveCupPositions910">Save positions 9-10</button>
         </div>
     </div>
@@ -153,7 +176,7 @@
             </label>
             <button id="reloadDisputes">Reload</button>
         </div>
-        <table id="disputesTable">
+        <table id="disputesTable" aria-label="Dispute administration">
             <thead>
                 <tr>
                     <th>ID</th>
@@ -175,7 +198,7 @@
             <button id="reloadHybridProfiles">Reload</button>
         </div>
         <p class="status">Private MVP profiles only. Round 1 matching and Q-messànger follow their selected switches; public discovery remains disabled.</p>
-        <table id="hybridProfilesTable">
+        <table id="hybridProfilesTable" aria-label="Hybrid discovery profiles">
             <thead>
                 <tr>
                     <th>Player</th>
@@ -199,7 +222,7 @@
             <h2 style="margin-right:auto;">Hybrid MVP Settings</h2>
             <button id="saveHybridSettings">Save settings</button>
         </div>
-        <p class="status" id="hybridSettingsStatus">Loading Hybrid settings...</p>
+        <p class="status" id="hybridSettingsStatus" role="status" aria-live="polite">Loading Hybrid settings...</p>
         <div class="summary-grid">
             <label class="summary-card">
                 <span class="pill">Master</span>
@@ -232,16 +255,16 @@
             <h2 style="margin-right:auto;">Hybrid Caption Catalogue</h2>
             <button id="reloadHybridCaptions">Reload</button>
         </div>
-        <p class="status" id="hybridCaptionStatus">Loading caption templates...</p>
+        <p class="status" id="hybridCaptionStatus" role="status" aria-live="polite">Loading caption templates...</p>
         <div class="controls">
-            <input id="newCaptionCode" placeholder="code_like_this" maxlength="80">
-            <input id="newCaptionName" placeholder="Display name" maxlength="120">
-            <select id="newCaptionIntent">
+            <input id="newCaptionCode" aria-label="New caption code" placeholder="code_like_this" maxlength="80">
+            <input id="newCaptionName" aria-label="New caption display name" placeholder="Display name" maxlength="120">
+            <select id="newCaptionIntent" aria-label="New caption intent">
                 <option value="selling">Selling</option>
                 <option value="seeking">Seeking</option>
                 <option value="collaboration">Collaboration</option>
             </select>
-            <select id="newCaptionCategory">
+            <select id="newCaptionCategory" aria-label="New caption category">
                 <option value="">Any category</option>
                 <option value="products">Products</option>
                 <option value="services">Services</option>
@@ -250,13 +273,13 @@
                 <option value="community">Community</option>
                 <option value="other">Other</option>
             </select>
-            <input id="newCaptionOrder" type="number" min="0" max="10000" value="100" style="width:90px;">
+            <input id="newCaptionOrder" aria-label="New caption display order" type="number" min="0" max="10000" value="100" style="width:90px;">
         </div>
         <div class="controls">
-            <input id="newCaptionText" placeholder="Example: I offer {subcategory} services in {location}." maxlength="280" style="min-width:520px;flex:1;">
+            <input id="newCaptionText" aria-label="New caption template wording" placeholder="Example: I offer {subcategory} services in {location}." maxlength="280" style="min-width:520px;flex:1;">
             <button id="createHybridCaption">Add caption</button>
         </div>
-        <table id="hybridCaptionTable">
+        <table id="hybridCaptionTable" aria-label="Hybrid caption catalogue">
             <thead>
                 <tr>
                     <th>Code</th>
@@ -278,7 +301,7 @@
             <h2 style="margin-right:auto;">Hybrid MVP Pilot Measurements</h2>
             <button id="reloadHybridPilotMetrics">Reload</button>
         </div>
-        <p class="status" id="hybridPilotMetricsStatus">Loading aggregate pilot measurements...</p>
+        <p class="status" id="hybridPilotMetricsStatus" role="status" aria-live="polite">Loading aggregate pilot measurements...</p>
         <div class="summary-grid" id="hybridPilotMetricsGrid"></div>
     </div>
 
@@ -296,7 +319,7 @@
             </label>
             <button id="reloadHybridReports">Reload</button>
         </div>
-        <table id="hybridReportsTable">
+        <table id="hybridReportsTable" aria-label="Hybrid safety reports">
             <thead>
                 <tr>
                     <th>ID</th>
@@ -319,8 +342,8 @@
             <h2 style="margin-right:auto;">Hybrid Matching Shadow Audits</h2>
             <button id="reloadHybridMatchAudits">Reload</button>
         </div>
-        <p class="status" id="hybridMatchAuditMode">Loading matching mode...</p>
-        <table id="hybridMatchAuditsTable">
+        <p class="status" id="hybridMatchAuditMode" role="status" aria-live="polite">Loading matching mode...</p>
+        <table id="hybridMatchAuditsTable" aria-label="Hybrid matching audits">
             <thead>
                 <tr>
                     <th>Tournament</th>
@@ -342,7 +365,7 @@
             <h2 style="margin-right:auto;">Audit Log</h2>
             <span class="status" id="auditViewing"></span>
         </div>
-        <table id="auditTable">
+        <table id="auditTable" aria-label="Administrator audit log">
             <thead>
                 <tr>
                     <th>Time</th>
@@ -361,7 +384,7 @@
             <h2 style="margin-right:auto;">Transactions</h2>
             <span class="status" id="txnStatus"></span>
         </div>
-        <table id="transactionsTable">
+        <table id="transactionsTable" aria-label="User transaction activity">
             <thead>
                 <tr>
                     <th>ID</th>
@@ -399,6 +422,7 @@
         </div>
         <pre id="logViewer" style="max-height:420px;overflow:auto;background:#0b0f1a;color:#c9d4f0;padding:12px;border-radius:8px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-all;">Loading...</pre>
     </div>
+    </main>
 
     <script>
         const statusEl = document.getElementById('status');
@@ -465,7 +489,7 @@
                     <td>${user.is_active ? 'Yes' : 'No'}</td>
                     <td>${user.is_admin ? 'Yes' : 'No'}</td>
                     <td>${user.is_super_admin ? 'Yes' : 'No'}</td>
-                    <td><input type="number" step="0.01" value="${user.real_balance ?? 0}" data-field="real_balance"></td>
+                    <td><input type="number" step="0.01" value="${user.real_balance ?? 0}" data-field="real_balance" aria-label="Real balance for ${escapeHtml(user.username)}"></td>
                     <td><input type="number" step="0.01" value="${user.promotional_credit_balance ?? user.fake_balance ?? 0}" data-field="promotional_credit_balance" aria-label="Promotional credit balance"></td>
                     <td><input type="number" min="0" step="1" value="${user.verified_referral_count ?? 0}" data-field="verified_referral_count" aria-label="Administrator-verified invite count"></td>
                     <td>
@@ -593,12 +617,12 @@
             }).join('');
             document.getElementById('cupPositions58').innerHTML = [5, 6, 7, 8].map(placement => `
                 <label>Position ${placement}:
-                    <select data-cup-placement="${placement}">${placementOptions(data.eligible_5_8, assignments[String(placement)]?.user_id)}</select>
+                    <select data-cup-placement="${placement}" aria-label="Cup position ${placement}">${placementOptions(data.eligible_5_8, assignments[String(placement)]?.user_id)}</select>
                 </label>
             `).join('');
             document.getElementById('cupPositions910').innerHTML = [9, 10].map(placement => `
                 <label>Position ${placement}:
-                    <select data-cup-placement="${placement}">${placementOptions(data.eligible_9_10, assignments[String(placement)]?.user_id)}</select>
+                    <select data-cup-placement="${placement}" aria-label="Cup position ${placement}">${placementOptions(data.eligible_9_10, assignments[String(placement)]?.user_id)}</select>
                 </label>
             `).join('');
         }
@@ -876,11 +900,11 @@
                 row.dataset.captionId = caption.id;
                 row.innerHTML = `
                     <td><strong>${escapeHtml(caption.code)}</strong></td>
-                    <td><input data-caption-field="display_name" maxlength="120" value="${escapeHtml(caption.display_name)}"></td>
-                    <td><select data-caption-field="intent">${captionSelectOptions(data.intents, caption.intent)}</select></td>
-                    <td><select data-caption-field="category">${captionSelectOptions(data.categories, caption.category, true)}</select></td>
-                    <td><textarea data-caption-field="template_text" maxlength="280" rows="3">${escapeHtml(caption.template_text)}</textarea></td>
-                    <td><input data-caption-field="sort_order" type="number" min="0" max="10000" value="${caption.sort_order}" style="width:75px;"></td>
+                    <td><input data-caption-field="display_name" aria-label="Display name for ${escapeHtml(caption.code)}" maxlength="120" value="${escapeHtml(caption.display_name)}"></td>
+                    <td><select data-caption-field="intent" aria-label="Intent for ${escapeHtml(caption.code)}">${captionSelectOptions(data.intents, caption.intent)}</select></td>
+                    <td><select data-caption-field="category" aria-label="Category for ${escapeHtml(caption.code)}">${captionSelectOptions(data.categories, caption.category, true)}</select></td>
+                    <td><textarea data-caption-field="template_text" aria-label="Template wording for ${escapeHtml(caption.code)}" maxlength="280" rows="3">${escapeHtml(caption.template_text)}</textarea></td>
+                    <td><input data-caption-field="sort_order" aria-label="Display order for ${escapeHtml(caption.code)}" type="number" min="0" max="10000" value="${caption.sort_order}" style="width:75px;"></td>
                     <td><span class="pill">${caption.is_active ? 'Active' : 'Inactive'}</span></td>
                     <td>
                         <button data-action="saveHybridCaption" data-id="${caption.id}">Save</button>

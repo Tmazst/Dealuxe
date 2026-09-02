@@ -185,6 +185,14 @@ class TestHybridAdminSettings(unittest.TestCase):
         self.assertIn(b'Hybrid MVP Pilot Measurements', response.data)
         self.assertIn(b'Manage seeking, selling and collaboration wording', response.data)
         self.assertIn(b'Locked for this MVP stage', response.data)
+        self.assertIn(b'name="viewport"', response.data)
+        self.assertIn(b'class="skip-link" href="#admin-main"', response.data)
+        self.assertIn(b'<main id="admin-main" tabindex="-1">', response.data)
+        self.assertIn(b'aria-label="uMshova Cup qualification roster"', response.data)
+        self.assertIn(b'aria-label="Hybrid safety reports"', response.data)
+        self.assertIn(b'aria-label="Hybrid matching audits"', response.data)
+        self.assertIn(b'@media (max-width: 700px)', response.data)
+        self.assertIn(b'prefers-reduced-motion: reduce', response.data)
 
     def test_privacy_safe_pilot_measurements_are_admin_only_and_aggregated(self):
         profile = DiscoveryProfile(

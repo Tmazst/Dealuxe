@@ -1791,6 +1791,9 @@ function renderCards(cards) {
     cards.forEach((card, index) => {
         const div = document.createElement("div");
         div.className = "card player-card";
+        div.tabIndex = 0;
+        div.setAttribute('role', 'button');
+        div.setAttribute('aria-label', `${card.rank} of ${card.suit}`);
         // Real-deck coloring: clubs & spades are black (hearts/diamonds stay red)
         if (card.suit === "♠" || card.suit === "♣") div.className += " black-suit";
         div.style.left = `${index * overlap}px`;
@@ -1807,6 +1810,11 @@ function renderCards(cards) {
         if (cardBg) div.className += ' player-card-' + cardBg + '-bg';
 
         div.addEventListener("click", () => onCardClick(index));
+        div.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            onCardClick(index);
+        });
 
         container.appendChild(div);
     });

@@ -1,8 +1,14 @@
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from datetime import datetime, timedelta
+import uuid
 
 os.environ['ENV'] = 'development'
+_TEST_DATABASE_PATH = Path(tempfile.gettempdir()) / f'dealuxe-schedule-{uuid.uuid4().hex}.db'
+os.environ['DEALUXE_DATABASE_URI'] = f'sqlite:///{_TEST_DATABASE_PATH.as_posix()}'
+os.environ['PILOT_MODE'] = 'false'
 
 from app import app
 from database import (
@@ -29,6 +35,7 @@ class TestTournamentSchedulingAndRoll(unittest.TestCase):
         app.config['TESTING'] = True
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         app.config['MOJAPOS_MOCK_MODE'] = 'true'
+        app.config['PILOT_MODE'] = False
         self.app_context = app.app_context()
         self.app_context.push()
         db.drop_all()
@@ -234,4 +241,3 @@ class TestTournamentSchedulingAndRoll(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

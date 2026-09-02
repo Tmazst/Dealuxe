@@ -23,6 +23,7 @@
 
 
 <body{% if tournament_room_code %} data-tournament-room="{{ tournament_room_code }}"{% endif %}>
+<a class="skip-link" href="#game-main">Skip to game</a>
 {% if tournament_room_code %}
 <script>window.tournamentRoomCode = {{ tournament_room_code|tojson }};
 window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
@@ -41,7 +42,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
 
 <div class="app-grid gen-flex">
 
-    <main class="panel">
+    <main class="panel" id="game-main" tabindex="-1">
         <div class="mode-caption-cont gen-flex-col">
             <span class="mode-key">{{ matchup.title }}</span>
             <div class="mode-value" aria-label="Current contestants">
@@ -153,16 +154,16 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                 </label>
                 {% if config.HYBRID_CHAT_ENABLED %}
                 <div id="hybrid-chat" class="hybrid-chat" hidden>
-                    <div id="hybrid-chat-latest" class="hybrid-chat-latest" aria-live="polite"></div>
+                    <div id="hybrid-chat-latest" class="hybrid-chat-latest" role="log" aria-live="polite" aria-relevant="additions text"></div>
                     <form id="hybrid-chat-form" class="hybrid-chat-form" autocomplete="off">
                         <label class="sr-only" for="hybrid-chat-input">Message your opponent</label>
                         <input id="hybrid-chat-input" type="text" maxlength="280" placeholder="Message your opponent…" aria-describedby="hybrid-chat-status">
                         <button id="hybrid-chat-send" type="submit" aria-label="Send message"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
                     </form>
-                    <div id="hybrid-chat-status" class="hybrid-chat-status" aria-live="polite"></div>
+                    <div id="hybrid-chat-status" class="hybrid-chat-status" role="status" aria-live="polite"></div>
                 </div>
                 {% endif %}
-                <div id="agent-text" class="agent-text" aria-live="polite">Welcome! I'll guide you through the game.</div>
+                <div id="agent-text" class="agent-text" role="status" aria-live="polite">Welcome! I'll guide you through the game.</div>
             </div>
         </section>
 

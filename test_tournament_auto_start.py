@@ -8,12 +8,20 @@
 * Joining emits participant_joined so the waiting-room player list refreshes.
 """
 
+import os
+from pathlib import Path
+import tempfile
 import unittest
+import uuid
+
+_TEST_DATABASE_PATH = Path(tempfile.gettempdir()) / f'dealuxe-auto-start-{uuid.uuid4().hex}.db'
+os.environ['DEALUXE_DATABASE_URI'] = f'sqlite:///{_TEST_DATABASE_PATH.as_posix()}'
+os.environ['PILOT_MODE'] = 'false'
 
 from app import app
 from database import (
     db, User, Player, Tournament, TournamentParticipant,
-    TournamentBracket, TournamentMatch, create_tournament_record,
+    TournamentBracket, TournamentMatch, TournamentSchedule, create_tournament_record,
     add_tournament_participant,
 )
 
@@ -23,6 +31,7 @@ class TestTournamentAutoStart(unittest.TestCase):
         app.config['TESTING'] = True
         app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
         app.config['MOJAPOS_MOCK_MODE'] = True
+        app.config['PILOT_MODE'] = False
         self.app_context = app.app_context()
         self.app_context.push()
         db.drop_all()
@@ -92,6 +101,53 @@ class TestTournamentAutoStart(unittest.TestCase):
         self.assertEqual(t.status, 'open')
         self.assertEqual(TournamentBracket.query.filter_by(
             tournament_id=t.id).count(), 0)
+
+    def test_seats_filled_schedule_starts_without_separate_auto_lock_flag(self):
+        t = self._make_tournament(is_auto_lock=False)
+        db.session.add(TournamentSchedule(
+            tournament_id=t.id,
+            start_option='seats_filled',
+            fallback_option='seats_filled',
+        ))
+        db.session.commit()
+
+        for u in self.users[1:]:
+            self._login(u)
+            r = self.client.post(f'/api/tournaments/{t.id}/join')
+            self.assertEqual(r.status_code, 200, r.get_json())
+
+        db.session.refresh(t)
+        self.assertEqual(t.status, 'in_progress')
+        self.assertGreater(
+            TournamentBracket.query.filter_by(tournament_id=t.id).count(), 0
+        )
+
+    def test_refresh_recovers_an_already_full_seats_filled_tournament(self):
+        from controllers.tournament_controller import _recover_full_waiting_tournament
+
+        t = self._make_tournament(is_auto_lock=False)
+        db.session.add(TournamentSchedule(
+            tournament_id=t.id,
+            start_option='seats_filled',
+            fallback_option='seats_filled',
+        ))
+        for u in self.users[1:]:
+            add_tournament_participant(
+                t.id, u.id, payment_status='completed', payment_method='wallet'
+            )
+            participant = TournamentParticipant.query.filter_by(
+                tournament_id=t.id, user_id=u.id
+            ).first()
+            participant.status = 'registered'
+        t.current_player_count = 4
+        db.session.commit()
+
+        self.assertTrue(_recover_full_waiting_tournament(t))
+        db.session.refresh(t)
+        self.assertEqual(t.status, 'in_progress')
+        self.assertGreater(
+            TournamentMatch.query.filter_by(tournament_id=t.id).count(), 0
+        )
 
     def test_lock_announcement_emits_locked_and_starting(self):
         import controllers.tournament_controller as tc

@@ -256,7 +256,7 @@
                 </div>
                 <label class="checkbox-field" for="autoLock">
                     <input type="checkbox" id="autoLock">
-                    <span>Auto-lock the bracket once the table is full</span>
+                    <span>Auto-lock early if the table fills before a scheduled start</span>
                 </label>
                 <div class="form-field">
                     <label>Start time</label>
@@ -463,8 +463,11 @@
             btn.disabled = true;
             try {
                 const name = document.getElementById('tournamentName').value.trim();
-                const autoLock = document.getElementById('autoLock').checked;
                 const startOption = document.querySelector('#scheduleGrid input[name="start_option"]:checked').value;
+                // "When seats are filled" is itself an automatic start rule.
+                // The checkbox additionally allows scheduled tournaments to
+                // begin early if every seat fills before their chosen time.
+                const autoLock = startOption === 'seats_filled' || document.getElementById('autoLock').checked;
                 const customTimeStr = startOption === 'custom' ? (customTimeInput.value || '') : null;
                 const res = await fetch('/api/tournaments/create', {
                     method: 'POST',
