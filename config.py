@@ -301,6 +301,52 @@ def build_runtime_security_config(environ=None):
             'REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS does not allow wildcards'
         )
 
+    cookie_security_mode = str(
+        environ.get('SESSION_COOKIE_SECURITY_MODE') or 'pilot'
+    ).strip().lower()
+    if cookie_security_mode not in {'off', 'pilot', 'enforce'}:
+        raise RuntimeError(
+            'SESSION_COOKIE_SECURITY_MODE must be one of: off, pilot, enforce'
+        )
+    cookie_samesite = str(
+        environ.get('SESSION_COOKIE_SAMESITE') or 'Lax'
+    ).strip().title()
+    if cookie_samesite not in {'Lax', 'Strict'}:
+        raise RuntimeError('SESSION_COOKIE_SAMESITE must be Lax or Strict')
+    if cookie_security_mode == 'off':
+        cookie_secure = False
+        effective_samesite = None
+    elif cookie_security_mode == 'enforce':
+        cookie_secure = True
+        effective_samesite = cookie_samesite
+    else:
+        cookie_secure = _env_bool(
+            environ, 'SESSION_COOKIE_SECURE', default=not is_local
+        )
+        effective_samesite = cookie_samesite
+
+    csrf_security_mode = str(
+        environ.get('CSRF_SECURITY_MODE') or 'monitor'
+    ).strip().lower()
+    if csrf_security_mode not in {'off', 'monitor', 'enforce'}:
+        raise RuntimeError('CSRF_SECURITY_MODE must be one of: off, monitor, enforce')
+    csrf_exempt_endpoints = _split_env_list(
+        environ.get('CSRF_ADDITIONAL_EXEMPT_ENDPOINTS', '')
+    )
+    if any('*' in endpoint for endpoint in csrf_exempt_endpoints):
+        raise RuntimeError('CSRF_ADDITIONAL_EXEMPT_ENDPOINTS does not allow wildcards')
+    csrf_time_limit_seconds = _env_positive_number(
+        environ, 'CSRF_TOKEN_TIME_LIMIT_SECONDS', 3600, integer=True
+    )
+
+    session_rotation_mode = str(
+        environ.get('SESSION_ROTATION_MODE') or 'monitor'
+    ).strip().lower()
+    if session_rotation_mode not in {'off', 'monitor', 'enforce'}:
+        raise RuntimeError(
+            'SESSION_ROTATION_MODE must be one of: off, monitor, enforce'
+        )
+
     redis_url = str(environ.get('REDIS_URL') or '').strip()
     if not redis_url:
         if not is_local:
@@ -344,6 +390,20 @@ def build_runtime_security_config(environ=None):
             environ, 'REQUEST_SECURITY_ALLOW_SAME_SITE', default=False
         ),
         'REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS': additional_machine_endpoints,
+        'SESSION_COOKIE_SECURITY_MODE': cookie_security_mode,
+        'SESSION_COOKIE_HTTPONLY': True,
+        'SESSION_COOKIE_SECURE': cookie_secure,
+        'SESSION_COOKIE_SAMESITE': effective_samesite,
+        'SESSION_COOKIE_DOMAIN': None,
+        'CSRF_SECURITY_MODE': csrf_security_mode,
+        'CSRF_TOKEN_TIME_LIMIT_SECONDS': csrf_time_limit_seconds,
+        'CSRF_ADDITIONAL_EXEMPT_ENDPOINTS': csrf_exempt_endpoints,
+        # FlaskForm must not enforce independently while this layer is in
+        # monitor mode. The security package performs the mode-aware check.
+        'WTF_CSRF_ENABLED': csrf_security_mode == 'enforce',
+        'WTF_CSRF_CHECK_DEFAULT': False,
+        'WTF_CSRF_TIME_LIMIT': timedelta(seconds=csrf_time_limit_seconds),
+        'SESSION_ROTATION_MODE': session_rotation_mode,
     }
 
 class GameConfig:

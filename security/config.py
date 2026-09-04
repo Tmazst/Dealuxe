@@ -18,6 +18,11 @@ class SecurityScaffoldConfig:
     request_security_detect_cli_clients: bool
     request_security_allow_same_site: bool
     request_security_additional_machine_endpoints: Tuple[str, ...]
+    cookie_security_mode: str
+    csrf_security_mode: str
+    csrf_time_limit_seconds: int
+    csrf_additional_exempt_endpoints: Tuple[str, ...]
+    session_rotation_mode: str
 
     @classmethod
     def from_app(cls, app):
@@ -52,4 +57,19 @@ class SecurityScaffoldConfig:
             request_security_additional_machine_endpoints=tuple(
                 app.config.get('REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS') or ()
             ),
+            cookie_security_mode=str(
+                app.config.get('SESSION_COOKIE_SECURITY_MODE') or 'pilot'
+            ).lower(),
+            csrf_security_mode=str(
+                app.config.get('CSRF_SECURITY_MODE') or 'monitor'
+            ).lower(),
+            csrf_time_limit_seconds=int(
+                app.config.get('CSRF_TOKEN_TIME_LIMIT_SECONDS') or 3600
+            ),
+            csrf_additional_exempt_endpoints=tuple(
+                app.config.get('CSRF_ADDITIONAL_EXEMPT_ENDPOINTS') or ()
+            ),
+            session_rotation_mode=str(
+                app.config.get('SESSION_ROTATION_MODE') or 'monitor'
+            ).lower(),
         )

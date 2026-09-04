@@ -18,6 +18,12 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
         self.assertTrue(config['REQUEST_SECURITY_CHECK_FETCH_METADATA'])
         self.assertTrue(config['REQUEST_SECURITY_CHECK_ORIGIN'])
         self.assertTrue(config['REQUEST_SECURITY_DETECT_CLI_CLIENTS'])
+        self.assertEqual(config['SESSION_COOKIE_SECURITY_MODE'], 'pilot')
+        self.assertTrue(config['SESSION_COOKIE_HTTPONLY'])
+        self.assertFalse(config['SESSION_COOKIE_SECURE'])
+        self.assertEqual(config['SESSION_COOKIE_SAMESITE'], 'Lax')
+        self.assertEqual(config['SESSION_ROTATION_MODE'], 'monitor')
+        self.assertEqual(config['CSRF_SECURITY_MODE'], 'monitor')
 
     def test_production_requires_explicit_session_secret(self):
         with self.assertRaisesRegex(RuntimeError, 'FLASK_SECRET_KEY'):
@@ -123,6 +129,42 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
                 'ENV': 'test',
                 'REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS': 'api.*',
             })
+
+    def test_cookie_csrf_and_rotation_modes_are_independently_configurable(self):
+        config = build_runtime_security_config({
+            'ENV': 'test',
+            'SESSION_COOKIE_SECURITY_MODE': 'enforce',
+            'SESSION_COOKIE_SAMESITE': 'strict',
+            'SESSION_ROTATION_MODE': 'off',
+            'CSRF_SECURITY_MODE': 'enforce',
+            'CSRF_TOKEN_TIME_LIMIT_SECONDS': '900',
+            'CSRF_ADDITIONAL_EXEMPT_ENDPOINTS': 'verified.webhook',
+        })
+
+        self.assertTrue(config['SESSION_COOKIE_SECURE'])
+        self.assertTrue(config['SESSION_COOKIE_HTTPONLY'])
+        self.assertEqual(config['SESSION_COOKIE_SAMESITE'], 'Strict')
+        self.assertEqual(config['SESSION_ROTATION_MODE'], 'off')
+        self.assertEqual(config['CSRF_SECURITY_MODE'], 'enforce')
+        self.assertTrue(config['WTF_CSRF_ENABLED'])
+        self.assertEqual(config['CSRF_TOKEN_TIME_LIMIT_SECONDS'], 900)
+        self.assertEqual(
+            config['CSRF_ADDITIONAL_EXEMPT_ENDPOINTS'], ['verified.webhook']
+        )
+
+    def test_invalid_cookie_csrf_and_rotation_modes_fail_closed(self):
+        cases = (
+            ({'SESSION_COOKIE_SECURITY_MODE': 'sometimes'}, 'SESSION_COOKIE_SECURITY_MODE'),
+            ({'SESSION_COOKIE_SAMESITE': 'None'}, 'SESSION_COOKIE_SAMESITE'),
+            ({'SESSION_ROTATION_MODE': 'sometimes'}, 'SESSION_ROTATION_MODE'),
+            ({'CSRF_SECURITY_MODE': 'sometimes'}, 'CSRF_SECURITY_MODE'),
+            ({'CSRF_TOKEN_TIME_LIMIT_SECONDS': '0'}, 'CSRF_TOKEN_TIME_LIMIT_SECONDS'),
+            ({'CSRF_ADDITIONAL_EXEMPT_ENDPOINTS': 'api.*'}, 'does not allow wildcards'),
+        )
+        for settings, message in cases:
+            with self.subTest(settings=settings):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    build_runtime_security_config({'ENV': 'test', **settings})
 
 
 class PilotEconomyConfigTests(unittest.TestCase):

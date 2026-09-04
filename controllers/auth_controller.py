@@ -16,7 +16,7 @@ from pricing.referrals import (
     get_or_create_referral_code,
     normalize_referral_code,
 )
-from security import machine_client_endpoint
+from security import establish_authenticated_session, machine_client_endpoint
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -135,8 +135,7 @@ def register():
             )
             
             # Log user in
-            session['user_id'] = user.id
-            session['username'] = user.username
+            establish_authenticated_session(user)
             
             flash('Registration successful! Welcome to Dealuxe!', 'success')
             return redirect(url_for('index'))
@@ -179,8 +178,7 @@ def register_api_internal():
         )
         
         # Log user in
-        session['user_id'] = user.id
-        session['username'] = user.username
+        establish_authenticated_session(user)
         
         return jsonify({
             'message': 'Registration successful',
@@ -228,8 +226,7 @@ def login():
         user.update_last_login()
         
         # Set session
-        session['user_id'] = user.id
-        session['username'] = user.username
+        establish_authenticated_session(user)
         
         flash('Login successful!', 'success')
         
@@ -261,8 +258,7 @@ def login_api_internal():
     user.update_last_login()
     
     # Set session
-    session['user_id'] = user.id
-    session['username'] = user.username
+    establish_authenticated_session(user)
     
     # Get player profile
     player = get_player_by_user_id(user.id)
@@ -279,7 +275,7 @@ def login_api_internal():
     })
 
 
-@auth_bp.route('/logout', methods=['GET', 'POST'])
+@auth_bp.route('/logout', methods=['POST'])
 def logout():
     """Logout user (handles both form and API requests)"""
     session.clear()
@@ -466,8 +462,7 @@ def register_api():
         )
         
         # Log user in
-        session['user_id'] = user.id
-        session['username'] = user.username
+        establish_authenticated_session(user)
         
         return jsonify({
             'message': 'Registration successful',
@@ -508,8 +503,7 @@ def login_api():
     user.update_last_login()
     
     # Set session
-    session['user_id'] = user.id
-    session['username'] = user.username
+    establish_authenticated_session(user)
     
     # Get player profile
     player = get_player_by_user_id(user.id)

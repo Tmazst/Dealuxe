@@ -21,6 +21,11 @@ class SecurityScaffoldTests(unittest.TestCase):
             'REQUEST_SECURITY_DETECT_CLI_CLIENTS': True,
             'REQUEST_SECURITY_ALLOW_SAME_SITE': False,
             'REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS': [],
+            'CSRF_SECURITY_MODE': 'off',
+            'CSRF_TOKEN_TIME_LIMIT_SECONDS': 3600,
+            'CSRF_ADDITIONAL_EXEMPT_ENDPOINTS': [],
+            'SESSION_COOKIE_SECURITY_MODE': 'off',
+            'SESSION_ROTATION_MODE': 'off',
         })
         app.config.update(overrides)
         return app

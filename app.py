@@ -58,7 +58,11 @@ from config import (
     build_pricing_config,
     build_runtime_security_config,
 )
-from security import init_security_scaffold, machine_client_endpoint
+from security import (
+    csrf_exempt_endpoint,
+    init_security_scaffold,
+    machine_client_endpoint,
+)
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1,x_proto=1)
@@ -470,6 +474,7 @@ from database import (
 
 @app.route('/api/payment/callback', methods=['POST'])
 @machine_client_endpoint
+@csrf_exempt_endpoint
 def payment_callback():
     """
     Receive and verify a callback/webhook from MojaPOS.

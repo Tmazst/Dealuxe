@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    {% include '_security_head.html' %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Account · Dealuxe</title>
@@ -311,7 +312,10 @@
             <a href="/lobby">Lobby</a>
             <a href="/">Tournaments</a>
             <a class="primary" href="/account">My Account</a>
-            <a class="danger" href="/api/auth/logout" onclick="return confirm('Log out of your account?')">Logout</a>
+            <form method="post" action="/api/auth/logout" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="danger" type="submit" onclick="return confirm('Log out of your account?')" style="background:none;border:0;cursor:pointer;font:inherit;">Logout</button>
+            </form>
         </nav>
     </header>
 
@@ -445,6 +449,7 @@
                     change the live bracket.
                 </p>
                 <form method="post" action="/account/discovery" id="hybridDiscoveryForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="form-group">
                         <label class="form-label">
                             <input type="checkbox" name="is_enabled" {% if hybrid_profile.is_enabled %}checked{% endif %}>
@@ -521,6 +526,7 @@
                 <h3>Hybrid safety controls</h3>
                 <p class="page-sub">Blocks are mutual exclusions for future discovery, matching and chat. Reports are private to administrators.</p>
                 <form method="post" action="/account/discovery/block" style="margin-bottom:14px;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="form-group">
                         <label class="form-label">Block a player by username</label>
                         <input class="form-control" name="username" maxlength="80" required placeholder="Player username">
@@ -531,6 +537,7 @@
                     <div style="margin-bottom:18px;">
                         {% for block in hybrid_blocks %}
                             <form method="post" action="/account/discovery/unblock" style="display:inline-block;margin:4px;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input type="hidden" name="blocked_user_id" value="{{ block.blocked_user_id }}">
                                 <button class="btn" type="submit">Unblock {{ block.blocked_username }}</button>
                             </form>
@@ -538,6 +545,7 @@
                     </div>
                 {% endif %}
                 <form method="post" action="/account/discovery/report">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="form-group">
                         <label class="form-label">Report a player privately</label>
                         <input class="form-control" name="username" maxlength="80" required placeholder="Player username">
