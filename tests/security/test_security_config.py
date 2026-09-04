@@ -24,6 +24,12 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
         self.assertEqual(config['SESSION_COOKIE_SAMESITE'], 'Lax')
         self.assertEqual(config['SESSION_ROTATION_MODE'], 'monitor')
         self.assertEqual(config['CSRF_SECURITY_MODE'], 'monitor')
+        self.assertEqual(config['RATE_LIMIT_MODE'], 'monitor')
+        self.assertEqual(config['RATE_LIMIT_STORAGE'], 'memory')
+        self.assertEqual(config['RATE_LIMIT_POLICIES']['login_account'], {
+            'attempts': 8,
+            'window_seconds': 300,
+        })
 
     def test_production_requires_explicit_session_secret(self):
         with self.assertRaisesRegex(RuntimeError, 'FLASK_SECRET_KEY'):
@@ -165,6 +171,49 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
             with self.subTest(settings=settings):
                 with self.assertRaisesRegex(RuntimeError, message):
                     build_runtime_security_config({'ENV': 'test', **settings})
+
+    def test_rate_limits_are_independently_configurable(self):
+        config = build_runtime_security_config({
+            'ENV': 'test',
+            'RATE_LIMIT_MODE': 'enforce',
+            'RATE_LIMIT_STORAGE': 'redis',
+            'RATE_LIMIT_LOGIN_IP_ATTEMPTS': '11',
+            'RATE_LIMIT_LOGIN_IP_WINDOW_SECONDS': '90',
+            'RATE_LIMIT_SOCKET_EVENT_ATTEMPTS': '321',
+        })
+
+        self.assertEqual(config['RATE_LIMIT_MODE'], 'enforce')
+        self.assertEqual(config['RATE_LIMIT_STORAGE'], 'redis')
+        self.assertEqual(config['RATE_LIMIT_POLICIES']['login_ip'], {
+            'attempts': 11,
+            'window_seconds': 90,
+        })
+        self.assertEqual(
+            config['RATE_LIMIT_POLICIES']['socket_event']['attempts'], 321
+        )
+
+    def test_invalid_rate_limit_configuration_fails_closed(self):
+        cases = (
+            ({'RATE_LIMIT_MODE': 'sometimes'}, 'RATE_LIMIT_MODE'),
+            ({'RATE_LIMIT_STORAGE': 'database'}, 'RATE_LIMIT_STORAGE'),
+            ({'RATE_LIMIT_PAYMENT_ATTEMPTS': '0'}, 'RATE_LIMIT_PAYMENT_ATTEMPTS'),
+            ({'RATE_LIMIT_ADMIN_WINDOW_SECONDS': 'nope'}, 'RATE_LIMIT_ADMIN_WINDOW_SECONDS'),
+        )
+        for settings, message in cases:
+            with self.subTest(settings=settings):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    build_runtime_security_config({'ENV': 'test', **settings})
+
+        with self.assertRaisesRegex(RuntimeError, 'RATE_LIMIT_STORAGE=redis'):
+            build_runtime_security_config({
+                'ENV': 'production',
+                'FLASK_SECRET_KEY': 's' * 48,
+                'SOCKETIO_ALLOWED_ORIGINS': 'https://dealuxe.example',
+                'REDIS_URL': 'redis://private-redis:6379/0',
+                'MOJAPOS_MOCK_MODE': 'true',
+                'RATE_LIMIT_MODE': 'monitor',
+                'RATE_LIMIT_STORAGE': 'memory',
+            })
 
 
 class PilotEconomyConfigTests(unittest.TestCase):

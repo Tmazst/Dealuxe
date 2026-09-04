@@ -3,6 +3,7 @@
 from .config import SecurityScaffoldConfig
 from .csrf import csrf_exempt_endpoint, install_csrf_guard
 from .request_guard import install_request_guard, machine_client_endpoint
+from .rate_limit import install_rate_limits, rate_limit_category
 from .session_security import establish_authenticated_session
 
 
@@ -15,6 +16,7 @@ def init_security_scaffold(app, socketio=None):
         'socketio': socketio,
         'mode': config.request_security_mode,
     })
+    install_rate_limits(app, socketio, config, app.extensions['security'])
     install_request_guard(app, config, app.extensions['security'])
     install_csrf_guard(app, config, app.extensions['security'])
     return app.extensions['security']
@@ -26,5 +28,6 @@ __all__ = [
     'machine_client_endpoint',
     'csrf_exempt_endpoint',
     'establish_authenticated_session',
+    'rate_limit_category',
 ]
 

@@ -1,7 +1,7 @@
 """Typed view of the security-sensitive configuration already validated at startup."""
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Mapping, Tuple
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,9 @@ class SecurityScaffoldConfig:
     csrf_time_limit_seconds: int
     csrf_additional_exempt_endpoints: Tuple[str, ...]
     session_rotation_mode: str
+    rate_limit_mode: str
+    rate_limit_storage: str
+    rate_limit_policies: Mapping[str, Mapping[str, int]]
 
     @classmethod
     def from_app(cls, app):
@@ -72,4 +75,11 @@ class SecurityScaffoldConfig:
             session_rotation_mode=str(
                 app.config.get('SESSION_ROTATION_MODE') or 'monitor'
             ).lower(),
+            rate_limit_mode=str(
+                app.config.get('RATE_LIMIT_MODE') or 'monitor'
+            ).lower(),
+            rate_limit_storage=str(
+                app.config.get('RATE_LIMIT_STORAGE') or 'memory'
+            ).lower(),
+            rate_limit_policies=dict(app.config.get('RATE_LIMIT_POLICIES') or {}),
         )

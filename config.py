@@ -347,6 +347,48 @@ def build_runtime_security_config(environ=None):
             'SESSION_ROTATION_MODE must be one of: off, monitor, enforce'
         )
 
+    rate_limit_mode = str(
+        environ.get('RATE_LIMIT_MODE') or 'monitor'
+    ).strip().lower()
+    if rate_limit_mode not in {'off', 'monitor', 'enforce'}:
+        raise RuntimeError('RATE_LIMIT_MODE must be one of: off, monitor, enforce')
+    rate_limit_storage = str(
+        environ.get('RATE_LIMIT_STORAGE') or ('memory' if is_local else 'redis')
+    ).strip().lower()
+    if rate_limit_storage not in {'memory', 'redis'}:
+        raise RuntimeError('RATE_LIMIT_STORAGE must be one of: memory, redis')
+    if not is_local and rate_limit_mode != 'off' and rate_limit_storage != 'redis':
+        raise RuntimeError(
+            'RATE_LIMIT_STORAGE=redis is required outside local development '
+            'when rate limiting is enabled'
+        )
+
+    rate_limit_defaults = {
+        'LOGIN_IP': (20, 300),
+        'LOGIN_ACCOUNT': (8, 300),
+        'PAYMENT': (30, 60),
+        'ADMIN': (240, 60),
+        'UPLOAD': (12, 300),
+        'SOCKET_CONNECT': (120, 60),
+        'SOCKET_EVENT': (240, 60),
+    }
+    rate_limit_policies = {}
+    for policy_name, (default_attempts, default_window) in rate_limit_defaults.items():
+        rate_limit_policies[policy_name.lower()] = {
+            'attempts': _env_positive_number(
+                environ,
+                f'RATE_LIMIT_{policy_name}_ATTEMPTS',
+                default_attempts,
+                integer=True,
+            ),
+            'window_seconds': _env_positive_number(
+                environ,
+                f'RATE_LIMIT_{policy_name}_WINDOW_SECONDS',
+                default_window,
+                integer=True,
+            ),
+        }
+
     redis_url = str(environ.get('REDIS_URL') or '').strip()
     if not redis_url:
         if not is_local:
@@ -404,6 +446,9 @@ def build_runtime_security_config(environ=None):
         'WTF_CSRF_CHECK_DEFAULT': False,
         'WTF_CSRF_TIME_LIMIT': timedelta(seconds=csrf_time_limit_seconds),
         'SESSION_ROTATION_MODE': session_rotation_mode,
+        'RATE_LIMIT_MODE': rate_limit_mode,
+        'RATE_LIMIT_STORAGE': rate_limit_storage,
+        'RATE_LIMIT_POLICIES': rate_limit_policies,
     }
 
 class GameConfig:
