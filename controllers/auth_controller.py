@@ -16,6 +16,7 @@ from pricing.referrals import (
     get_or_create_referral_code,
     normalize_referral_code,
 )
+from security import machine_client_endpoint
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -434,6 +435,7 @@ def leaderboard():
 # ============================================================
 
 @auth_bp.route('/api/auth/register', methods=['POST'])
+@machine_client_endpoint
 def register_api():
     """API endpoint for registration (JSON)"""
     data = request.json
@@ -486,6 +488,7 @@ def register_api():
 
 
 @auth_bp.route('/api/auth/login', methods=['POST'])
+@machine_client_endpoint
 def login_api():
     """API endpoint for login (JSON)"""
     data = request.json
@@ -524,6 +527,7 @@ def login_api():
 
 
 @auth_bp.route('/api/auth/logout', methods=['POST'])
+@machine_client_endpoint
 def logout_api():
     """API endpoint for logout (JSON)"""
     session.clear()

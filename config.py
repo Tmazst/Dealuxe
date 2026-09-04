@@ -232,6 +232,16 @@ def _split_origins(raw_value):
     return origins
 
 
+def _split_env_list(raw_value):
+    """Return a normalized, de-duplicated comma-separated setting."""
+    values = []
+    for value in str(raw_value or '').split(','):
+        normalized = value.strip()
+        if normalized and normalized not in values:
+            values.append(normalized)
+    return values
+
+
 def build_runtime_security_config(environ=None):
     """Build and validate security-sensitive runtime configuration.
 
@@ -266,6 +276,31 @@ def build_runtime_security_config(environ=None):
     if '*' in socketio_origins:
         raise RuntimeError('Wildcard Socket.IO origins are not allowed')
 
+    request_security_mode = str(
+        environ.get('REQUEST_SECURITY_MODE') or 'monitor'
+    ).strip().lower()
+    if request_security_mode not in {'off', 'monitor', 'enforce'}:
+        raise RuntimeError(
+            'REQUEST_SECURITY_MODE must be one of: off, monitor, enforce'
+        )
+    request_security_origins = _split_origins(
+        environ.get('REQUEST_SECURITY_TRUSTED_ORIGINS', ','.join(socketio_origins))
+    )
+    if '*' in request_security_origins:
+        raise RuntimeError('Wildcard request-security origins are not allowed')
+    if request_security_mode != 'off' and not request_security_origins:
+        raise RuntimeError(
+            'REQUEST_SECURITY_TRUSTED_ORIGINS must contain at least one origin '
+            'when request security is enabled'
+        )
+    additional_machine_endpoints = _split_env_list(
+        environ.get('REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS', '')
+    )
+    if any('*' in endpoint for endpoint in additional_machine_endpoints):
+        raise RuntimeError(
+            'REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS does not allow wildcards'
+        )
+
     redis_url = str(environ.get('REDIS_URL') or '').strip()
     if not redis_url:
         if not is_local:
@@ -294,6 +329,21 @@ def build_runtime_security_config(environ=None):
         'SESSION_SECRET_GENERATED': generated_secret,
         'SOCKETIO_ALLOWED_ORIGINS': socketio_origins,
         'REDIS_URL': redis_url,
+        'REQUEST_SECURITY_MODE': request_security_mode,
+        'REQUEST_SECURITY_TRUSTED_ORIGINS': request_security_origins,
+        'REQUEST_SECURITY_CHECK_FETCH_METADATA': _env_bool(
+            environ, 'REQUEST_SECURITY_CHECK_FETCH_METADATA', default=True
+        ),
+        'REQUEST_SECURITY_CHECK_ORIGIN': _env_bool(
+            environ, 'REQUEST_SECURITY_CHECK_ORIGIN', default=True
+        ),
+        'REQUEST_SECURITY_DETECT_CLI_CLIENTS': _env_bool(
+            environ, 'REQUEST_SECURITY_DETECT_CLI_CLIENTS', default=True
+        ),
+        'REQUEST_SECURITY_ALLOW_SAME_SITE': _env_bool(
+            environ, 'REQUEST_SECURITY_ALLOW_SAME_SITE', default=False
+        ),
+        'REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS': additional_machine_endpoints,
     }
 
 class GameConfig:

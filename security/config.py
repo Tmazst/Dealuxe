@@ -11,6 +11,13 @@ class SecurityScaffoldConfig:
     socketio_allowed_origins: Tuple[str, ...]
     redis_url_configured: bool
     payment_webhook_verification: bool
+    request_security_mode: str
+    request_security_trusted_origins: Tuple[str, ...]
+    request_security_check_fetch_metadata: bool
+    request_security_check_origin: bool
+    request_security_detect_cli_clients: bool
+    request_security_allow_same_site: bool
+    request_security_additional_machine_endpoints: Tuple[str, ...]
 
     @classmethod
     def from_app(cls, app):
@@ -23,5 +30,26 @@ class SecurityScaffoldConfig:
             redis_url_configured=bool(app.config.get('REDIS_URL')),
             payment_webhook_verification=bool(
                 app.config.get('MOJAPOS_VERIFY_WEBHOOK_SIGNATURE')
+            ),
+            request_security_mode=str(
+                app.config.get('REQUEST_SECURITY_MODE') or 'monitor'
+            ).lower(),
+            request_security_trusted_origins=tuple(
+                app.config.get('REQUEST_SECURITY_TRUSTED_ORIGINS') or ()
+            ),
+            request_security_check_fetch_metadata=bool(
+                app.config.get('REQUEST_SECURITY_CHECK_FETCH_METADATA', True)
+            ),
+            request_security_check_origin=bool(
+                app.config.get('REQUEST_SECURITY_CHECK_ORIGIN', True)
+            ),
+            request_security_detect_cli_clients=bool(
+                app.config.get('REQUEST_SECURITY_DETECT_CLI_CLIENTS', True)
+            ),
+            request_security_allow_same_site=bool(
+                app.config.get('REQUEST_SECURITY_ALLOW_SAME_SITE', False)
+            ),
+            request_security_additional_machine_endpoints=tuple(
+                app.config.get('REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS') or ()
             ),
         )

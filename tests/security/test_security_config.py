@@ -14,6 +14,10 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
             config['SOCKETIO_ALLOWED_ORIGINS'],
             ['http://127.0.0.1:5000', 'http://localhost:5000'],
         )
+        self.assertEqual(config['REQUEST_SECURITY_MODE'], 'monitor')
+        self.assertTrue(config['REQUEST_SECURITY_CHECK_FETCH_METADATA'])
+        self.assertTrue(config['REQUEST_SECURITY_CHECK_ORIGIN'])
+        self.assertTrue(config['REQUEST_SECURITY_DETECT_CLI_CLIENTS'])
 
     def test_production_requires_explicit_session_secret(self):
         with self.assertRaisesRegex(RuntimeError, 'FLASK_SECRET_KEY'):
@@ -68,6 +72,57 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
             config['SOCKETIO_ALLOWED_ORIGINS'],
             ['https://one.example', 'https://two.example'],
         )
+
+    def test_request_security_modes_and_origins_are_configurable(self):
+        config = build_runtime_security_config({
+            'ENV': 'test',
+            'FLASK_SECRET_KEY': 'test-secret',
+            'SOCKETIO_ALLOWED_ORIGINS': 'https://socket.example',
+            'REQUEST_SECURITY_MODE': 'enforce',
+            'REQUEST_SECURITY_TRUSTED_ORIGINS': (
+                'https://app.example/, https://app.example'
+            ),
+            'REQUEST_SECURITY_CHECK_FETCH_METADATA': 'false',
+            'REQUEST_SECURITY_CHECK_ORIGIN': 'true',
+            'REQUEST_SECURITY_DETECT_CLI_CLIENTS': 'false',
+            'REQUEST_SECURITY_ALLOW_SAME_SITE': 'true',
+            'REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS': (
+                'api.health, api.import'
+            ),
+        })
+
+        self.assertEqual(config['REQUEST_SECURITY_MODE'], 'enforce')
+        self.assertEqual(
+            config['REQUEST_SECURITY_TRUSTED_ORIGINS'],
+            ['https://app.example'],
+        )
+        self.assertFalse(config['REQUEST_SECURITY_CHECK_FETCH_METADATA'])
+        self.assertTrue(config['REQUEST_SECURITY_CHECK_ORIGIN'])
+        self.assertFalse(config['REQUEST_SECURITY_DETECT_CLI_CLIENTS'])
+        self.assertTrue(config['REQUEST_SECURITY_ALLOW_SAME_SITE'])
+        self.assertEqual(
+            config['REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS'],
+            ['api.health', 'api.import'],
+        )
+
+    def test_invalid_request_security_configuration_fails_closed(self):
+        with self.assertRaisesRegex(RuntimeError, 'REQUEST_SECURITY_MODE'):
+            build_runtime_security_config({
+                'ENV': 'test',
+                'REQUEST_SECURITY_MODE': 'sometimes',
+            })
+
+        with self.assertRaisesRegex(RuntimeError, 'Wildcard request-security'):
+            build_runtime_security_config({
+                'ENV': 'test',
+                'REQUEST_SECURITY_TRUSTED_ORIGINS': '*',
+            })
+
+        with self.assertRaisesRegex(RuntimeError, 'does not allow wildcards'):
+            build_runtime_security_config({
+                'ENV': 'test',
+                'REQUEST_SECURITY_ADDITIONAL_MACHINE_ENDPOINTS': 'api.*',
+            })
 
 
 class PilotEconomyConfigTests(unittest.TestCase):
