@@ -130,6 +130,178 @@
         .empty { color: var(--muted); text-align: center; padding: 22px 0; }
         .back-link { display: inline-block; margin-bottom: 18px; color: #93c5fd; text-decoration: none; font-weight: 600; font-size: .9rem; }
         .back-link:hover { text-decoration: underline; }
+
+        /* Hybrid plan comparison */
+        .pricing-showcase {
+            position: relative;
+            isolation: isolate;
+            overflow: hidden;
+            margin-top: 18px;
+            padding: clamp(20px, 4vw, 34px);
+            border-color: rgba(126, 159, 255, .28);
+            background:
+                radial-gradient(circle at 8% 0%, rgba(41, 83, 187, .28), transparent 35%),
+                radial-gradient(circle at 92% 12%, rgba(251, 191, 36, .12), transparent 28%),
+                linear-gradient(145deg, rgba(15, 24, 48, .96), rgba(7, 10, 20, .96));
+            box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+        }
+        .pricing-showcase::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            opacity: .28;
+            pointer-events: none;
+            background-image: radial-gradient(rgba(255,255,255,.2) .7px, transparent .7px);
+            background-size: 18px 18px;
+            mask-image: linear-gradient(to bottom, #000, transparent 70%);
+        }
+        .pricing-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .pricing-kicker {
+            margin: 0 0 8px;
+            color: #8fb1ff;
+            font-size: .72rem;
+            font-weight: 900;
+            letter-spacing: 1.6px;
+            text-transform: uppercase;
+        }
+        .pricing-showcase .pricing-title {
+            margin: 0 0 8px;
+            font-size: clamp(1.45rem, 3vw, 2rem);
+            line-height: 1.1;
+        }
+        .pricing-intro { max-width: 630px; margin: 0; color: #b9c5dd; line-height: 1.55; }
+        .current-plan-badge {
+            flex: 0 0 auto;
+            min-width: 170px;
+            padding: 11px 14px;
+            border: 1px solid rgba(62, 230, 181, .38);
+            border-radius: 13px;
+            background: rgba(62, 230, 181, .1);
+            box-shadow: inset 0 1px rgba(255,255,255,.08);
+        }
+        .current-plan-badge span { display: block; color: #95a5c3; font-size: .7rem; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; }
+        .current-plan-badge strong { display: block; margin-top: 3px; color: #8df3d2; font-size: 1rem; }
+        .current-plan-badge small { display: block; margin-top: 3px; color: var(--muted); font-size: .7rem; }
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 14px;
+            align-items: stretch;
+        }
+        .pricing-card {
+            --plan-accent: #94a3b8;
+            --plan-glow: rgba(148, 163, 184, .14);
+            position: relative;
+            display: flex;
+            min-width: 0;
+            flex-direction: column;
+            padding: 20px 18px 18px;
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 18px;
+            background: linear-gradient(160deg, var(--plan-glow), rgba(4, 7, 15, .82) 48%);
+            box-shadow: inset 0 1px rgba(255,255,255,.07), 0 12px 30px rgba(0,0,0,.2);
+            transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+        }
+        .pricing-card:hover {
+            transform: translateY(-4px);
+            border-color: color-mix(in srgb, var(--plan-accent) 65%, transparent);
+            box-shadow: inset 0 1px rgba(255,255,255,.1), 0 18px 36px rgba(0,0,0,.3);
+        }
+        .pricing-card--free { --plan-accent: #cbd5e1; --plan-glow: rgba(148, 163, 184, .13); }
+        .pricing-card--hybrid { --plan-accent: #5b8cff; --plan-glow: rgba(41, 83, 187, .3); }
+        .pricing-card--hybrid_plus { --plan-accent: #b794f6; --plan-glow: rgba(124, 58, 237, .27); border-color: rgba(183,148,246,.42); }
+        .pricing-card--premium { --plan-accent: #fbbf24; --plan-glow: rgba(217, 119, 6, .24); }
+        .pricing-card.is-current { outline: 2px solid var(--success); outline-offset: 2px; }
+        .pricing-card.is-unavailable { opacity: .78; }
+        .plan-ribbon {
+            position: absolute;
+            top: 0;
+            right: 16px;
+            padding: 5px 9px;
+            border-radius: 0 0 9px 9px;
+            background: var(--plan-accent);
+            color: #090b12;
+            font-size: .66rem;
+            font-weight: 900;
+            letter-spacing: .5px;
+            text-transform: uppercase;
+        }
+        .plan-topline { display: flex; align-items: center; gap: 10px; padding-right: 24px; }
+        .plan-icon {
+            display: grid;
+            width: 38px;
+            height: 38px;
+            flex: 0 0 38px;
+            place-items: center;
+            border: 1px solid color-mix(in srgb, var(--plan-accent) 45%, transparent);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--plan-accent) 15%, transparent);
+            font-size: 1.1rem;
+        }
+        .plan-name { margin: 0; font-size: 1.04rem; }
+        .plan-scope { margin: 3px 0 0; color: var(--plan-accent); font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; }
+        .plan-price { display: flex; align-items: baseline; gap: 5px; margin: 20px 0 12px; }
+        .plan-price .currency { color: var(--plan-accent); font-size: 1rem; font-weight: 900; }
+        .plan-price .amount { font-size: 2.25rem; font-weight: 950; letter-spacing: -1.5px; line-height: 1; }
+        .plan-price .period { color: var(--muted); font-size: .75rem; }
+        .plan-summary { min-height: 61px; margin: 0 0 14px; color: #c5cee0; font-size: .82rem; line-height: 1.45; }
+        .plan-features { display: grid; gap: 9px; margin: 0 0 20px; padding: 0; list-style: none; }
+        .plan-features li { position: relative; padding-left: 20px; color: #dce4f3; font-size: .78rem; line-height: 1.4; }
+        .plan-features li::before { content: '✓'; position: absolute; left: 0; color: var(--plan-accent); font-weight: 900; }
+        .plan-action { margin-top: auto; }
+        .plan-cta {
+            width: 100%;
+            min-height: 44px;
+            border: 1px solid color-mix(in srgb, var(--plan-accent) 68%, transparent);
+            border-radius: 12px;
+            background: var(--plan-accent);
+            color: #090b12;
+            font-weight: 900;
+            box-shadow: 0 8px 22px color-mix(in srgb, var(--plan-accent) 22%, transparent);
+        }
+        .plan-cta:hover { filter: brightness(1.08); background: var(--plan-accent); }
+        .plan-state {
+            display: flex;
+            min-height: 44px;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            padding: 9px;
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 12px;
+            background: rgba(255,255,255,.055);
+            color: #cbd5e1;
+            font-size: .78rem;
+            font-weight: 800;
+            text-align: center;
+        }
+        .pricing-note { margin: 18px 0 0; color: #8d9ab3; font-size: .76rem; line-height: 1.5; text-align: center; }
+        .pricing-status { min-height: 24px; margin: 14px 0 0; color: #b9c5dd; text-align: center; font-weight: 700; }
+        .pricing-status.is-success { color: var(--success); }
+        .pricing-status.is-error { color: #fca5a5; }
+        @media (max-width: 920px) { .pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 620px) {
+            .site-header { padding: 12px 14px; }
+            .header-nav { gap: 6px; }
+            .header-nav a { padding: 7px 9px; }
+            .wrap { padding-inline: 12px; }
+            .grid, .pricing-grid { grid-template-columns: 1fr; }
+            .pricing-header { flex-direction: column; }
+            .current-plan-badge { width: 100%; }
+            .pricing-card { padding: 19px 17px 17px; }
+            .plan-summary { min-height: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .pricing-card { transition: none; }
+            .pricing-card:hover { transform: none; }
+        }
     </style>
 </head>
 <body>
@@ -454,31 +626,60 @@
             </p>
         </section>
 
-        <section class="card" style="margin-top:18px;" aria-labelledby="pricingTitle">
-            <h2 id="pricingTitle">📣 Hybrid Plans</h2>
-            <p class="page-sub">
-                Current plan: <strong>{{ pricing_entitlement.plan_code|replace('_', ' ')|title }}</strong>
-                {% if pricing_entitlement.expires_at %}· expires {{ pricing_entitlement.expires_at }}{% endif %}
-            </p>
-            <div class="grid">
+        <section class="card pricing-showcase" aria-labelledby="pricingTitle">
+            <div class="pricing-header">
+                <div>
+                    <p class="pricing-kicker">Play · Promote · Connect</p>
+                    <h2 class="pricing-title" id="pricingTitle">Choose how far your business can reach</h2>
+                    <p class="pricing-intro">Seekers build demand for free. Upgrade when you want smarter seller matching, wider bracket discovery or automatic alerts.</p>
+                </div>
+                <div class="current-plan-badge" aria-label="Your current pricing plan">
+                    <span>Your current plan</span>
+                    <strong>{{ pricing_entitlement.plan_code|replace('_', ' ')|title }}</strong>
+                    {% if pricing_entitlement.expires_at %}<small>Expires {{ pricing_entitlement.expires_at }}</small>{% else %}<small>No expiry</small>{% endif %}
+                </div>
+            </div>
+            <div class="pricing-grid">
                 {% for plan in pricing_catalog.plans %}
-                    <article class="upload-block">
-                        <h3>{{ plan.name }} · E{{ '%.2f'|format(plan.price_emalangeni) }}</h3>
-                        <p class="page-sub">{{ plan.summary }}</p>
-                        {% if plan.duration_days %}<p>{{ plan.duration_days }}-day non-renewing pass</p>{% endif %}
-                        {% if plan.code == 'free' %}
-                            <span class="pill">Always available</span>
-                        {% elif plan.purchasable %}
-                            <button class="btn plan-purchase" data-plan-code="{{ plan.code }}">
-                                Buy {{ plan.name }}
-                            </button>
-                        {% else %}
-                            <span class="pill">Currently unavailable</span>
+                    <article class="pricing-card pricing-card--{{ plan.code }}{% if pricing_entitlement.plan_code == plan.code %} is-current{% endif %}{% if plan.code != 'free' and not plan.purchasable %} is-unavailable{% endif %}">
+                        {% if pricing_entitlement.plan_code == plan.code %}
+                            <span class="plan-ribbon">Current</span>
+                        {% elif plan.code == 'hybrid_plus' %}
+                            <span class="plan-ribbon">Best reach</span>
+                        {% elif plan.code == 'premium' %}
+                            <span class="plan-ribbon">Coming next</span>
                         {% endif %}
+                        <div class="plan-topline">
+                            <span class="plan-icon" aria-hidden="true">{% if plan.code == 'free' %}🌱{% elif plan.code == 'hybrid' %}🎯{% elif plan.code == 'hybrid_plus' %}🚀{% else %}👑{% endif %}</span>
+                            <div>
+                                <h3 class="plan-name">{{ plan.name }}</h3>
+                                <p class="plan-scope">{% if plan.code == 'free' %}Create demand{% elif plan.code == 'hybrid' %}Inside your bracket{% elif plan.code == 'hybrid_plus' %}Across open brackets{% else %}Automatic alerts{% endif %}</p>
+                            </div>
+                        </div>
+                        <div class="plan-price">
+                            <span class="currency">E</span><span class="amount">{{ '%.0f'|format(plan.price_emalangeni) }}</span>
+                            <span class="period">{% if plan.duration_days %}/ {{ plan.duration_days }} days{% else %}/ forever{% endif %}</span>
+                        </div>
+                        <p class="plan-summary">{{ plan.summary }}</p>
+                        <ul class="plan-features">
+                            {% for feature in plan.features %}<li>{{ feature }}</li>{% endfor %}
+                        </ul>
+                        <div class="plan-action">
+                            {% if plan.code == 'free' %}
+                                <span class="plan-state">✓ Always available</span>
+                            {% elif plan.purchasable %}
+                                <button class="btn plan-cta plan-purchase" data-plan-code="{{ plan.code }}">Choose {{ plan.name }}</button>
+                            {% elif plan.code == 'premium' %}
+                                <span class="plan-state">🔒 Awaiting WhatsApp alerts</span>
+                            {% else %}
+                                <span class="plan-state">🔒 Not enabled yet</span>
+                            {% endif %}
+                        </div>
                     </article>
                 {% endfor %}
             </div>
-            <p id="pricingPurchaseStatus" class="page-sub" role="status" aria-live="polite"></p>
+            <p class="pricing-note">Paid plans are non-renewing. Matching indicates potential relevance and does not guarantee a sale or customer.</p>
+            <p id="pricingPurchaseStatus" class="pricing-status" role="status" aria-live="polite"></p>
         </section>
 
         <!-- Recent transactions -->
@@ -515,6 +716,7 @@
                 var status = document.getElementById('pricingPurchaseStatus');
                 if (!confirm('Start this non-renewing plan payment?')) return;
                 button.disabled = true;
+                status.className = 'pricing-status';
                 status.textContent = 'Starting payment…';
                 try {
                     var response = await fetch('/api/pricing/purchases', {
@@ -526,11 +728,13 @@
                     var payload = await response.json();
                     if (!response.ok) throw new Error(payload.error || 'Payment could not start');
                     status.textContent = payload.message;
+                    status.classList.add('is-success');
                     if (payload.purchase && payload.purchase.status === 'completed') {
                         setTimeout(function () { window.location.reload(); }, 800);
                     }
                 } catch (error) {
                     status.textContent = error.message;
+                    status.classList.add('is-error');
                 } finally {
                     button.disabled = false;
                 }

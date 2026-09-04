@@ -229,6 +229,21 @@ class PaidPlanTests(unittest.TestCase):
         hybrid = next(row for row in catalog['plans'] if row['code'] == 'hybrid')
         self.assertFalse(hybrid['purchasable'])
 
+    def test_account_has_graphical_plan_comparison_and_clear_plan_states(self):
+        self._login(self.user)
+        response = self.client.get('/account')
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('Choose how far your business can reach', page)
+        self.assertIn('pricing-grid', page)
+        self.assertIn('pricing-card--free', page)
+        self.assertIn('pricing-card--hybrid', page)
+        self.assertIn('pricing-card--hybrid_plus', page)
+        self.assertIn('pricing-card--premium', page)
+        self.assertIn('Best reach', page)
+        self.assertIn('Awaiting WhatsApp alerts', page)
+        self.assertIn('Choose Hybrid', page)
+
     def test_free_seekers_create_demand_but_sellers_need_an_e20_entitlement(self):
         seller = self._user('entitledseller')
         seeker = self._user('freeseekerdemand')
