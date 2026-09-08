@@ -12,6 +12,8 @@ from urllib.parse import urlsplit
 
 from flask import jsonify, request
 
+from .observability import audit_security_event, current_request_id
+
 
 SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
 KNOWN_CLI_USER_AGENTS = re.compile(
@@ -136,6 +138,13 @@ def install_request_guard(app, config, extension):
             request.endpoint or '<unknown>',
             ','.join(reasons),
         )
+        audit_security_event(
+            'request_trust_decision',
+            category='request_trust',
+            outcome='blocked' if mode == 'enforce' else 'would_block',
+            status=403 if mode == 'enforce' else 200,
+            details={'reasons': reasons},
+        )
         if mode != 'enforce':
             return None
 
@@ -145,6 +154,8 @@ def install_request_guard(app, config, extension):
             'error': 'Request rejected by security policy',
             'code': 'request_security_rejected',
         }
+        if current_request_id():
+            payload['request_id'] = current_request_id()
         if request.path.startswith('/api/') or request.is_json:
             return jsonify(payload), 403
         return payload['error'], 403

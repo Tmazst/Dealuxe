@@ -454,6 +454,33 @@
         </div>
         <pre id="logViewer" style="max-height:420px;overflow:auto;background:#0b0f1a;color:#c9d4f0;padding:12px;border-radius:8px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-all;">Loading...</pre>
     </div>
+
+    <div class="panel">
+        <div class="controls">
+            <h2 style="margin-right:auto;">Security Event Audit</h2>
+            <label>
+                Request reference:
+                <input type="text" id="securityRequestId" placeholder="req_..." maxlength="28">
+            </label>
+            <label>
+                Category:
+                <input type="text" id="securityCategory" placeholder="csrf, login, request" maxlength="80">
+            </label>
+            <label>
+                Tail:
+                <select id="securityTail">
+                    <option value="100">100</option>
+                    <option value="200" selected>200</option>
+                    <option value="500">500</option>
+                </select>
+            </label>
+            <button id="securityRefreshBtn">Search</button>
+        </div>
+        <p class="status" id="securityAuditStatus" role="status" aria-live="polite">
+            Loading redacted security events...
+        </p>
+        <pre id="securityAuditViewer" style="max-height:420px;overflow:auto;background:#0b0f1a;color:#c9d4f0;padding:12px;border-radius:8px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;">Loading...</pre>
+    </div>
     </main>
 
     <script>
@@ -1253,6 +1280,47 @@
             }
         }
 
+        async function fetchSecurityEvents() {
+            const viewer = document.getElementById('securityAuditViewer');
+            const status = document.getElementById('securityAuditStatus');
+            if (!viewer || !status) return;
+            const params = new URLSearchParams({
+                tail: document.getElementById('securityTail').value,
+            });
+            const requestId = document.getElementById('securityRequestId').value.trim();
+            const category = document.getElementById('securityCategory').value.trim();
+            if (requestId) params.set('request_id', requestId);
+            if (category) params.set('category', category);
+            try {
+                const response = await fetch(`/api/admin/security-events?${params}`, {
+                    credentials: 'same-origin',
+                });
+                if (!response.ok) return;
+                const data = await response.json();
+                status.textContent = `${data.total || 0} redacted event(s) · mode ${data.mode || 'off'}`;
+                viewer.textContent = (data.events || []).length
+                    ? data.events.map(event => JSON.stringify(event)).join('\n')
+                    : '(no matching security events)';
+            } catch (e) {
+                status.textContent = 'Security events are temporarily unavailable.';
+            }
+        }
+
+        function bindSecurityAuditControls() {
+            const refresh = document.getElementById('securityRefreshBtn');
+            const requestId = document.getElementById('securityRequestId');
+            const category = document.getElementById('securityCategory');
+            const tail = document.getElementById('securityTail');
+            if (refresh) refresh.addEventListener('click', fetchSecurityEvents);
+            if (requestId) requestId.addEventListener('keydown', event => {
+                if (event.key === 'Enter') fetchSecurityEvents();
+            });
+            if (category) category.addEventListener('keydown', event => {
+                if (event.key === 'Enter') fetchSecurityEvents();
+            });
+            if (tail) tail.addEventListener('change', fetchSecurityEvents);
+        }
+
         async function sendUserUpdate(userId, payload) {
             const response = await fetch(`/api/admin/users/${userId}`, {
                 method: 'PATCH',
@@ -1521,6 +1589,8 @@
         fetchAuditLogs();
         bindLogControls();
         fetchBackendLogs();
+        bindSecurityAuditControls();
+        fetchSecurityEvents();
     </script>
 </body>
 </html>

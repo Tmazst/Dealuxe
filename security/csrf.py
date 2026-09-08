@@ -7,6 +7,8 @@ from flask import jsonify, request
 from flask_wtf.csrf import generate_csrf, validate_csrf
 from wtforms.validators import ValidationError
 
+from .observability import audit_security_event, current_request_id
+
 
 SAFE_METHODS = frozenset({'GET', 'HEAD', 'OPTIONS'})
 
@@ -89,6 +91,13 @@ def install_csrf_guard(app, config, extension):
             request.endpoint or '<unknown>',
             reason,
         )
+        audit_security_event(
+            'csrf_decision',
+            category='csrf',
+            outcome='blocked' if mode == 'enforce' else 'would_block',
+            status=400 if mode == 'enforce' else 200,
+            details={'reason': reason},
+        )
         if mode != 'enforce':
             return None
 
@@ -98,6 +107,8 @@ def install_csrf_guard(app, config, extension):
             'error': 'Request rejected because its security token is missing or invalid',
             'code': 'csrf_rejected',
         }
+        if current_request_id():
+            payload['request_id'] = current_request_id()
         if request.path.startswith('/api/') or request.is_json:
             return jsonify(payload), 400
         return payload['error'], 400

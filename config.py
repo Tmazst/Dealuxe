@@ -389,6 +389,37 @@ def build_runtime_security_config(environ=None):
             ),
         }
 
+    security_audit_mode = str(
+        environ.get('SECURITY_AUDIT_MODE') or 'monitor'
+    ).strip().lower()
+    if security_audit_mode not in {'off', 'monitor', 'enforce'}:
+        raise RuntimeError(
+            'SECURITY_AUDIT_MODE must be one of: off, monitor, enforce'
+        )
+    security_audit_file = str(
+        environ.get('SECURITY_AUDIT_FILE')
+        or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            'logs',
+            'security_audit.jsonl',
+        )
+    ).strip()
+    if not security_audit_file:
+        raise RuntimeError('SECURITY_AUDIT_FILE must not be empty')
+    if not os.path.isabs(security_audit_file):
+        security_audit_file = os.path.abspath(os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), security_audit_file
+        ))
+    security_audit_max_bytes = _env_positive_number(
+        environ, 'SECURITY_AUDIT_MAX_BYTES', 5 * 1024 * 1024, integer=True
+    )
+    security_audit_backup_count = _env_positive_number(
+        environ, 'SECURITY_AUDIT_BACKUP_COUNT', 7, integer=True
+    )
+    security_audit_retention_days = _env_positive_number(
+        environ, 'SECURITY_AUDIT_RETENTION_DAYS', 30, integer=True
+    )
+
     redis_url = str(environ.get('REDIS_URL') or '').strip()
     if not redis_url:
         if not is_local:
@@ -449,6 +480,11 @@ def build_runtime_security_config(environ=None):
         'RATE_LIMIT_MODE': rate_limit_mode,
         'RATE_LIMIT_STORAGE': rate_limit_storage,
         'RATE_LIMIT_POLICIES': rate_limit_policies,
+        'SECURITY_AUDIT_MODE': security_audit_mode,
+        'SECURITY_AUDIT_FILE': security_audit_file,
+        'SECURITY_AUDIT_MAX_BYTES': security_audit_max_bytes,
+        'SECURITY_AUDIT_BACKUP_COUNT': security_audit_backup_count,
+        'SECURITY_AUDIT_RETENTION_DAYS': security_audit_retention_days,
     }
 
 class GameConfig:

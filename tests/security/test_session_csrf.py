@@ -32,6 +32,7 @@ class SessionAndCsrfSecurityTests(unittest.TestCase):
             'CSRF_TOKEN_TIME_LIMIT_SECONDS': 3600,
             'CSRF_ADDITIONAL_EXEMPT_ENDPOINTS': [],
             'SESSION_ROTATION_MODE': rotation_mode,
+            'SECURITY_AUDIT_MODE': 'off',
         })
         init_security_scaffold(app)
         return app

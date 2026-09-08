@@ -42,6 +42,7 @@ class RateLimitTests(unittest.TestCase):
             'RATE_LIMIT_MODE': mode,
             'RATE_LIMIT_STORAGE': 'memory',
             'RATE_LIMIT_POLICIES': policies or _policies(),
+            'SECURITY_AUDIT_MODE': 'off',
         })
         socketio = SocketIO(app, async_mode='threading') if with_socket else None
         init_security_scaffold(app, socketio=socketio)
@@ -189,9 +190,9 @@ class RateLimitTests(unittest.TestCase):
 
     def test_socket_connection_limit_rejects_excess_connection(self):
         policies = _policies(default_attempts=10)
-        # Flask-SocketIO's in-process test transport invokes the namespace
-        # connect hook twice while establishing one logical test connection.
-        policies['socket_connect']['attempts'] = 2
+        # The observability compatibility wrapper normalizes the optional auth
+        # argument, so one logical connection consumes exactly one attempt.
+        policies['socket_connect']['attempts'] = 1
         app, socketio = self._app(policies=policies, with_socket=True)
 
         @socketio.on('connect')

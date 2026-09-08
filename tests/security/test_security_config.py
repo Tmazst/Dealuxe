@@ -30,6 +30,9 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
             'attempts': 8,
             'window_seconds': 300,
         })
+        self.assertEqual(config['SECURITY_AUDIT_MODE'], 'monitor')
+        self.assertTrue(config['SECURITY_AUDIT_FILE'].endswith('security_audit.jsonl'))
+        self.assertEqual(config['SECURITY_AUDIT_RETENTION_DAYS'], 30)
 
     def test_production_requires_explicit_session_secret(self):
         with self.assertRaisesRegex(RuntimeError, 'FLASK_SECRET_KEY'):
@@ -214,6 +217,32 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
                 'RATE_LIMIT_MODE': 'monitor',
                 'RATE_LIMIT_STORAGE': 'memory',
             })
+
+    def test_security_audit_configuration_is_validated(self):
+        config = build_runtime_security_config({
+            'ENV': 'test',
+            'SECURITY_AUDIT_MODE': 'enforce',
+            'SECURITY_AUDIT_FILE': 'logs/test-security.jsonl',
+            'SECURITY_AUDIT_MAX_BYTES': '4096',
+            'SECURITY_AUDIT_BACKUP_COUNT': '3',
+            'SECURITY_AUDIT_RETENTION_DAYS': '14',
+        })
+        self.assertEqual(config['SECURITY_AUDIT_MODE'], 'enforce')
+        self.assertEqual(config['SECURITY_AUDIT_MAX_BYTES'], 4096)
+        self.assertEqual(config['SECURITY_AUDIT_BACKUP_COUNT'], 3)
+        self.assertEqual(config['SECURITY_AUDIT_RETENTION_DAYS'], 14)
+
+        cases = (
+            ({'SECURITY_AUDIT_MODE': 'sometimes'}, 'SECURITY_AUDIT_MODE'),
+            ({'SECURITY_AUDIT_FILE': ' '}, 'SECURITY_AUDIT_FILE'),
+            ({'SECURITY_AUDIT_MAX_BYTES': '0'}, 'SECURITY_AUDIT_MAX_BYTES'),
+            ({'SECURITY_AUDIT_BACKUP_COUNT': '0'}, 'SECURITY_AUDIT_BACKUP_COUNT'),
+            ({'SECURITY_AUDIT_RETENTION_DAYS': '0'}, 'SECURITY_AUDIT_RETENTION_DAYS'),
+        )
+        for settings, message in cases:
+            with self.subTest(settings=settings):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    build_runtime_security_config({'ENV': 'test', **settings})
 
 
 class PilotEconomyConfigTests(unittest.TestCase):

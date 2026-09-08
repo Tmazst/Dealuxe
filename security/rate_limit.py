@@ -12,6 +12,8 @@ import time
 
 from flask import current_app, jsonify, request, session
 
+from .observability import audit_security_event, current_request_id
+
 
 LOGIN_ENDPOINTS = frozenset({
     'auth.login', 'auth.login_api', 'auth.register', 'auth.register_api',
@@ -180,6 +182,21 @@ class ApplicationRateLimiter:
             category,
             endpoint,
         )
+        audit_security_event(
+            'rate_limit_decision',
+            channel=channel,
+            category=category,
+            outcome=(
+                'blocked'
+                if self.config.rate_limit_mode == 'enforce'
+                else 'would_block'
+            ),
+            status=(
+                429 if self.config.rate_limit_mode == 'enforce' and channel == 'http'
+                else None
+            ),
+            endpoint=endpoint,
+        )
 
     def evaluate_http(self, category):
         mode = self.config.rate_limit_mode
@@ -301,6 +318,8 @@ def install_rate_limits(app, socketio, config, extension, store=None):
             'error': 'Too many requests. Please try again later.',
             'code': 'rate_limited',
         }
+        if current_request_id():
+            payload['request_id'] = current_request_id()
         if request.path.startswith('/api/') or request.is_json:
             return jsonify(payload), 429
         return payload['error'], 429
@@ -322,10 +341,13 @@ def install_rate_limits(app, socketio, config, extension, store=None):
                 if message == 'connect':
                     return False
                 from flask_socketio import emit
-                emit('security_error', {
+                payload = {
                     'error': 'Too many requests. Please try again later.',
                     'code': 'rate_limited',
-                })
+                }
+                if current_request_id():
+                    payload['request_id'] = current_request_id()
+                emit('security_error', payload)
                 return None
 
             return register(guarded_handler)

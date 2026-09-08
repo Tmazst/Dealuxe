@@ -720,9 +720,19 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             else:
                 emit('error', {'message': 'Invalid action'})
                 return
-        except Exception as e:
-            print(f"[MULTIPLAYER] Error executing action: {e}")
-            emit('error', {'message': str(e)})
+        except Exception as exc:
+            from security import audit_security_event, current_request_id
+            print(f"[MULTIPLAYER] Error executing action: {type(exc).__name__}")
+            audit_security_event(
+                'game_action_failure', channel='socket', category='gameplay',
+                outcome='failed',
+                details={'exception_type': type(exc).__name__},
+            )
+            emit('error', {
+                'message': 'Game action could not be completed',
+                'code': 'game_action_failed',
+                'request_id': current_request_id(),
+            })
             return
 
         # Persist updated engine state back to manager (important for Redis-backed storage)
@@ -1033,11 +1043,19 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 print(f"[MULTIPLAYER] ERROR: Room {room_code} has no game_id")
                 emit('error', {'message': 'Game not started yet'})
                 
-        except Exception as e:
-            print(f"[MULTIPLAYER] ERROR in reconnect_to_room: {e}")
-            import traceback
-            traceback.print_exc()
-            emit('error', {'message': f'Server error: {str(e)}'})
+        except Exception as exc:
+            from security import audit_security_event, current_request_id
+            print(f"[MULTIPLAYER] Reconnect error: {type(exc).__name__}")
+            audit_security_event(
+                'game_reconnect_failure', channel='socket', category='gameplay',
+                outcome='failed',
+                details={'exception_type': type(exc).__name__},
+            )
+            emit('error', {
+                'message': 'Could not reconnect to the game',
+                'code': 'game_reconnect_failed',
+                'request_id': current_request_id(),
+            })
         else:
             emit('reconnected', {'room': room.to_dict()})
     

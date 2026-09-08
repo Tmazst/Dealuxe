@@ -11,6 +11,7 @@ import uuid
 from config import GameConfig
 from models.player import get_or_create_demo_player, get_player
 from models.bet_session import create_session, get_session_by_game, get_session
+from security import audit_security_event, safe_internal_error
 
 session_bp = Blueprint('session', __name__)
 
@@ -142,12 +143,17 @@ def create_game_session():
             'prize_pool': session.prize_pool
         }), 200
         
-    except Exception as e:
-        print(f"[SESSION] Error creating session: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    except Exception as exc:
+        print(f"[SESSION] Error creating session: {type(exc).__name__}")
+        audit_security_event(
+            'game_session_failure', category='game_session', outcome='failed',
+            status=500,
+            details={'operation': 'create', 'exception_type': type(exc).__name__},
+        )
+        return safe_internal_error(
+            'Game session could not be created', 'game_session_failed',
+            extra={'success': False},
+        )
 
 
 @session_bp.route('/api/session/complete', methods=['POST'])
@@ -233,12 +239,17 @@ def complete_game_session():
             'new_balance': new_balance
         }), 200
         
-    except Exception as e:
-        print(f"[SESSION] Error completing session: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    except Exception as exc:
+        print(f"[SESSION] Error completing session: {type(exc).__name__}")
+        audit_security_event(
+            'game_session_failure', category='game_session', outcome='failed',
+            status=500,
+            details={'operation': 'complete', 'exception_type': type(exc).__name__},
+        )
+        return safe_internal_error(
+            'Game session could not be completed', 'game_session_failed',
+            extra={'success': False},
+        )
 
 
 @session_bp.route('/api/player/balance', methods=['GET'])
@@ -290,12 +301,16 @@ def get_player_balance():
             }
         }), 200
         
-    except Exception as e:
-        print(f"[SESSION] Error getting balance: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    except Exception as exc:
+        print(f"[SESSION] Error getting balance: {type(exc).__name__}")
+        audit_security_event(
+            'balance_read_failure', category='wallet', outcome='failed',
+            status=500, details={'exception_type': type(exc).__name__},
+        )
+        return safe_internal_error(
+            'Balance could not be retrieved', 'balance_read_failed',
+            extra={'success': False},
+        )
 
 
 @session_bp.route('/api/player/claim-free-cash', methods=['POST'])
@@ -355,9 +370,14 @@ def claim_free_cash():
             }
         }), 200
         
-    except Exception as e:
-        print(f"[SESSION] Error claiming free cash: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    except Exception as exc:
+        print(f"[SESSION] Error claiming promotional credit: {type(exc).__name__}")
+        audit_security_event(
+            'credit_claim_failure', category='wallet', outcome='failed',
+            status=500, details={'exception_type': type(exc).__name__},
+        )
+        return safe_internal_error(
+            'Promotional credit request could not be completed',
+            'credit_request_failed',
+            extra={'success': False},
+        )

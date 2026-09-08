@@ -26,6 +26,11 @@ class SecurityScaffoldConfig:
     rate_limit_mode: str
     rate_limit_storage: str
     rate_limit_policies: Mapping[str, Mapping[str, int]]
+    security_audit_mode: str
+    security_audit_file: str
+    security_audit_max_bytes: int
+    security_audit_backup_count: int
+    security_audit_retention_days: int
 
     @classmethod
     def from_app(cls, app):
@@ -82,4 +87,17 @@ class SecurityScaffoldConfig:
                 app.config.get('RATE_LIMIT_STORAGE') or 'memory'
             ).lower(),
             rate_limit_policies=dict(app.config.get('RATE_LIMIT_POLICIES') or {}),
+            security_audit_mode=str(
+                app.config.get('SECURITY_AUDIT_MODE') or 'monitor'
+            ).lower(),
+            security_audit_file=str(app.config.get('SECURITY_AUDIT_FILE') or ''),
+            security_audit_max_bytes=int(
+                app.config.get('SECURITY_AUDIT_MAX_BYTES') or 5 * 1024 * 1024
+            ),
+            security_audit_backup_count=int(
+                app.config.get('SECURITY_AUDIT_BACKUP_COUNT') or 7
+            ),
+            security_audit_retention_days=int(
+                app.config.get('SECURITY_AUDIT_RETENTION_DAYS') or 30
+            ),
         )

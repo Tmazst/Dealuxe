@@ -26,6 +26,7 @@ class SecurityScaffoldTests(unittest.TestCase):
             'CSRF_ADDITIONAL_EXEMPT_ENDPOINTS': [],
             'SESSION_COOKIE_SECURITY_MODE': 'off',
             'SESSION_ROTATION_MODE': 'off',
+            'SECURITY_AUDIT_MODE': 'off',
         })
         app.config.update(overrides)
         return app

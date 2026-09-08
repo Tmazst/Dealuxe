@@ -1,6 +1,7 @@
 from functools import wraps
 
-from flask import Blueprint, jsonify, request, session, render_template
+from flask import Blueprint, current_app, jsonify, request, session, render_template
+from security.observability import read_security_audit
 
 from admin.service import (
     adjust_wallet,
@@ -206,6 +207,29 @@ def backend_logs():
 def clear_backend_logs_route():
     """Truncate the backend print log file."""
     return jsonify(clear_backend_logs())
+
+
+@admin_bp.route('/security-events', methods=['GET'])
+@admin_required
+def security_events():
+    """Return a bounded view of already-redacted structured security records."""
+    try:
+        tail = max(1, min(int(request.args.get('tail', 200)), 1000))
+    except (TypeError, ValueError):
+        tail = 200
+    records = read_security_audit(
+        current_app.config['SECURITY_AUDIT_FILE'],
+        tail=tail,
+        request_id=(request.args.get('request_id') or '').strip() or None,
+        event=(request.args.get('event') or '').strip() or None,
+        category=(request.args.get('category') or '').strip() or None,
+        backup_count=current_app.config.get('SECURITY_AUDIT_BACKUP_COUNT', 7),
+    )
+    return jsonify({
+        'events': records,
+        'total': len(records),
+        'mode': current_app.config.get('SECURITY_AUDIT_MODE', 'off'),
+    })
 
 
 @admin_bp.route('/audit-logs', methods=['GET'])

@@ -17,6 +17,10 @@ class AdminRoutesTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertIn('Authentication required', response.get_json()['error'])
 
+    def test_security_events_require_login(self):
+        response = self.client.get('/api/admin/security-events')
+        self.assertEqual(response.status_code, 401)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -16,7 +16,13 @@ from pricing.referrals import (
     get_or_create_referral_code,
     normalize_referral_code,
 )
-from security import establish_authenticated_session, machine_client_endpoint
+from security import (
+    audit_security_event,
+    current_request_id,
+    establish_authenticated_session,
+    machine_client_endpoint,
+    safe_internal_error,
+)
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -140,9 +146,20 @@ def register():
             flash('Registration successful! Welcome to Dealuxe!', 'success')
             return redirect(url_for('index'))
             
-        except Exception as e:
+        except Exception as exc:
             db.session.rollback()
-            flash(f'Registration failed: {str(e)}', 'error')
+            audit_security_event(
+                'registration_failure',
+                category='authentication',
+                outcome='failed',
+                status=500,
+                details={'exception_type': type(exc).__name__},
+            )
+            reference = current_request_id()
+            message = 'Registration could not be completed. Please try again.'
+            if reference:
+                message += f' Reference: {reference}'
+            flash(message, 'error')
             return render_template('register.html', form=form)
     
     return render_template('register.html', form=form)
@@ -193,9 +210,11 @@ def register_api_internal():
     except ValueError as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 400
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return safe_internal_error(
+            'Registration could not be completed', 'registration_failed'
+        )
 
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
@@ -477,9 +496,11 @@ def register_api():
     except ValueError as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 400
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return safe_internal_error(
+            'Registration could not be completed', 'registration_failed'
+        )
 
 
 @auth_bp.route('/api/auth/login', methods=['POST'])
