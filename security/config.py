@@ -31,6 +31,19 @@ class SecurityScaffoldConfig:
     security_audit_max_bytes: int
     security_audit_backup_count: int
     security_audit_retention_days: int
+    browser_headers_mode: str
+    browser_x_frame_options_enabled: bool
+    browser_x_content_type_options_enabled: bool
+    browser_referrer_policy_enabled: bool
+    browser_permissions_policy_enabled: bool
+    browser_hsts_enabled: bool
+    browser_hsts_max_age_seconds: int
+    browser_hsts_include_subdomains: bool
+    csp_security_mode: str
+    csp_reporting_enabled: bool
+    csp_max_report_bytes: int
+    csp_allow_inline_scripts: bool
+    csp_allow_inline_styles: bool
 
     @classmethod
     def from_app(cls, app):
@@ -99,5 +112,44 @@ class SecurityScaffoldConfig:
             ),
             security_audit_retention_days=int(
                 app.config.get('SECURITY_AUDIT_RETENTION_DAYS') or 30
+            ),
+            browser_headers_mode=str(
+                app.config.get('BROWSER_SECURITY_HEADERS_MODE') or 'pilot'
+            ).lower(),
+            browser_x_frame_options_enabled=bool(
+                app.config.get('BROWSER_X_FRAME_OPTIONS_ENABLED', True)
+            ),
+            browser_x_content_type_options_enabled=bool(
+                app.config.get('BROWSER_X_CONTENT_TYPE_OPTIONS_ENABLED', True)
+            ),
+            browser_referrer_policy_enabled=bool(
+                app.config.get('BROWSER_REFERRER_POLICY_ENABLED', True)
+            ),
+            browser_permissions_policy_enabled=bool(
+                app.config.get('BROWSER_PERMISSIONS_POLICY_ENABLED', True)
+            ),
+            browser_hsts_enabled=bool(
+                app.config.get('BROWSER_HSTS_ENABLED', True)
+            ),
+            browser_hsts_max_age_seconds=int(
+                app.config.get('BROWSER_HSTS_MAX_AGE_SECONDS') or 31536000
+            ),
+            browser_hsts_include_subdomains=bool(
+                app.config.get('BROWSER_HSTS_INCLUDE_SUBDOMAINS', False)
+            ),
+            csp_security_mode=str(
+                app.config.get('CSP_SECURITY_MODE') or 'monitor'
+            ).lower(),
+            csp_reporting_enabled=bool(
+                app.config.get('CSP_REPORTING_ENABLED', True)
+            ),
+            csp_max_report_bytes=int(
+                app.config.get('CSP_MAX_REPORT_BYTES') or 16384
+            ),
+            csp_allow_inline_scripts=bool(
+                app.config.get('CSP_ALLOW_INLINE_SCRIPTS', True)
+            ),
+            csp_allow_inline_styles=bool(
+                app.config.get('CSP_ALLOW_INLINE_STYLES', True)
             ),
         )

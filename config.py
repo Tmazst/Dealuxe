@@ -369,6 +369,7 @@ def build_runtime_security_config(environ=None):
         'PAYMENT': (30, 60),
         'ADMIN': (240, 60),
         'UPLOAD': (12, 300),
+        'CSP_REPORT': (120, 60),
         'SOCKET_CONNECT': (120, 60),
         'SOCKET_EVENT': (240, 60),
     }
@@ -418,6 +419,27 @@ def build_runtime_security_config(environ=None):
     )
     security_audit_retention_days = _env_positive_number(
         environ, 'SECURITY_AUDIT_RETENTION_DAYS', 30, integer=True
+    )
+
+    browser_headers_mode = str(
+        environ.get('BROWSER_SECURITY_HEADERS_MODE') or 'pilot'
+    ).strip().lower()
+    if browser_headers_mode not in {'off', 'pilot', 'enforce'}:
+        raise RuntimeError(
+            'BROWSER_SECURITY_HEADERS_MODE must be one of: off, pilot, enforce'
+        )
+    csp_security_mode = str(
+        environ.get('CSP_SECURITY_MODE') or 'monitor'
+    ).strip().lower()
+    if csp_security_mode not in {'off', 'monitor', 'enforce'}:
+        raise RuntimeError(
+            'CSP_SECURITY_MODE must be one of: off, monitor, enforce'
+        )
+    browser_hsts_max_age_seconds = _env_positive_number(
+        environ, 'BROWSER_HSTS_MAX_AGE_SECONDS', 31536000, integer=True
+    )
+    csp_max_report_bytes = _env_positive_number(
+        environ, 'CSP_MAX_REPORT_BYTES', 16384, integer=True
     )
 
     redis_url = str(environ.get('REDIS_URL') or '').strip()
@@ -485,6 +507,40 @@ def build_runtime_security_config(environ=None):
         'SECURITY_AUDIT_MAX_BYTES': security_audit_max_bytes,
         'SECURITY_AUDIT_BACKUP_COUNT': security_audit_backup_count,
         'SECURITY_AUDIT_RETENTION_DAYS': security_audit_retention_days,
+        'BROWSER_SECURITY_HEADERS_MODE': browser_headers_mode,
+        'BROWSER_X_FRAME_OPTIONS_ENABLED': _env_bool(
+            environ, 'BROWSER_X_FRAME_OPTIONS_ENABLED', default=True
+        ),
+        'BROWSER_X_CONTENT_TYPE_OPTIONS_ENABLED': _env_bool(
+            environ, 'BROWSER_X_CONTENT_TYPE_OPTIONS_ENABLED', default=True
+        ),
+        'BROWSER_REFERRER_POLICY_ENABLED': _env_bool(
+            environ, 'BROWSER_REFERRER_POLICY_ENABLED', default=True
+        ),
+        'BROWSER_PERMISSIONS_POLICY_ENABLED': _env_bool(
+            environ, 'BROWSER_PERMISSIONS_POLICY_ENABLED', default=True
+        ),
+        'BROWSER_HSTS_ENABLED': _env_bool(
+            environ, 'BROWSER_HSTS_ENABLED', default=True
+        ),
+        'BROWSER_HSTS_MAX_AGE_SECONDS': browser_hsts_max_age_seconds,
+        'BROWSER_HSTS_INCLUDE_SUBDOMAINS': _env_bool(
+            environ, 'BROWSER_HSTS_INCLUDE_SUBDOMAINS', default=False
+        ),
+        'CSP_SECURITY_MODE': csp_security_mode,
+        'CSP_REPORTING_ENABLED': _env_bool(
+            environ, 'CSP_REPORTING_ENABLED', default=True
+        ),
+        'CSP_MAX_REPORT_BYTES': csp_max_report_bytes,
+        # The current MVP templates contain reviewed inline scripts/styles.
+        # These switches make their later nonce/style extraction independently
+        # testable without weakening the rest of the policy.
+        'CSP_ALLOW_INLINE_SCRIPTS': _env_bool(
+            environ, 'CSP_ALLOW_INLINE_SCRIPTS', default=True
+        ),
+        'CSP_ALLOW_INLINE_STYLES': _env_bool(
+            environ, 'CSP_ALLOW_INLINE_STYLES', default=True
+        ),
     }
 
 class GameConfig:

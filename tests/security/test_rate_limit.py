@@ -12,7 +12,7 @@ def _policies(default_attempts=1):
         name: {'attempts': default_attempts, 'window_seconds': 60}
         for name in (
             'login_ip', 'login_account', 'payment', 'admin', 'upload',
-            'socket_connect', 'socket_event',
+            'csp_report', 'socket_connect', 'socket_event',
         )
     }
 

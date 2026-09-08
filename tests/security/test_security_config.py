@@ -33,6 +33,11 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
         self.assertEqual(config['SECURITY_AUDIT_MODE'], 'monitor')
         self.assertTrue(config['SECURITY_AUDIT_FILE'].endswith('security_audit.jsonl'))
         self.assertEqual(config['SECURITY_AUDIT_RETENTION_DAYS'], 30)
+        self.assertEqual(config['BROWSER_SECURITY_HEADERS_MODE'], 'pilot')
+        self.assertEqual(config['CSP_SECURITY_MODE'], 'monitor')
+        self.assertTrue(config['CSP_REPORTING_ENABLED'])
+        self.assertTrue(config['CSP_ALLOW_INLINE_SCRIPTS'])
+        self.assertTrue(config['CSP_ALLOW_INLINE_STYLES'])
 
     def test_production_requires_explicit_session_secret(self):
         with self.assertRaisesRegex(RuntimeError, 'FLASK_SECRET_KEY'):
@@ -238,6 +243,60 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
             ({'SECURITY_AUDIT_MAX_BYTES': '0'}, 'SECURITY_AUDIT_MAX_BYTES'),
             ({'SECURITY_AUDIT_BACKUP_COUNT': '0'}, 'SECURITY_AUDIT_BACKUP_COUNT'),
             ({'SECURITY_AUDIT_RETENTION_DAYS': '0'}, 'SECURITY_AUDIT_RETENTION_DAYS'),
+        )
+        for settings, message in cases:
+            with self.subTest(settings=settings):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    build_runtime_security_config({'ENV': 'test', **settings})
+
+    def test_browser_headers_and_csp_are_independently_configurable(self):
+        config = build_runtime_security_config({
+            'ENV': 'test',
+            'BROWSER_SECURITY_HEADERS_MODE': 'enforce',
+            'BROWSER_X_FRAME_OPTIONS_ENABLED': 'false',
+            'BROWSER_X_CONTENT_TYPE_OPTIONS_ENABLED': 'true',
+            'BROWSER_REFERRER_POLICY_ENABLED': 'false',
+            'BROWSER_PERMISSIONS_POLICY_ENABLED': 'false',
+            'BROWSER_HSTS_ENABLED': 'true',
+            'BROWSER_HSTS_MAX_AGE_SECONDS': '600',
+            'BROWSER_HSTS_INCLUDE_SUBDOMAINS': 'true',
+            'CSP_SECURITY_MODE': 'off',
+            'CSP_REPORTING_ENABLED': 'false',
+            'CSP_MAX_REPORT_BYTES': '4096',
+            'CSP_ALLOW_INLINE_SCRIPTS': 'false',
+            'CSP_ALLOW_INLINE_STYLES': 'false',
+            'RATE_LIMIT_CSP_REPORT_ATTEMPTS': '75',
+        })
+
+        self.assertEqual(config['BROWSER_SECURITY_HEADERS_MODE'], 'enforce')
+        self.assertFalse(config['BROWSER_X_FRAME_OPTIONS_ENABLED'])
+        self.assertTrue(config['BROWSER_X_CONTENT_TYPE_OPTIONS_ENABLED'])
+        self.assertFalse(config['BROWSER_REFERRER_POLICY_ENABLED'])
+        self.assertFalse(config['BROWSER_PERMISSIONS_POLICY_ENABLED'])
+        self.assertTrue(config['BROWSER_HSTS_ENABLED'])
+        self.assertEqual(config['BROWSER_HSTS_MAX_AGE_SECONDS'], 600)
+        self.assertTrue(config['BROWSER_HSTS_INCLUDE_SUBDOMAINS'])
+        self.assertEqual(config['CSP_SECURITY_MODE'], 'off')
+        self.assertFalse(config['CSP_REPORTING_ENABLED'])
+        self.assertEqual(config['CSP_MAX_REPORT_BYTES'], 4096)
+        self.assertFalse(config['CSP_ALLOW_INLINE_SCRIPTS'])
+        self.assertFalse(config['CSP_ALLOW_INLINE_STYLES'])
+        self.assertEqual(
+            config['RATE_LIMIT_POLICIES']['csp_report']['attempts'], 75
+        )
+
+    def test_invalid_browser_header_configuration_fails_closed(self):
+        cases = (
+            (
+                {'BROWSER_SECURITY_HEADERS_MODE': 'sometimes'},
+                'BROWSER_SECURITY_HEADERS_MODE',
+            ),
+            ({'CSP_SECURITY_MODE': 'sometimes'}, 'CSP_SECURITY_MODE'),
+            (
+                {'BROWSER_HSTS_MAX_AGE_SECONDS': '0'},
+                'BROWSER_HSTS_MAX_AGE_SECONDS',
+            ),
+            ({'CSP_MAX_REPORT_BYTES': 'invalid'}, 'CSP_MAX_REPORT_BYTES'),
         )
         for settings, message in cases:
             with self.subTest(settings=settings):

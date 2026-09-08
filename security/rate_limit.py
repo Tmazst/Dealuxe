@@ -110,7 +110,7 @@ return 1
 
 def rate_limit_category(category):
     """Assign a reviewed HTTP endpoint to a configured limit category."""
-    if category not in {'login', 'payment', 'admin', 'upload'}:
+    if category not in {'login', 'payment', 'admin', 'upload', 'csp_report'}:
         raise ValueError('Unknown rate-limit category')
 
     def decorate(view):

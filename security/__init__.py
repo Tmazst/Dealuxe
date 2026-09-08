@@ -11,6 +11,7 @@ from .observability import (
     safe_internal_error,
 )
 from .session_security import establish_authenticated_session
+from .browser_headers import install_browser_security
 
 
 def init_security_scaffold(app, socketio=None):
@@ -26,6 +27,7 @@ def init_security_scaffold(app, socketio=None):
     install_rate_limits(app, socketio, config, app.extensions['security'])
     install_request_guard(app, config, app.extensions['security'])
     install_csrf_guard(app, config, app.extensions['security'])
+    install_browser_security(app, config, app.extensions['security'])
     return app.extensions['security']
 
 
