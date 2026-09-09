@@ -39,6 +39,9 @@ class PaidPlanTests(unittest.TestCase):
         'HYBRID_PROFILE_ENABLED', 'HYBRID_MATCHING_ENABLED',
         'HYBRID_BRACKET_DISCOVERY_ENABLED', 'MOJAPOS_MOCK_MODE',
         'MOJAPOS_VERIFY_WEBHOOK_SIGNATURE',
+        'MOJAPOS_EXPECTED_ENVIRONMENT', 'MOJAPOS_EXPECTED_CURRENCY',
+        'MOJAPOS_WEBHOOK_RECONCILIATION_MODE',
+        'MOJAPOS_WEBHOOK_MAX_BYTES',
     )
 
     def setUp(self):
@@ -62,6 +65,10 @@ class PaidPlanTests(unittest.TestCase):
             HYBRID_BRACKET_DISCOVERY_ENABLED=True,
             MOJAPOS_MOCK_MODE=False,
             MOJAPOS_VERIFY_WEBHOOK_SIGNATURE=False,
+            MOJAPOS_EXPECTED_ENVIRONMENT='LIVE',
+            MOJAPOS_EXPECTED_CURRENCY='SZL',
+            MOJAPOS_WEBHOOK_RECONCILIATION_MODE='monitor',
+            MOJAPOS_WEBHOOK_MAX_BYTES=32768,
         )
         self.context = app.app_context()
         self.context.push()
@@ -116,15 +123,22 @@ class PaidPlanTests(unittest.TestCase):
         purchase = PlanPurchase.query.order_by(PlanPurchase.id.desc()).first()
         return response, purchase, request_mock.call_args.kwargs['data']
 
-    def _callback(self, purchase, *, amount=None, currency='SZL', gateway='paid-1'):
+    def _callback(self, purchase, *, amount=None, currency='SZL', gateway=None,
+                  environment='LIVE'):
+        gateway = gateway or purchase.gateway_transaction_id
         return self.client.post('/api/payment/callback', json={
+            'id': f'callback-{gateway}',
             'event': 'payment.success',
+            'environment': environment,
             'data': {
                 'transactionId': gateway,
                 'status': 'COMPLETED',
                 'amount': str(purchase.amount if amount is None else amount),
                 'currency': currency,
-                'providerResponse': {'externalId': purchase.external_ref_id},
+                'providerResponse': {
+                    'externalId': purchase.external_ref_id,
+                    'status': 'SUCCESSFUL',
+                },
             },
         })
 
@@ -186,17 +200,21 @@ class PaidPlanTests(unittest.TestCase):
         self.assertEqual(PlanEntitlement.query.count(), 1)
 
     def test_wrong_amount_or_currency_never_activates(self):
-        for index, invalid in enumerate(({'amount': 19}, {'currency': 'USD'}), 1):
-            _, purchase, _ = self._start_live_purchase('hybrid')
+        cases = (
+            ('hybrid', {'amount': 19}),
+            ('hybrid_plus', {'currency': 'USD'}),
+        )
+        for plan_code, invalid in cases:
+            _, purchase, _ = self._start_live_purchase(plan_code)
             response = self._callback(
                 purchase,
                 amount=invalid.get('amount'),
                 currency=invalid.get('currency', 'SZL'),
-                gateway=f'invalid-{index}',
             )
             self.assertEqual(response.status_code, 200)
             db.session.refresh(purchase)
-            self.assertEqual(purchase.status, 'failed')
+            self.assertEqual(purchase.status, 'pending')
+            self.assertEqual(purchase.transaction.status, 'pending')
             self.assertEqual(PlanEntitlement.query.count(), 0)
 
     def test_explicit_mock_mode_activates_and_repeat_purchase_extends_pass(self):

@@ -467,6 +467,30 @@ def build_runtime_security_config(environ=None):
         environ, 'MOJAPOS_VERIFY_WEBHOOK_SIGNATURE', default=False
     )
     webhook_secret = str(environ.get('MOJAPOS_WEBHOOK_SECRET') or '').strip()
+    payment_reconciliation_mode = str(
+        environ.get('MOJAPOS_WEBHOOK_RECONCILIATION_MODE') or 'monitor'
+    ).strip().lower()
+    if payment_reconciliation_mode not in {'off', 'monitor', 'enforce'}:
+        raise RuntimeError(
+            'MOJAPOS_WEBHOOK_RECONCILIATION_MODE must be one of: '
+            'off, monitor, enforce'
+        )
+    expected_payment_environment = str(
+        environ.get('MOJAPOS_EXPECTED_ENVIRONMENT')
+        or ('SANDBOX' if is_local else 'LIVE')
+    ).strip().upper()
+    if expected_payment_environment not in {'SANDBOX', 'LIVE'}:
+        raise RuntimeError(
+            'MOJAPOS_EXPECTED_ENVIRONMENT must be SANDBOX or LIVE'
+        )
+    expected_payment_currency = str(
+        environ.get('MOJAPOS_EXPECTED_CURRENCY') or 'SZL'
+    ).strip().upper()
+    if expected_payment_currency != 'SZL':
+        raise RuntimeError('MOJAPOS_EXPECTED_CURRENCY must be SZL in Version 3')
+    payment_webhook_max_bytes = _env_positive_number(
+        environ, 'MOJAPOS_WEBHOOK_MAX_BYTES', 32768, integer=True
+    )
     if not is_local and not payment_mock_mode:
         if not verify_webhooks:
             raise RuntimeError(
@@ -487,6 +511,10 @@ def build_runtime_security_config(environ=None):
         'REDIS_GAME_STATE_SECURITY_MODE': redis_game_state_security_mode,
         'REDIS_GAME_STATE_TTL_SECONDS': redis_game_state_ttl_seconds,
         'REDIS_GAME_STATE_MAX_BYTES': redis_game_state_max_bytes,
+        'MOJAPOS_WEBHOOK_RECONCILIATION_MODE': payment_reconciliation_mode,
+        'MOJAPOS_EXPECTED_ENVIRONMENT': expected_payment_environment,
+        'MOJAPOS_EXPECTED_CURRENCY': expected_payment_currency,
+        'MOJAPOS_WEBHOOK_MAX_BYTES': payment_webhook_max_bytes,
         'REQUEST_SECURITY_MODE': request_security_mode,
         'REQUEST_SECURITY_TRUSTED_ORIGINS': request_security_origins,
         'REQUEST_SECURITY_CHECK_FETCH_METADATA': _env_bool(

@@ -143,9 +143,38 @@ def ensure_payment_schema():
             db.session.execute(text('ALTER TABLE transactions ADD COLUMN external_ref_id VARCHAR(64)'))
         if not _table_has_column('transactions', 'status'):
             db.session.execute(text("ALTER TABLE transactions ADD COLUMN status VARCHAR(20) DEFAULT 'pending'"))
+        if not _table_has_column('transactions', 'gateway_transaction_id'):
+            db.session.execute(text(
+                'ALTER TABLE transactions ADD COLUMN gateway_transaction_id VARCHAR(255)'
+            ))
+        if not _table_has_column('transactions', 'currency'):
+            db.session.execute(text(
+                "ALTER TABLE transactions ADD COLUMN currency VARCHAR(3) DEFAULT 'SZL'"
+            ))
+        if not _table_has_column('transactions', 'payment_environment'):
+            db.session.execute(text(
+                'ALTER TABLE transactions ADD COLUMN payment_environment VARCHAR(20)'
+            ))
+        if not _table_has_column('transactions', 'reconciled_at'):
+            db.session.execute(text(
+                'ALTER TABLE transactions ADD COLUMN reconciled_at DATETIME'
+            ))
+        if not _table_has_column('transactions', 'reconciliation_code'):
+            db.session.execute(text(
+                'ALTER TABLE transactions ADD COLUMN reconciliation_code VARCHAR(40)'
+            ))
         db.session.execute(text(
             'CREATE INDEX IF NOT EXISTS idx_transactions_external_ref_id '
             'ON transactions (external_ref_id)'
+        ))
+        db.session.execute(text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_external_ref_id '
+            'ON transactions (external_ref_id) WHERE external_ref_id IS NOT NULL'
+        ))
+        db.session.execute(text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_gateway_transaction_id '
+            'ON transactions (gateway_transaction_id) '
+            'WHERE gateway_transaction_id IS NOT NULL'
         ))
 
 
@@ -674,8 +703,17 @@ class Transaction(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     player_id = db.Column(db.Integer, db.ForeignKey('players.id'), nullable=False)
-    external_ref_id = db.Column(db.String(64), nullable=True, index=True)  # strong UUID ref sent to the gateway
+    external_ref_id = db.Column(
+        db.String(64), nullable=True, unique=True, index=True
+    )  # strong UUID ref sent to the gateway
+    gateway_transaction_id = db.Column(
+        db.String(255), nullable=True, unique=True, index=True
+    )
     status = db.Column(db.String(20), default='initiated')  # pending/completed/failed
+    currency = db.Column(db.String(3), nullable=True, default='SZL')
+    payment_environment = db.Column(db.String(20), nullable=True)
+    reconciled_at = db.Column(db.DateTime, nullable=True)
+    reconciliation_code = db.Column(db.String(40), nullable=True)
     
     transaction_type = db.Column(db.String(50), nullable=False)  # see TX_* constants above
     amount = db.Column(db.Float, nullable=False)

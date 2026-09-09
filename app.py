@@ -463,60 +463,33 @@ def spectator_tournament_bracket_page(tournament_id):
 # -----------------------------
 
 from services.payment_service import payment_service
-from database import (
-    Tournament,
-    TournamentParticipant,
-    TournamentPrizePool,
-    Player,
-    WithdrawalRequest,
-    Transaction,
-    TX_ENTRY_FEE,
-    TX_WALLET_TOPUP,
-    TX_PRIZE_AWARD,
-    TX_WITHDRAWAL,
-    TX_PLAN_PURCHASE,
-)
+from database import TX_ENTRY_FEE
 
 
 @app.route('/api/payment/callback', methods=['POST'])
 @machine_client_endpoint
 @csrf_exempt_endpoint
 def payment_callback():
-    """
-    Receive and verify a callback/webhook from MojaPOS.
+    """Verify and atomically reconcile an enveloped MojaPOS callback."""
+    import json
+    from services.payment_reconciliation import (
+        CallbackContractError,
+        audit_reconciliation,
+        parse_payment_callback,
+        reconcile_payment_callback,
+    )
 
-    Real MojaPOS webhook is ENVELOPED (camelCase):
-    {
-        'id': '87b92361-...',
-        'event': 'payment.success',          # payment.success | payment.failed
-        'created_at': '...',
-        'environment': 'LIVE',
-        'data': {
-            'transactionId': 'd744e19b-...', # gateway transaction id
-            'reference': None,
-            'status': 'COMPLETED',
-            'amount': '1.00',                # STRING, not a float
-            'currency': 'SZL',
-            'providerReference': '7eb94442-...',
-            'providerResponse': {
-                'externalId': 'c4b90930da14',  # OUR external_ref_id (uuid hex[:12])
-                'payer': {'partyId': '26876412255'},
-                'payerMessage': 'Topup Wallet for User 1',  # type/user hint
-                ...
-            }
-        }
-    }
-
-    There is NO metadata.transaction_type -- the payment TYPE is derived from
-    OUR Transaction row (matched via providerResponse.externalId ==
-    external_ref_id), which also gives us the user and the tournament.
-
-    Headers: X-Signature (HMAC-SHA256) -- confirm exact webhook auth with MojaPOS.
-    """
     try:
-        payload = request.get_json(silent=True) or {}
-        if not payload:
-            return jsonify({'error': 'Missing payload'}), 400
+        maximum = int(app.config.get('MOJAPOS_WEBHOOK_MAX_BYTES', 32768))
+        if request.content_length is not None and request.content_length > maximum:
+            return jsonify({'error': 'Payment callback is too large'}), 413
+        raw_body = request.stream.read(maximum + 1)
+        if len(raw_body) > maximum:
+            return jsonify({'error': 'Payment callback is too large'}), 413
+        try:
+            payload = json.loads(raw_body.decode('utf-8'))
+        except (UnicodeDecodeError, TypeError, ValueError):
+            return jsonify({'error': 'Invalid payment callback'}), 400
 
         if app.config.get('MOJAPOS_VERIFY_WEBHOOK_SIGNATURE', False):
             signature = request.headers.get('X-Signature')
@@ -527,318 +500,39 @@ def payment_callback():
                 return jsonify({'error': 'Invalid signature'}), 401
         else:
             print('[PAYMENT] Webhook signature verification disabled in local/test mode')
+        try:
+            callback = parse_payment_callback(payload)
+        except CallbackContractError:
+            return jsonify({'error': 'Invalid payment callback'}), 400
 
-        # Unwrap the envelope; legacy callbacks sent the payment fields at the
-        # top level (no 'data' wrapper).
-        data = payload.get('data') or payload
-        provider_response = data.get('providerResponse') or {}
-        metadata = payload.get('metadata') or data.get('metadata') or {}
+        result = reconcile_payment_callback(callback)
+        audit_reconciliation(result)
 
-        event = str(payload.get('event') or '').lower()
-        if 'success' in event:
-            status = 'completed'
-        elif 'fail' in event:
-            status = 'failed'
-        else:
-            status = str(data.get('status') or payload.get('status') or '').lower()
-
-        transaction_id = (
-            data.get('transactionId')
-            or payload.get('transactionId')
-            or payload.get('transaction_id')
-        )
-        external_ref_id = (
-            provider_response.get('externalId')
-            or data.get('externalId')
-            or metadata.get('externalId')
-            or metadata.get('external_ref_id')
-        )
-
-        safe_transaction_id = str(transaction_id or '')[-8:] or 'unknown'
-        print(
-            f'[PAYMENT] Callback received status={status or "unknown"} '
-            f'transaction_suffix={safe_transaction_id}'
-        )
-
-        # Idempotency: skip if this gateway transaction was already processed.
-        if transaction_id:
-            already = Transaction.query.filter_by(
-                description=transaction_id,
-                status='completed',
-            ).first()
-            if already:
-                return jsonify({'status': 'received'}), 200
-
-        # Resolve OUR transaction row. The real payload carries our ref only
-        # inside providerResponse.externalId; legacy payloads carry it (or the
-        # integer id) in metadata.
-        transaction = None
-        if external_ref_id:
-            transaction = Transaction.query.filter_by(external_ref_id=external_ref_id).first()
-        elif metadata.get('transaction_id'):
+        # Notifications and bracket recovery are intentionally post-commit.
+        # A delivery issue cannot roll back or duplicate the financial result.
+        if (
+            result.outcome == 'accepted'
+            and result.reason == 'settled'
+            and result.transaction_type == TX_ENTRY_FEE
+            and result.tournament_id
+        ):
             try:
-                transaction = Transaction.query.get(int(metadata['transaction_id']))
-            except (TypeError, ValueError):
-                transaction = None
-
-        if transaction is not None:
-            ttype = transaction.transaction_type
-            if ttype == TX_ENTRY_FEE:
-                _handle_entry_fee_callback(payload, data, transaction, status)
-            elif ttype == TX_WALLET_TOPUP:
-                _handle_wallet_topup_callback(payload, data, transaction, status)
-            elif ttype == TX_PLAN_PURCHASE:
-                _handle_plan_purchase_callback(payload, data, transaction, status)
-            elif ttype in (TX_PRIZE_AWARD, TX_WITHDRAWAL):
-                _handle_prize_payout_callback(payload, data, transaction, status)
-            else:
-                print(f"[PAYMENT] Callback for unsupported transaction_type={ttype} (externalId={external_ref_id})")
-        else:
-            # No transaction matched -- legacy metadata-based routing fallback.
-            legacy_type = metadata.get('transaction_type')
-            if legacy_type == 'tournament_entry':
-                _handle_entry_fee_callback(payload, data, None, status)
-            elif legacy_type == 'prize_payout':
-                _handle_prize_payout_callback(payload, data, None, status)
-            elif legacy_type == 'wallet_topup':
-                _handle_wallet_topup_callback(payload, data, None, status)
-            else:
-                print(f"[PAYMENT] Unknown transaction / no matching row (externalId={external_ref_id})")
-
+                from controllers.tournament_controller import (
+                    _emit_tournament_updated,
+                    _recover_full_waiting_tournament,
+                )
+                tournament = db.session.get(Tournament, result.tournament_id)
+                if tournament is not None and not _recover_full_waiting_tournament(tournament):
+                    _emit_tournament_updated(tournament)
+            except Exception as exc:
+                db.session.rollback()
+                print(f'[PAYMENT] Post-reconciliation notification error: {type(exc).__name__}')
         return jsonify({'status': 'received'}), 200
 
     except Exception as exc:
+        db.session.rollback()
         print(f"[PAYMENT] Callback processing error: {type(exc).__name__}")
         return jsonify({'error': 'Payment callback processing failed'}), 500
-
-
-def _handle_entry_fee_callback(payload, data, transaction, status):
-    """Process a completed/failed tournament-entry payment callback."""
-    from datetime import datetime as _dt
-    transaction_id = (
-        data.get('transactionId') or payload.get('transactionId') or payload.get('transaction_id')
-    )
-    metadata = payload.get('metadata') or {}
-
-    # Legacy fallback: resolve the transaction from metadata if not provided.
-    if transaction is None and metadata.get('transaction_id'):
-        try:
-            transaction = Transaction.query.get(int(metadata['transaction_id']))
-        except (TypeError, ValueError):
-            transaction = None
-    if transaction is None:
-        print("[PAYMENT] Entry callback: transaction not found")
-        return
-
-    # The real payload carries no user_id / tournament_code -- both are derived
-    # from the transaction row (player_id / tournament_id); metadata remains a
-    # fallback for legacy callbacks.
-    user_id = None
-    if transaction.player_id:
-        player_row = Player.query.get(transaction.player_id)
-        user_id = player_row.user_id if player_row else None
-    if user_id is None:
-        try:
-            user_id = int(metadata.get('user_id'))
-        except (TypeError, ValueError):
-            user_id = None
-    if user_id is None:
-        print("[PAYMENT] Entry callback: could not resolve user_id")
-        db.session.commit()
-        return
-
-    tournament = None
-    if transaction.tournament_id:
-        tournament = Tournament.query.get(transaction.tournament_id)
-    if tournament is None and metadata.get('tournament_code'):
-        tournament = Tournament.query.filter_by(
-            tournament_code=metadata['tournament_code']).first()
-
-    # Record the gateway transaction id for idempotency.
-    transaction.description = transaction_id or transaction.description
-
-    if status == 'completed':
-        if tournament is None:
-            print("[PAYMENT] Entry callback: tournament not found")
-            db.session.commit()
-            return
-        participant = TournamentParticipant.query.filter_by(
-            tournament_id=tournament.id,
-            user_id=user_id,
-        ).first()
-        if participant:
-            participant.payment_status = 'completed'
-            participant.payment_completed_at = _dt.utcnow()
-            participant.transaction_id = transaction_id
-            participant.external_payment_id = transaction.external_ref_id
-            participant.status = 'registered'
-
-            tournament.current_player_count += 1
-            tournament.prize_pool_amount += tournament.entry_fee
-
-            from controllers.tournament_controller import (
-                _emit_tournament_updated,
-                _perform_tournament_lock,
-                _tournament_room,
-            )
-            if socketio:
-                socketio.emit('participant_joined', {
-                    'user_id': user_id,
-                    'username': (User.query.get(user_id).username
-                                 if User.query.get(user_id) else 'Player'),
-                    'current_players': tournament.current_player_count,
-                }, room=_tournament_room(tournament.id))
-
-            if (tournament.is_auto_lock
-                    and tournament.current_player_count >= tournament.max_players):
-                # Full auto-lock bracket: lock, build the bracket, announce.
-                _perform_tournament_lock(tournament)
-            else:
-                _emit_tournament_updated(tournament)
-    else:
-        # Refund the prepaid amount on failure.
-        player = Player.query.filter_by(user_id=user_id).first()
-        if player is not None and transaction.amount > 0:
-            player.real_balance += transaction.amount
-        if tournament is not None:
-            participant = TournamentParticipant.query.filter_by(
-                tournament_id=tournament.id,
-                user_id=user_id,
-            ).first()
-            if participant:
-                participant.payment_status = 'failed'
-
-    db.session.commit()
-
-
-def _handle_prize_payout_callback(payload, data, transaction, status):
-    """Process a prize-payout callback (mark withdrawal complete/failed)."""
-    from datetime import datetime as _dt
-    transaction_id = (
-        data.get('transactionId') or payload.get('transactionId') or payload.get('transaction_id')
-    )
-    metadata = payload.get('metadata') or {}
-
-    try:
-        withdrawal_request_id = int(metadata.get('withdrawal_request_id'))
-    except (TypeError, ValueError):
-        print("[PAYMENT] Payout callback missing withdrawal_request_id")
-        return
-
-    withdrawal = WithdrawalRequest.query.get(withdrawal_request_id)
-    if withdrawal is None:
-        print(f"[PAYMENT] Withdrawal {withdrawal_request_id} not found")
-        return
-
-    withdrawal.transaction_id = transaction_id
-    if status == 'completed':
-        withdrawal.status = 'completed'
-
-        prize_pool = TournamentPrizePool.query.filter_by(
-            tournament_id=withdrawal.tournament_id,
-            user_id=withdrawal.user_id,
-        ).first()
-        if prize_pool:
-            prize_pool.status = 'withdrawn'
-            prize_pool.withdrawal_date = _dt.utcnow()
-    else:
-        withdrawal.status = 'failed'
-
-    db.session.commit()
-
-
-def _handle_wallet_topup_callback(payload, data, transaction, status):
-    """Process a wallet-topup callback (credit the player's wallet).
-
-    The real MojaPOS payload echoes our external_ref_id as
-    ``data.providerResponse.externalId`` and has NO metadata -- the user is
-    resolved from the transaction row. Payments are idempotent: a retried or
-    duplicate callback can never credit the wallet twice, and a callback that
-    cannot be matched to a pending transaction is ignored (no unverifiable
-    credits).
-    """
-    transaction_id = (
-        data.get('transactionId') or payload.get('transactionId') or payload.get('transaction_id')
-    )
-    try:
-        amount = float(data.get('amount') or payload.get('amount') or 0)
-    except (TypeError, ValueError):
-        amount = 0.0
-    metadata = payload.get('metadata') or {}
-    external_ref_id = (
-        (data.get('providerResponse') or {}).get('externalId')
-        or data.get('externalId')
-        or metadata.get('externalId')
-        or metadata.get('external_ref_id')
-    )
-
-    if status != 'completed':
-        db.session.commit()
-        return
-
-    if transaction is None and external_ref_id:
-        transaction = Transaction.query.filter_by(external_ref_id=external_ref_id).first()
-    if transaction is None:
-        print(f"[PAYMENT] Topup callback: no transaction for externalId={external_ref_id} - ignoring")
-        db.session.commit()
-        return
-    if transaction.status == 'completed':
-        print(f"[PAYMENT] Topup callback: externalId={external_ref_id} already processed - ignoring duplicate")
-        db.session.commit()
-        return
-    if transaction.status == 'failed':
-        print(f"[PAYMENT] Topup callback: externalId={external_ref_id} marked failed - ignoring")
-        db.session.commit()
-        return
-
-    # Resolve the user from the transaction row (the real payload has no user_id).
-    user_id = None
-    if transaction.player_id:
-        player_row = Player.query.get(transaction.player_id)
-        user_id = player_row.user_id if player_row else None
-    if user_id is None:
-        try:
-            user_id = int(metadata.get('user_id'))
-        except (TypeError, ValueError):
-            user_id = None
-    if user_id is None:
-        print("[PAYMENT] Topup callback: could not resolve user_id")
-        db.session.commit()
-        return
-
-    player = Player.query.filter_by(user_id=user_id).first()
-    if player is not None and amount > 0:
-        balance_before = player.real_balance
-        player.real_balance += amount
-        transaction.status = 'completed'
-        transaction.balance_before = balance_before
-        transaction.balance_after = player.real_balance
-        transaction.description = transaction_id or transaction.description
-
-    db.session.commit()
-
-
-def _handle_plan_purchase_callback(payload, data, transaction, status):
-    """Activate one plan pass after an exact, idempotent payment callback."""
-    transaction_id = (
-        data.get('transactionId')
-        or payload.get('transactionId')
-        or payload.get('transaction_id')
-    )
-    try:
-        amount = float(data.get('amount') or payload.get('amount') or 0)
-    except (TypeError, ValueError):
-        amount = 0.0
-    currency = data.get('currency') or payload.get('currency') or ''
-    from pricing.service import handle_plan_payment_callback
-    handle_plan_payment_callback(
-        transaction,
-        status,
-        amount,
-        transaction_id,
-        currency,
-    )
-    db.session.commit()
 
 
 def tournament_id_filter(tournament_code):

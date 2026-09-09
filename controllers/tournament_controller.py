@@ -432,7 +432,13 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
         balance_before=player.real_balance,
         balance_after=player.real_balance,
         tournament_id=tournament_id,
-        external_ref_id=uuid.uuid4().hex[:12],
+        external_ref_id=uuid.uuid4().hex,
+        currency=str(
+            current_app.config.get('MOJAPOS_EXPECTED_CURRENCY') or 'SZL'
+        ).upper(),
+        payment_environment=str(
+            current_app.config.get('MOJAPOS_EXPECTED_ENVIRONMENT') or 'SANDBOX'
+        ).upper(),
         description=f'Tournament entry #{tournament_id} (pending)',
     )
     db.session.add(transaction)
@@ -458,7 +464,8 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
         db.session.commit()
         return False, result.get('error', 'Payment initiation failed')
 
-    transaction.description = result.get('external_transaction_id') or transaction.description
+    transaction.gateway_transaction_id = result.get('external_transaction_id')
+    transaction.description = transaction.gateway_transaction_id or transaction.description
     db.session.commit()
 
     return True, {

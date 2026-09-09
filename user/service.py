@@ -141,8 +141,8 @@ def initiate_topup(user, amount):
     """Gateway-aware wallet topup.
 
     Mock/sandbox mode credits the wallet locally (same pattern as tournament
-    entry); real mode initiates a MojaPOS payment and waits for the callback
-    (``_handle_wallet_topup_callback`` in app.py) to credit the wallet.
+    entry); real mode initiates a MojaPOS payment and waits for strict atomic
+    callback reconciliation to credit the wallet.
     """
     player = get_player_by_user_id(user.id)
     if not player:
@@ -175,7 +175,7 @@ def initiate_topup(user, amount):
 
     # Create a pending transaction so the gateway callback can be mapped back
     # idempotently via external_ref_id (same pattern as tournament entry).
-    external_ref_id = uuid.uuid4().hex[:12]
+    external_ref_id = uuid.uuid4().hex
     pending = Transaction(
         player_id=player.id,
         transaction_type=TX_WALLET_TOPUP,
@@ -184,6 +184,12 @@ def initiate_topup(user, amount):
         balance_before=player.real_balance,
         balance_after=player.real_balance,
         external_ref_id=external_ref_id,
+        currency=str(
+            current_app.config.get('MOJAPOS_EXPECTED_CURRENCY') or 'SZL'
+        ).upper(),
+        payment_environment=str(
+            current_app.config.get('MOJAPOS_EXPECTED_ENVIRONMENT') or 'SANDBOX'
+        ).upper(),
         description='Wallet top-up (pending)',
     )
     db.session.add(pending)
@@ -202,7 +208,8 @@ def initiate_topup(user, amount):
         return {'success': False, 'error': result.get('error', 'Topup initiation failed')}
 
     # Record the gateway's own transaction id for idempotency on callbacks.
-    pending.description = result.get('external_transaction_id') or pending.description
+    pending.gateway_transaction_id = result.get('external_transaction_id')
+    pending.description = pending.gateway_transaction_id or pending.description
     db.session.commit()
     return {
         'success': True,

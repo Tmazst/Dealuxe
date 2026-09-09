@@ -157,30 +157,6 @@ def _activate_purchase(purchase, transaction, gateway_transaction_id):
     return True
 
 
-def handle_plan_payment_callback(
-    transaction, status, amount, gateway_transaction_id, currency='SZL'
-):
-    purchase = PlanPurchase.query.filter_by(transaction_id=transaction.id).first()
-    if purchase is None:
-        return False
-    if purchase.status == 'completed' or transaction.status == 'completed':
-        return False
-    if status != 'completed':
-        if status == 'failed':
-            purchase.status = 'failed'
-            transaction.status = 'failed'
-        return False
-    if str(currency or '').strip().upper() != 'SZL':
-        purchase.status = 'failed'
-        transaction.status = 'failed'
-        return False
-    if round(float(amount or 0), 2) != round(float(purchase.amount), 2):
-        purchase.status = 'failed'
-        transaction.status = 'failed'
-        return False
-    return _activate_purchase(purchase, transaction, gateway_transaction_id)
-
-
 def initiate_plan_purchase(user, plan_code):
     terms = plan_terms(plan_code)
     if not terms['enabled']:
@@ -206,6 +182,12 @@ def initiate_plan_purchase(user, plan_code):
         balance_after=player.real_balance,
         external_ref_id=external_ref_id,
         status='initiated',
+        currency=str(
+            current_app.config.get('MOJAPOS_EXPECTED_CURRENCY') or 'SZL'
+        ).upper(),
+        payment_environment=str(
+            current_app.config.get('MOJAPOS_EXPECTED_ENVIRONMENT') or 'SANDBOX'
+        ).upper(),
         description=f"{terms['plan_code']} plan payment pending",
     )
     db.session.add(transaction)
@@ -238,10 +220,13 @@ def initiate_plan_purchase(user, plan_code):
 
     gateway_id = result.get('external_transaction_id')
     if result.get('mock'):
+        transaction.gateway_transaction_id = gateway_id
         _activate_purchase(purchase, transaction, gateway_id)
     else:
         purchase.status = 'pending'
+        purchase.gateway_transaction_id = gateway_id
         transaction.status = 'pending'
+        transaction.gateway_transaction_id = gateway_id
         transaction.description = gateway_id or transaction.description
     db.session.commit()
     return purchase
