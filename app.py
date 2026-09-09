@@ -187,7 +187,13 @@ except Exception as exc:
 # GAME MANAGER (GLOBAL)
 # -----------------------------
 
-manager = GameManager(redis_url=app.config['REDIS_URL'])
+manager = GameManager(
+    redis_url=app.config['REDIS_URL'],
+    security_mode=app.config['REDIS_GAME_STATE_SECURITY_MODE'],
+    ttl_seconds=app.config['REDIS_GAME_STATE_TTL_SECONDS'],
+    max_payload_bytes=app.config['REDIS_GAME_STATE_MAX_BYTES'],
+    local_environment=app.config['IS_LOCAL_ENVIRONMENT'],
+)
 app.extensions['game_manager'] = manager
 from hybrid.chat import build_chat_store, init_hybrid_chat_events
 app.extensions['hybrid_chat_store'] = build_chat_store(manager)

@@ -148,7 +148,50 @@ Before installing or connecting openWA, obtain:
 
 The current openWA documentation describes webhook integrations and warns that the project is unofficial and automation may lead to account restrictions. Review the current primary documentation before implementation: <https://openwa.dev> and <https://github.com/open-wa/wa-automate-nodejs>.
 
-## 9. Monthly rehearsal checklist
+## 9. Safe Redis game-state rollout (V3-0118)
+
+Game sessions use strict JSON schema version 1 under the dedicated
+`umshova:game:v1:<game-id>` namespace. The application never deserializes
+Python objects from Redis. Former `game:<game-id>` records are detected only
+as legacy records and rejected without opening their values.
+
+### Environment controls
+
+- `REDIS_GAME_STATE_SECURITY_MODE=off` keeps safe JSON mandatory but disables
+  codec audit events. Use only to isolate audit-pipeline behavior during local
+  upgrade testing.
+- `REDIS_GAME_STATE_SECURITY_MODE=monitor` is the pilot default. It records
+  privacy-safe reason codes for malformed, oversized, unsupported-version and
+  legacy records while rejecting all of them.
+- `REDIS_GAME_STATE_SECURITY_MODE=enforce` retains those protections and also
+  refuses non-local startup when Redis is unavailable, preventing a
+  multi-worker deployment from silently splitting game state into memory.
+- `REDIS_GAME_STATE_TTL_SECONDS` defaults to 86400 and
+  `REDIS_GAME_STATE_MAX_BYTES` defaults to 262144. Both must remain positive.
+
+### Deployment and rollback rule
+
+1. Deploy only in a game-free maintenance window or after every active room
+   has completed. A game created by the former pickle format cannot be resumed
+   by the new application, and the unsafe format must never be migrated by
+   loading it in the web process.
+2. Take the normal read-only recovery backup and record the deployment window.
+   Do not flush Redis and do not delete unrelated keyspaces.
+3. Start in `monitor`, create a synthetic game, make and persist a move, then
+   confirm a second worker/process can restore the same state from the v1 key.
+4. Confirm invalid and legacy probes produce only `redis_game_state` audit
+   reason codes, without payloads, cards, player names, contacts or key values.
+5. Let former `game:<game-id>` keys expire under their existing 24-hour TTL.
+   If operational cleanup is later approved, scope it to individually reviewed
+   legacy game keys; never use a broad Redis flush.
+6. Do not roll running rooms back to the pickle build: it cannot read v1 JSON
+   and would reintroduce executable deserialization. Stop new room creation,
+   preserve evidence, and forward-fix or redeploy the safe build instead.
+7. Move to `enforce` only after the shared Redis health check and multi-worker
+   recovery probe pass. Redis outage in enforce mode is a startup failure, not
+   permission to downgrade serialization.
+
+## 10. Monthly rehearsal checklist
 
 - [ ] Support can create, categorise, escalate and close a test case without collecting secrets.
 - [ ] A moderator can privately review a synthetic report and caption decision with an audit record.
@@ -159,6 +202,6 @@ The current openWA documentation describes webhook integrations and warns that t
 - [ ] All openWA settings remain false and the disabled adapter rejects sending.
 - [ ] If recovery is rehearsed, only a disposable database is used and the active database fingerprint remains unchanged.
 
-## 10. Required incident record
+## 11. Required incident record
 
 Record the case or incident reference, severity, start/detection/containment/recovery times, affected service, affected population estimate, rollback switches used, administrator, minimal evidence references, privacy impact, player communication, root cause, corrective action, re-enable approval and retention/legal-hold decision.

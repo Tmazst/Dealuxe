@@ -38,6 +38,9 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
         self.assertTrue(config['CSP_REPORTING_ENABLED'])
         self.assertTrue(config['CSP_ALLOW_INLINE_SCRIPTS'])
         self.assertTrue(config['CSP_ALLOW_INLINE_STYLES'])
+        self.assertEqual(config['REDIS_GAME_STATE_SECURITY_MODE'], 'monitor')
+        self.assertEqual(config['REDIS_GAME_STATE_TTL_SECONDS'], 86400)
+        self.assertEqual(config['REDIS_GAME_STATE_MAX_BYTES'], 262144)
 
     def test_production_requires_explicit_session_secret(self):
         with self.assertRaisesRegex(RuntimeError, 'FLASK_SECRET_KEY'):
@@ -297,6 +300,29 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
                 'BROWSER_HSTS_MAX_AGE_SECONDS',
             ),
             ({'CSP_MAX_REPORT_BYTES': 'invalid'}, 'CSP_MAX_REPORT_BYTES'),
+        )
+        for settings, message in cases:
+            with self.subTest(settings=settings):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    build_runtime_security_config({'ENV': 'test', **settings})
+
+    def test_redis_game_state_security_is_independently_configurable(self):
+        config = build_runtime_security_config({
+            'ENV': 'test',
+            'REDIS_GAME_STATE_SECURITY_MODE': 'enforce',
+            'REDIS_GAME_STATE_TTL_SECONDS': '900',
+            'REDIS_GAME_STATE_MAX_BYTES': '65536',
+        })
+
+        self.assertEqual(config['REDIS_GAME_STATE_SECURITY_MODE'], 'enforce')
+        self.assertEqual(config['REDIS_GAME_STATE_TTL_SECONDS'], 900)
+        self.assertEqual(config['REDIS_GAME_STATE_MAX_BYTES'], 65536)
+
+    def test_invalid_redis_game_state_configuration_fails_closed(self):
+        cases = (
+            ({'REDIS_GAME_STATE_SECURITY_MODE': 'unsafe'}, 'SECURITY_MODE'),
+            ({'REDIS_GAME_STATE_TTL_SECONDS': '0'}, 'TTL_SECONDS'),
+            ({'REDIS_GAME_STATE_MAX_BYTES': 'invalid'}, 'MAX_BYTES'),
         )
         for settings, message in cases:
             with self.subTest(settings=settings):

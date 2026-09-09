@@ -442,6 +442,20 @@ def build_runtime_security_config(environ=None):
         environ, 'CSP_MAX_REPORT_BYTES', 16384, integer=True
     )
 
+    redis_game_state_security_mode = str(
+        environ.get('REDIS_GAME_STATE_SECURITY_MODE') or 'monitor'
+    ).strip().lower()
+    if redis_game_state_security_mode not in {'off', 'monitor', 'enforce'}:
+        raise RuntimeError(
+            'REDIS_GAME_STATE_SECURITY_MODE must be one of: off, monitor, enforce'
+        )
+    redis_game_state_ttl_seconds = _env_positive_number(
+        environ, 'REDIS_GAME_STATE_TTL_SECONDS', 86400, integer=True
+    )
+    redis_game_state_max_bytes = _env_positive_number(
+        environ, 'REDIS_GAME_STATE_MAX_BYTES', 262144, integer=True
+    )
+
     redis_url = str(environ.get('REDIS_URL') or '').strip()
     if not redis_url:
         if not is_local:
@@ -470,6 +484,9 @@ def build_runtime_security_config(environ=None):
         'SESSION_SECRET_GENERATED': generated_secret,
         'SOCKETIO_ALLOWED_ORIGINS': socketio_origins,
         'REDIS_URL': redis_url,
+        'REDIS_GAME_STATE_SECURITY_MODE': redis_game_state_security_mode,
+        'REDIS_GAME_STATE_TTL_SECONDS': redis_game_state_ttl_seconds,
+        'REDIS_GAME_STATE_MAX_BYTES': redis_game_state_max_bytes,
         'REQUEST_SECURITY_MODE': request_security_mode,
         'REQUEST_SECURITY_TRUSTED_ORIGINS': request_security_origins,
         'REQUEST_SECURITY_CHECK_FETCH_METADATA': _env_bool(
