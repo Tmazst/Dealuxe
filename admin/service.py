@@ -572,6 +572,14 @@ def list_cup_qualifications(event_key=None, status=''):
         )
     }
     capacity = int(current_app.config.get('CUP_CAPACITY', 64))
+    checked_in_seats = sum(
+        record.status == 'checked_in' for record in active_records
+    )
+    unchecked_seats = len(active_records) - checked_in_seats
+    check_in_required = bool(
+        current_app.config.get('CUP_REQUIRE_CHECK_IN_TO_START', True)
+    )
+    roster_full = len(active_records) == capacity
     counts = {
         roster_status: sum(record.status == roster_status for record in all_event_records)
         for roster_status in sorted(CUP_ROSTER_STATUSES)
@@ -582,8 +590,15 @@ def list_cup_qualifications(event_key=None, status=''):
         'cup_enabled': bool(current_app.config.get('CUP_ENABLED', False)),
         'capacity': capacity,
         'active_seats': len(active_records),
+        'checked_in_seats': checked_in_seats,
+        'unchecked_seats': unchecked_seats,
         'remaining_seats': max(capacity - len(active_records), 0),
-        'ready_to_lock': len(active_records) >= capacity,
+        'roster_full': roster_full,
+        'check_in_required': check_in_required,
+        'ready_to_lock': roster_full,
+        'ready_to_start': roster_full and (
+            not check_in_required or checked_in_seats == capacity
+        ),
         'counts': counts,
         'qualifications': [
             _serialize_cup_qualification(record, active_ids.get(record.id))
@@ -624,6 +639,17 @@ def create_cup_tournament(admin_user_id, tournament_name=None, event_key=None):
         raise ValueError('Cup roster contains a duplicate active player')
     if any(not qualification.seat_key for qualification in roster):
         raise ValueError('Every approved Cup qualifier must hold an active seat')
+    if (
+        current_app.config.get('CUP_REQUIRE_CHECK_IN_TO_START', True)
+        and any(qualification.status != 'checked_in' for qualification in roster)
+    ):
+        checked_in = sum(
+            qualification.status == 'checked_in' for qualification in roster
+        )
+        raise ValueError(
+            f'Cup check-in is incomplete: {checked_in} of {capacity} players '
+            'are checked in'
+        )
 
     tournament = create_tournament_record(
         creator_id=admin_user_id,

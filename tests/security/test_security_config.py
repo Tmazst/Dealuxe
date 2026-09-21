@@ -358,6 +358,14 @@ class PilotEconomyConfigTests(unittest.TestCase):
                 'CUP_CASH_PAYOUTS_ENABLED': 'true',
             })
 
+    def test_cup_check_in_gate_defaults_safe_and_can_be_switched_off(self):
+        self.assertTrue(
+            build_pilot_economy_config({})['CUP_REQUIRE_CHECK_IN_TO_START']
+        )
+        self.assertFalse(build_pilot_economy_config({
+            'CUP_REQUIRE_CHECK_IN_TO_START': 'false',
+        })['CUP_REQUIRE_CHECK_IN_TO_START'])
+
 
 if __name__ == '__main__':
     unittest.main()

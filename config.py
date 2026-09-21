@@ -32,6 +32,9 @@ def build_pilot_economy_config(environ=None):
         environ, 'CUP_QUALIFICATION_ENABLED', default=pilot_mode
     )
     cup_cash_payouts = _env_bool(environ, 'CUP_CASH_PAYOUTS_ENABLED', default=False)
+    cup_require_check_in = _env_bool(
+        environ, 'CUP_REQUIRE_CHECK_IN_TO_START', default=True
+    )
 
     if pilot_mode and paid_entry:
         raise RuntimeError('Paid tournament entry cannot be enabled in PILOT_MODE')
@@ -51,6 +54,7 @@ def build_pilot_economy_config(environ=None):
         'CUP_ENABLED': cup_enabled,
         'CUP_QUALIFICATION_ENABLED': cup_qualification,
         'CUP_CASH_PAYOUTS_ENABLED': cup_cash_payouts,
+        'CUP_REQUIRE_CHECK_IN_TO_START': cup_require_check_in,
         'CUP_EVENT_KEY': str(environ.get('CUP_EVENT_KEY') or 'umshova-cup-pilot').strip(),
         'CUP_SEASON': str(environ.get('CUP_SEASON') or '2026').strip(),
         'CUP_CAPACITY': 64,

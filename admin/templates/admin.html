@@ -596,15 +596,22 @@
             document.getElementById('cupSummaryGrid').innerHTML = `
                 <div class="summary-card"><span class="pill">Active seats</span><strong>${data.active_seats}/${data.capacity}</strong></div>
                 <div class="summary-card"><span class="pill">Remaining</span><strong>${data.remaining_seats}</strong></div>
-                <div class="summary-card"><span class="pill">Checked in</span><strong>${data.counts.checked_in || 0}</strong></div>
+                <div class="summary-card"><span class="pill">Checked in</span><strong>${data.checked_in_seats}/${data.capacity}</strong></div>
+                <div class="summary-card"><span class="pill">Awaiting check-in</span><strong>${data.unchecked_seats}</strong></div>
                 <div class="summary-card"><span class="pill">Reserves</span><strong>${data.counts.reserve || 0}</strong></div>
             `;
-            document.getElementById('cupRosterStatus').textContent = data.ready_to_lock
-                ? (data.cup_enabled
-                    ? 'Roster is ready. An administrator can now create the payout-free Cup bracket.'
-                    : 'Roster has reached capacity. Cup creation remains controlled by CUP_ENABLED.')
-                : `${data.remaining_seats} active seat(s) remain before the 64-player lock.`;
-            document.getElementById('createCupTournament').disabled = !(data.ready_to_lock && data.cup_enabled);
+            let readinessMessage;
+            if (!data.roster_full) {
+                readinessMessage = `${data.remaining_seats} active seat(s) remain before the 64-player lock.`;
+            } else if (data.check_in_required && data.unchecked_seats) {
+                readinessMessage = `Launch blocked: ${data.unchecked_seats} active player(s) still need to check in.`;
+            } else if (!data.cup_enabled) {
+                readinessMessage = 'Roster and check-in are ready. Cup creation remains controlled by CUP_ENABLED.';
+            } else {
+                readinessMessage = 'Preflight passed: all required seats and check-ins are ready.';
+            }
+            document.getElementById('cupRosterStatus').textContent = readinessMessage;
+            document.getElementById('createCupTournament').disabled = !(data.ready_to_start && data.cup_enabled);
             cupRosterTableBody.innerHTML = '';
             (data.qualifications || []).forEach(q => {
                 const active = q.status === 'qualified' || q.status === 'checked_in';

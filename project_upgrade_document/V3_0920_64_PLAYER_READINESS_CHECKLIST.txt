@@ -1,0 +1,49 @@
+V3-0920 — 64-Player Live Event Readiness
+
+Status: Application hardening complete; venue dress rehearsal pending
+Event size: 64 players / 32 opening matches
+Database rule: Automated rehearsal must use a unique temporary database. Never use instance/dealuxe_game.db.
+
+APPLICATION PREFLIGHT
+
+[x] Keep qualification capacity and physical check-in as separate counts.
+[x] Show active seats, remaining seats, checked-in players, awaiting check-in and reserves.
+[x] Require exactly 64 active, unique seats before launch.
+[x] Require all 64 players to check in when CUP_REQUIRE_CHECK_IN_TO_START=true.
+[x] Disable the administrator launch control until server-reported preflight is ready.
+[x] Enforce the same preflight on the server if the screen is bypassed.
+[x] Permit controlled non-live simulations by setting the check-in switch to false.
+[x] Roll back the complete Cup launch if bracket construction fails.
+[x] Reject a second Cup launch after the pilot Cup exists.
+[x] Retain audited absent-player replacement before the player's first match starts.
+
+AUTOMATED 64-PLAYER REHEARSAL
+
+[x] Create 64 participants and 32 Round-of-64 matches.
+[x] Keep Cup entry and automated payout amounts at zero for the MVP implementation.
+[x] Verify complete bracket progression and ten distinct final placements.
+[x] Exercise 64 simulated players across 32 active rooms.
+[x] Confirm optional Hybrid and Q-messànger failures cannot interrupt gameplay.
+[x] Confirm temporary-database isolation and the fail-closed db.drop_all safeguard.
+
+VENUE DRESS REHEARSAL — COMPLETE BEFORE THE LIVE STUDENT SESSION
+
+[ ] Confirm stable venue Wi-Fi and a separate organizer connection/hotspot.
+[ ] Test at least one Android phone, one iPhone where available, and the supported desktop browsers.
+[ ] Check all 64 attendees in and verify the launch button reports “Preflight passed”.
+[ ] Nominate reserves and record the replacement decision path before Round 1.
+[ ] Start all 32 opening matches and observe reconnect/refresh recovery.
+[ ] Rehearse one player disconnect, one late arrival and one device change.
+[ ] Rehearse one stuck-match escalation without altering unrelated matches.
+[ ] Verify bracket progression, operator visibility and the final top-ten result.
+[ ] Record start time, delays, incidents, resolutions and participant feedback.
+[ ] Run the V3-0907 incident-response procedure once with the event crew.
+
+RECOMMENDED CUP-DAY CONFIGURATION
+
+CUP_ENABLED=true
+CUP_QUALIFICATION_ENABLED=true
+CUP_REQUIRE_CHECK_IN_TO_START=true
+CUP_CASH_PAYOUTS_ENABLED=false
+
+Do not disable the check-in gate on Cup day. Its off mode is intended only for controlled synthetic rehearsals where physical attendance does not exist.

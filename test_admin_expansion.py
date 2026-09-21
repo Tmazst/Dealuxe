@@ -2,6 +2,7 @@ import os
 import time
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 
 os.environ['ENV'] = 'development'
 
@@ -34,6 +35,7 @@ class TestAdminExpansion(unittest.TestCase):
         app.config['MOJAPOS_MOCK_MODE'] = 'true'
         app.config['CUP_ENABLED'] = False
         app.config['CUP_CASH_PAYOUTS_ENABLED'] = False
+        app.config['CUP_REQUIRE_CHECK_IN_TO_START'] = True
         self.app_context = app.app_context()
         self.app_context.push()
         db.drop_all()
@@ -335,10 +337,76 @@ class TestAdminExpansion(unittest.TestCase):
                 user_id=user.id,
                 season=app.config['CUP_SEASON'],
                 event_key=event_key,
-                status='checked_in' if index % 2 else 'qualified',
+                status='checked_in',
                 seat_key=f'{event_key}:{user.id}',
             ))
         db.session.commit()
+
+    def test_cup_preflight_blocks_launch_until_every_player_checks_in(self):
+        app.config['CUP_ENABLED'] = True
+        self._add_cup_qualifiers(64)
+        missing = CupQualification.query.order_by(CupQualification.id.asc()).first()
+        missing.status = 'qualified'
+        missing.checked_in_at = None
+        db.session.commit()
+        self._login(self.admin)
+
+        roster = self.client.get('/api/admin/cup-qualifications').get_json()
+        self.assertTrue(roster['roster_full'])
+        self.assertTrue(roster['check_in_required'])
+        self.assertEqual(roster['checked_in_seats'], 63)
+        self.assertEqual(roster['unchecked_seats'], 1)
+        self.assertFalse(roster['ready_to_start'])
+
+        blocked = self.client.post('/api/admin/cup-tournaments', json={})
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('63 of 64', blocked.get_json()['error'])
+        self.assertEqual(
+            Tournament.query.filter_by(tournament_type='cup').count(), 0
+        )
+
+        checked_in = self.client.post(
+            f'/api/admin/cup-qualifications/{missing.id}/check-in'
+        )
+        self.assertEqual(checked_in.status_code, 200)
+        ready = self.client.get('/api/admin/cup-qualifications').get_json()
+        self.assertTrue(ready['ready_to_start'])
+
+    def test_cup_check_in_gate_can_be_disabled_for_non_live_rehearsal(self):
+        app.config['CUP_ENABLED'] = True
+        app.config['CUP_REQUIRE_CHECK_IN_TO_START'] = False
+        self._add_cup_qualifiers(64)
+        CupQualification.query.update({'status': 'qualified'})
+        db.session.commit()
+        self._login(self.admin)
+
+        roster = self.client.get('/api/admin/cup-qualifications').get_json()
+        self.assertFalse(roster['check_in_required'])
+        self.assertTrue(roster['ready_to_start'])
+        created = self.client.post('/api/admin/cup-tournaments', json={})
+        self.assertEqual(created.status_code, 201, created.get_json())
+
+    def test_cup_creation_failure_rolls_back_the_entire_preflight_launch(self):
+        app.config['CUP_ENABLED'] = True
+        self._add_cup_qualifiers(64)
+        self._login(self.admin)
+
+        with patch(
+            'controllers.tournament_controller._build_bracket',
+            side_effect=RuntimeError('simulated bracket failure'),
+        ):
+            response = self.client.post('/api/admin/cup-tournaments', json={})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json()['error'],
+            'Cup creation failed safely; no tournament was started',
+        )
+        db.session.remove()
+        self.assertEqual(Tournament.query.filter_by(tournament_type='cup').count(), 0)
+        self.assertEqual(TournamentParticipant.query.count(), 0)
+        self.assertEqual(TournamentBracket.query.count(), 0)
+        self.assertEqual(TournamentMatch.query.count(), 0)
 
     def test_admin_creates_payout_free_64_player_cup_from_active_roster(self):
         app.config['CUP_ENABLED'] = True

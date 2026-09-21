@@ -37,7 +37,7 @@ from admin.service import (
     replace_cup_qualification,
     revoke_cup_qualification,
 )
-from database import User
+from database import User, db
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin', template_folder='templates')
 
@@ -266,6 +266,12 @@ def create_cup_tournament_route():
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Cup tournament creation failed')
+        return jsonify({
+            'error': 'Cup creation failed safely; no tournament was started'
+        }), 500
     return jsonify({'message': '64-player Cup created and started', 'cup': cup}), 201
 
 
