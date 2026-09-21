@@ -165,3 +165,6 @@ migrations/008_hybrid_caption_catalogue.sql
 migrations/009_hybrid_shadow_audit_duration.sql
 migrations/010_hybrid_game_profile_preferences.sql
 migrations/011_public_profile_image.sql
+uMshova Dealuxe.rar
+project_upgrade_document/Version 03/uMshova_Dealuxe_ENV_Modes_and_Switches_Guide.pdf
+project_upgrade_document/Version 03/build_env_switches_guide.py
