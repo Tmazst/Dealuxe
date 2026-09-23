@@ -121,7 +121,7 @@
 </head>
 <body>
     <main class="arena">
-        <nav class="nav" aria-label="Main navigation">
+        <nav style="flex-wrap:wrap" class="nav" aria-label="Main navigation">
             <a class="brand" href="/"><i class="fa-solid fa-crown"></i>A HYBRID OF MARKETING PLUS GAMING</a>
             <div class="nav-links">
                 <!-- <a href="#tournaments"><i class="fa-solid fa-trophy"></i><span class="nav-label">Tournaments</span></a>  -->
@@ -303,6 +303,9 @@
         const grid = document.getElementById('tournaments-grid');
 
         socket.on('connect', fetchTournaments);
+        socket.on('connect_error', (error) => {
+            console.warn('Live tournament updates are unavailable; using board polling.', error.message);
+        });
         socket.on('tournaments_list', (data) => { tournamentsData = data.tournaments || []; renderTournaments(); });
         socket.on('tournament_updated', handleTournamentUpdated);
         socket.on('tournament_error', (data) => { console.error('Tournament error:', data.message); });
@@ -313,7 +316,28 @@
             fetchTournaments();
         }));
 
-        function fetchTournaments() { socket.emit('get_tournaments', { filter: currentFilter, limit: 50 }); }
+        async function fetchTournaments() {
+            // The board must not depend on Socket.IO for its initial contents.
+            // HTTP remains available behind proxies that do not permit a
+            // WebSocket upgrade, while Socket.IO continues to trigger fast
+            // refreshes when the real-time connection is healthy.
+            try {
+                const response = await fetch('/api/tournaments', {
+                    headers: { 'Accept': 'application/json' },
+                    cache: 'no-store',
+                });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const allTournaments = Array.isArray(data.tournaments) ? data.tournaments : [];
+                tournamentsData = currentFilter === 'all'
+                    ? allTournaments
+                    : allTournaments.filter((tournament) => tournament.status === currentFilter);
+                renderTournaments();
+            } catch (error) {
+                console.error('Unable to load tournament board:', error);
+                grid.innerHTML = '<div class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><h3>Tournament board unavailable</h3><p>Please refresh the page or try again shortly.</p></div>';
+            }
+        }
         function amount(value) { return Number(value || 0); }
         function escapeHtml(value) { const node = document.createElement('span'); node.textContent = value || ''; return node.innerHTML; }
         function labelForType(type) { return { standard: 'Standard · 4 players', premium: 'Premium · 8 players', deluxe: 'Deluxe · 16 players' }[type] || 'Tournament'; }
@@ -421,6 +445,8 @@
             if (notice) notice.style.display = 'none';
             if (window.__arenaNoticeTimer) clearInterval(window.__arenaNoticeTimer);
         }
+        // Load immediately even if Socket.IO cannot connect on the live host.
+        fetchTournaments();
         setInterval(fetchTournaments, 30000);
 
         // ---------- Create tournament (hero CTA) ----------
