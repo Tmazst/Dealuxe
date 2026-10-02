@@ -1,0 +1,23 @@
+V3.1-0101 — Configurable Cup Events and Shared Prize Group
+
+Status: In progress — capacity and shared-prize increment complete
+
+[x] Permit only balanced 16, 32 and 64-seat Cup brackets.
+[x] Keep an environment allowlist and default capacity.
+[x] Let administrators select capacity from the Cup roster dashboard.
+[x] Calculate roster and check-in readiness against the selected capacity.
+[x] Create dynamic Round of 16, Round of 32 and Round of 64 brackets.
+[x] Add a reviewed SQLite migration expanding the Cup capacity constraint.
+[x] Replace published positions 5–10 with one six-player equal-prize group.
+[x] Require an administrator reason and immutable audit record for that group.
+[x] Retain numeric 5–10 slots internally only for backward compatibility.
+
+[ ] Add persistent Cup Event records with draft/qualifying/check-in/ready/active/completed/cancelled lifecycle.
+[ ] Link qualifications and the created tournament to a Cup Event ID.
+[ ] Allow multiple historical and future Cup events without weakening duplicate-launch protection per event.
+[ ] Freeze capacity and event identity once qualification/check-in begins.
+[ ] Add event dates, qualification dates and administrator notes.
+[ ] Add focused 32-player acceptance and full migration rehearsal.
+
+Database safety: every automated test must select a unique temporary database.
+Never run db.drop_all against instance/dealuxe_game.db.

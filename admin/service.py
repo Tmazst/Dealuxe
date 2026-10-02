@@ -548,7 +548,7 @@ def _serialize_cup_qualification(qualification, seat_number=None):
     return payload
 
 
-def list_cup_qualifications(event_key=None, status=''):
+def list_cup_qualifications(event_key=None, status='', capacity=None):
     event_key = (event_key or current_app.config.get('CUP_EVENT_KEY') or '').strip()
     query = CupQualification.query.filter_by(event_key=event_key)
     if status:
@@ -571,7 +571,18 @@ def list_cup_qualifications(event_key=None, status=''):
             start=1,
         )
     }
-    capacity = int(current_app.config.get('CUP_CAPACITY', 64))
+    allowed_capacities = tuple(current_app.config.get(
+        'CUP_ALLOWED_CAPACITIES', (16, 32, 64)
+    ))
+    try:
+        capacity = int(
+            capacity if capacity is not None
+            else current_app.config.get('CUP_DEFAULT_CAPACITY', 64)
+        )
+    except (TypeError, ValueError):
+        raise ValueError('Cup capacity must be 16, 32 or 64')
+    if capacity not in allowed_capacities:
+        raise ValueError('Cup capacity is not enabled')
     checked_in_seats = sum(
         record.status == 'checked_in' for record in active_records
     )
@@ -589,6 +600,7 @@ def list_cup_qualifications(event_key=None, status=''):
         'season': current_app.config.get('CUP_SEASON'),
         'cup_enabled': bool(current_app.config.get('CUP_ENABLED', False)),
         'capacity': capacity,
+        'allowed_capacities': list(allowed_capacities),
         'active_seats': len(active_records),
         'checked_in_seats': checked_in_seats,
         'unchecked_seats': unchecked_seats,
@@ -607,8 +619,10 @@ def list_cup_qualifications(event_key=None, status=''):
     }
 
 
-def create_cup_tournament(admin_user_id, tournament_name=None, event_key=None):
-    """Lock the approved 64-seat roster into one payout-free Cup bracket."""
+def create_cup_tournament(
+    admin_user_id, tournament_name=None, event_key=None, capacity=None
+):
+    """Lock the approved roster into one balanced payout-free Cup bracket."""
     if not current_app.config.get('CUP_ENABLED', False):
         raise ValueError('Cup tournament creation is disabled by CUP_ENABLED')
     if current_app.config.get('CUP_CASH_PAYOUTS_ENABLED', False):
@@ -619,9 +633,21 @@ def create_cup_tournament(admin_user_id, tournament_name=None, event_key=None):
     if not event_key or event_key != configured_event:
         raise ValueError('Cup creation is limited to the configured pilot event')
 
-    capacity = int(current_app.config.get('CUP_CAPACITY', 64))
-    if capacity != 64:
-        raise ValueError('Version 3 Cup capacity must remain fixed at 64')
+    allowed_capacities = tuple(current_app.config.get(
+        'CUP_ALLOWED_CAPACITIES', (16, 32, 64)
+    ))
+    try:
+        capacity = int(
+            capacity if capacity is not None
+            else current_app.config.get('CUP_DEFAULT_CAPACITY', 64)
+        )
+    except (TypeError, ValueError):
+        raise ValueError('Cup capacity must be 16, 32 or 64')
+    if capacity not in allowed_capacities:
+        raise ValueError(
+            'Cup capacity must be one of: '
+            + ', '.join(str(value) for value in allowed_capacities)
+        )
     existing = Tournament.query.filter_by(tournament_type='cup').first()
     if existing is not None:
         raise ValueError('A Cup tournament has already been created for this pilot')
@@ -687,12 +713,12 @@ def create_cup_tournament(admin_user_id, tournament_name=None, event_key=None):
         'cup_tournament.create',
         entity_type='tournament',
         entity_id=tournament.id,
-        summary=f'Created 64-player Cup for {event_key}',
+        summary=f'Created {capacity}-player Cup for {event_key}',
         details=json.dumps({'qualification_ids': [item.id for item in roster]}),
     )
 
     # Bracket construction is shared with ordinary tournaments and commits the
-    # complete Cup, participant roster, audit entry and 64-match bracket.
+    # complete Cup, participant roster, audit entry and bracket.
     from controllers.tournament_controller import _build_bracket
     brackets = _build_bracket(tournament)
     return {
@@ -783,7 +809,72 @@ def get_cup_placements(tournament_id):
             str(placement): player
             for placement, player in sorted(assignments.items())
         },
+        'shared_prize_recipients': [
+            _cup_placement_player(participant)
+            for participant in participants
+            if participant.final_placement in {5, 6, 7, 8, 9, 10}
+        ],
+        'eligible_shared_prize_recipients': [
+            _cup_placement_player(participant)
+            for participant in participants
+            if participant.status == 'eliminated'
+            and participant.final_placement not in {1, 2, 3, 4}
+        ],
     }
+
+
+def assign_cup_shared_prize_recipients(
+    tournament_id, user_ids, admin_user_id, reason
+):
+    """Select six equal-prize recipients without publishing an internal rank."""
+    tournament = _require_cup_tournament(tournament_id)
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValueError('A shared-prize selection reason is required')
+    try:
+        user_ids = [int(user_id) for user_id in user_ids]
+    except (TypeError, ValueError):
+        raise ValueError('Select six valid shared-prize recipients')
+    if len(user_ids) != 6 or len(set(user_ids)) != 6:
+        raise ValueError('Select six distinct shared-prize recipients')
+
+    participants = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id
+    ).all()
+    by_user = {participant.user_id: participant for participant in participants}
+    if any(user_id not in by_user for user_id in user_ids):
+        raise ValueError('Every shared-prize recipient must belong to this Cup')
+    if any(
+        by_user[user_id].status != 'eliminated'
+        or by_user[user_id].final_placement in {1, 2, 3, 4}
+        for user_id in user_ids
+    ):
+        raise ValueError('Shared-prize recipients must be eliminated players outside the top four')
+
+    previous = sorted(
+        participant.user_id for participant in participants
+        if participant.final_placement in {5, 6, 7, 8, 9, 10}
+    )
+    for participant in participants:
+        if participant.final_placement in {5, 6, 7, 8, 9, 10}:
+            participant.final_placement = None
+    # Numeric slots remain only for backward-compatible storage. Public/admin
+    # responses treat these six people as one unordered equal-prize group.
+    for placement, user_id in enumerate(sorted(user_ids), start=5):
+        by_user[user_id].final_placement = placement
+    log_admin_action(
+        admin_user_id,
+        'cup_placement.select_shared_prize_group',
+        entity_type='tournament', entity_id=tournament.id,
+        summary=f'Selected shared-prize recipients for {tournament.tournament_name}',
+        details=json.dumps({
+            'previous_user_ids': previous,
+            'selected_user_ids': sorted(user_ids),
+            'reason': reason,
+        }),
+    )
+    db.session.commit()
+    return get_cup_placements(tournament.id)
 
 
 def assign_cup_positions_5_to_8(

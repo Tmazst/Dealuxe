@@ -366,6 +366,16 @@ class PilotEconomyConfigTests(unittest.TestCase):
             'CUP_REQUIRE_CHECK_IN_TO_START': 'false',
         })['CUP_REQUIRE_CHECK_IN_TO_START'])
 
+    def test_cup_capacities_are_restricted_to_balanced_supported_sizes(self):
+        config = build_pilot_economy_config({
+            'CUP_ALLOWED_CAPACITIES': '16,32,64',
+            'CUP_DEFAULT_CAPACITY': '32',
+        })
+        self.assertEqual(config['CUP_ALLOWED_CAPACITIES'], (16, 32, 64))
+        self.assertEqual(config['CUP_DEFAULT_CAPACITY'], 32)
+        with self.assertRaisesRegex(RuntimeError, 'only 16, 32 and 64'):
+            build_pilot_economy_config({'CUP_ALLOWED_CAPACITIES': '20,64'})
+
 
 if __name__ == '__main__':
     unittest.main()

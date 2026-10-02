@@ -855,7 +855,7 @@ class Tournament(db.Model):
     __table_args__ = (
         db.CheckConstraint('entry_fee >= 0', name='ck_tournaments_entry_fee_nonnegative'),
         db.CheckConstraint(
-            "(tournament_type = 'cup' AND max_players = 64) OR "
+            "(tournament_type = 'cup' AND max_players IN (16, 32, 64)) OR "
             "(tournament_type != 'cup' AND max_players IN (4, 8, 16))",
             name='ck_tournaments_max_players_allowed',
         ),

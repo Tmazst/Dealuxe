@@ -460,6 +460,57 @@ class TestAdminExpansion(unittest.TestCase):
         duplicate = self.client.post('/api/admin/cup-tournaments', json={})
         self.assertEqual(duplicate.status_code, 400)
 
+    def test_admin_creates_balanced_16_player_cup(self):
+        app.config['CUP_ENABLED'] = True
+        self._add_cup_qualifiers(16)
+        self._login(self.admin)
+        response = self.client.post('/api/admin/cup-tournaments', json={
+            'tournament_name': 'Compact Pilot Cup', 'capacity': 16,
+        })
+        self.assertEqual(response.status_code, 201, response.get_json())
+        payload = response.get_json()['cup']
+        self.assertEqual(payload['players'], 16)
+        cup = Tournament.query.get(payload['tournament_id'])
+        self.assertEqual(cup.max_players, 16)
+        first_round = TournamentBracket.query.filter_by(
+            tournament_id=cup.id, round_number=1
+        ).all()
+        self.assertEqual(len(first_round), 8)
+        self.assertEqual({row.round_name for row in first_round}, {'Round of 16'})
+
+    def test_admin_selects_unordered_shared_prize_group(self):
+        app.config['CUP_ENABLED'] = True
+        self._add_cup_qualifiers(16)
+        self._login(self.admin)
+        created = self.client.post('/api/admin/cup-tournaments', json={
+            'capacity': 16,
+        }).get_json()['cup']
+        participants = TournamentParticipant.query.filter_by(
+            tournament_id=created['tournament_id']
+        ).order_by(TournamentParticipant.user_id.asc()).all()
+        selected = participants[:6]
+        for participant in selected:
+            participant.status = 'eliminated'
+        db.session.commit()
+
+        response = self.client.patch(
+            f"/api/admin/cup-tournaments/{created['tournament_id']}/shared-prize-recipients",
+            json={
+                'user_ids': [participant.user_id for participant in reversed(selected)],
+                'reason': 'Equal shared award approved by event administrator',
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        payload = response.get_json()
+        self.assertEqual(len(payload['shared_prize_recipients']), 6)
+        self.assertEqual(
+            {item['user_id'] for item in payload['shared_prize_recipients']},
+            {participant.user_id for participant in selected},
+        )
+        self.assertIsNotNone(AdminAuditLog.query.filter_by(
+            action='cup_placement.select_shared_prize_group'
+        ).first())
+
     def test_cup_creation_requires_feature_flag_and_exact_roster(self):
         self._add_cup_qualifiers(63)
         self._login(self.admin)

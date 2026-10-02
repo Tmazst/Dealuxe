@@ -29,6 +29,7 @@ from admin.service import (
     get_cup_placements,
     assign_cup_positions_5_to_8,
     assign_cup_positions_9_to_10,
+    assign_cup_shared_prize_recipients,
     list_cup_replacement_candidates,
     replace_absent_cup_player,
     check_in_cup_qualification,
@@ -249,6 +250,7 @@ def cup_qualification_roster():
         return jsonify(list_cup_qualifications(
             event_key=request.args.get('event_key'),
             status=request.args.get('status', '').strip(),
+            capacity=request.args.get('capacity'),
         ))
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -263,6 +265,7 @@ def create_cup_tournament_route():
             session['user_id'],
             tournament_name=data.get('tournament_name'),
             event_key=data.get('event_key'),
+            capacity=data.get('capacity'),
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -272,7 +275,10 @@ def create_cup_tournament_route():
         return jsonify({
             'error': 'Cup creation failed safely; no tournament was started'
         }), 500
-    return jsonify({'message': '64-player Cup created and started', 'cup': cup}), 201
+    return jsonify({
+        'message': f"{cup['players']}-player Cup created and started",
+        'cup': cup,
+    }), 201
 
 
 @admin_bp.route('/cup-replacement-candidates', methods=['GET'])
@@ -346,6 +352,23 @@ def cup_positions_9_to_10_route(tournament_id):
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'message': 'Cup positions 9-10 saved', **placements})
+
+
+@admin_bp.route(
+    '/cup-tournaments/<int:tournament_id>/shared-prize-recipients',
+    methods=['PATCH'],
+)
+@admin_required
+def cup_shared_prize_recipients_route(tournament_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        placements = assign_cup_shared_prize_recipients(
+            tournament_id, data.get('user_ids'), session['user_id'],
+            data.get('reason'),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Shared-prize recipients saved', **placements})
 
 
 @admin_bp.route('/cup-qualifications/<int:qualification_id>/check-in', methods=['POST'])

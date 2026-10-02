@@ -102,6 +102,14 @@
         <div class="controls">
             <h2 style="margin-right:auto;">uMshova Cup Qualification Roster</h2>
             <label>
+                Seats:
+                <select id="cupCapacity">
+                    <option value="16">16</option>
+                    <option value="32">32</option>
+                    <option value="64" selected>64</option>
+                </select>
+            </label>
+            <label>
                 Status:
                 <select id="cupStatusFilter">
                     <option value="">All</option>
@@ -114,7 +122,7 @@
                 </select>
             </label>
             <button id="reloadCupRoster">Reload</button>
-            <button id="createCupTournament" data-action="createCupTournament" disabled>Create 64-player Cup</button>
+            <button id="createCupTournament" data-action="createCupTournament" disabled>Create Cup</button>
         </div>
         <div class="summary-grid" id="cupSummaryGrid"></div>
         <p class="status" id="cupRosterStatus" role="status" aria-live="polite"></p>
@@ -144,21 +152,14 @@
             </label>
             <button data-action="loadCupPlacements">Load placements</button>
         </div>
-        <p class="status" id="cupPlacementStatus" role="status" aria-live="polite">Load a Cup to manage positions 5-10.</p>
+        <p class="status" id="cupPlacementStatus" role="status" aria-live="polite">Load a Cup to manage the shared 5th–10th prize group.</p>
         <div class="summary-grid" id="cupPlacementSummary"></div>
-        <h3>Quarter-final losers: positions 5-8</h3>
-        <p class="status">Order the four eligible players. Position 5 is the first selection.</p>
-        <div class="controls" id="cupPositions58"></div>
+        <h3>Shared 5th–10th Prize Recipients</h3>
+        <p class="status">Select six eligible eliminated players. They form one equal-prize group and are not ranked against one another.</p>
         <div class="controls">
-            <input id="cupPositions58Reason" type="text" aria-label="Reason for ordering Cup positions 5 to 8" placeholder="Reason for ordering positions 5-8" style="min-width:320px;">
-            <button data-action="saveCupPositions58">Save positions 5-8</button>
-        </div>
-        <h3>Administrator selections: positions 9-10</h3>
-        <p class="status">Only eliminated players who did not reach the quarter-finals are available.</p>
-        <div class="controls" id="cupPositions910"></div>
-        <div class="controls">
-            <input id="cupPositions910Reason" type="text" aria-label="Reason for selecting Cup positions 9 and 10" placeholder="Reason for selecting positions 9-10" style="min-width:320px;">
-            <button data-action="saveCupPositions910">Save positions 9-10</button>
+            <select id="cupSharedRecipients" multiple size="10" aria-label="Shared prize recipients" style="min-width:320px;"></select>
+            <input id="cupSharedRecipientsReason" type="text" aria-label="Reason for selecting shared prize recipients" placeholder="Selection reason" style="min-width:320px;">
+            <button data-action="saveCupSharedRecipients">Save shared prize group</button>
         </div>
     </div>
 
@@ -586,7 +587,10 @@
 
         async function fetchCupRoster() {
             const filter = document.getElementById('cupStatusFilter').value;
-            const url = '/api/admin/cup-qualifications' + (filter ? `?status=${encodeURIComponent(filter)}` : '');
+            const capacity = Number(document.getElementById('cupCapacity').value);
+            const params = new URLSearchParams({ capacity: String(capacity) });
+            if (filter) params.set('status', filter);
+            const url = `/api/admin/cup-qualifications?${params.toString()}`;
             const response = await fetch(url, { credentials: 'same-origin' });
             if (!response.ok) return;
             const data = await response.json();
@@ -602,7 +606,7 @@
             `;
             let readinessMessage;
             if (!data.roster_full) {
-                readinessMessage = `${data.remaining_seats} active seat(s) remain before the 64-player lock.`;
+                readinessMessage = `${data.remaining_seats} active seat(s) remain before the ${data.capacity}-player lock.`;
             } else if (data.check_in_required && data.unchecked_seats) {
                 readinessMessage = `Launch blocked: ${data.unchecked_seats} active player(s) still need to check in.`;
             } else if (!data.cup_enabled) {
@@ -673,24 +677,18 @@
         function renderCupPlacements(data) {
             currentCupPlacements = data;
             const assignments = data.assignments || {};
-            document.getElementById('cupPlacementStatus').textContent = data.quarter_finals_complete
-                ? `${data.tournament_name}: quarter-finals complete; placement controls are available.`
-                : `${data.tournament_name}: all four quarter-finals must finish before positions 5-10 can be assigned.`;
-            document.getElementById('cupPlacementSummary').innerHTML = Array.from({ length: 10 }, (_, index) => {
-                const placement = index + 1;
+            const shared = data.shared_prize_recipients || [];
+            const selectedIds = new Set(shared.map(player => Number(player.user_id)));
+            document.getElementById('cupPlacementStatus').textContent =
+                `${data.tournament_name}: select six equal-prize recipients; no 5th–10th internal order is published.`;
+            document.getElementById('cupPlacementSummary').innerHTML = [1, 2, 3, 4].map(placement => {
                 const player = assignments[String(placement)];
                 return `<div class="summary-card"><span class="pill">Position ${placement}</span><strong>${escapeHtml(player ? player.username : 'Unassigned')}</strong></div>`;
-            }).join('');
-            document.getElementById('cupPositions58').innerHTML = [5, 6, 7, 8].map(placement => `
-                <label>Position ${placement}:
-                    <select data-cup-placement="${placement}" aria-label="Cup position ${placement}">${placementOptions(data.eligible_5_8, assignments[String(placement)]?.user_id)}</select>
-                </label>
-            `).join('');
-            document.getElementById('cupPositions910').innerHTML = [9, 10].map(placement => `
-                <label>Position ${placement}:
-                    <select data-cup-placement="${placement}" aria-label="Cup position ${placement}">${placementOptions(data.eligible_9_10, assignments[String(placement)]?.user_id)}</select>
-                </label>
-            `).join('');
+            }).join('') + `<div class="summary-card"><span class="pill">Shared prize group</span><strong>${shared.length}/6 selected</strong></div>`;
+            document.getElementById('cupSharedRecipients').innerHTML =
+                (data.eligible_shared_prize_recipients || []).map(player =>
+                    `<option value="${player.user_id}"${selectedIds.has(Number(player.user_id)) ? ' selected' : ''}>${escapeHtml(player.username || player.user_id)}</option>`
+                ).join('');
         }
 
         async function fetchCupPlacements() {
@@ -1472,11 +1470,12 @@
                     await chooseCupReplacement(Number(button.dataset.id));
                 }
                 if (action === 'createCupTournament') {
-                    if (!confirm('Create and start the 64-player Cup from the approved active roster?')) return;
+                    const capacity = Number(document.getElementById('cupCapacity').value);
+                    if (!confirm(`Create and start the ${capacity}-player Cup from the approved active roster?`)) return;
                     const name = prompt('Cup tournament name:', 'uMshova Cup');
                     if (name === null) return;
                     const created = await sendJson('/api/admin/cup-tournaments', {
-                        body: { tournament_name: name.trim() || 'uMshova Cup' },
+                        body: { tournament_name: name.trim() || 'uMshova Cup', capacity },
                     });
                     document.getElementById('cupPlacementTournamentId').value = created.cup.tournament_id;
                     await fetchCupPlacements();
@@ -1484,25 +1483,12 @@
                 if (action === 'loadCupPlacements') {
                     await fetchCupPlacements();
                 }
-                if (action === 'saveCupPositions58') {
+                if (action === 'saveCupSharedRecipients') {
                     const tournamentId = Number(document.getElementById('cupPlacementTournamentId').value);
-                    const ordered = [5, 6, 7, 8].map(placement => Number(
-                        document.querySelector(`[data-cup-placement="${placement}"]`).value
-                    ));
-                    const reason = document.getElementById('cupPositions58Reason').value.trim();
-                    const data = await sendJson(`/api/admin/cup-tournaments/${tournamentId}/placements/5-8`, {
-                        method: 'PATCH', body: { ordered_user_ids: ordered, reason },
-                    });
-                    renderCupPlacements(data);
-                }
-                if (action === 'saveCupPositions910') {
-                    const tournamentId = Number(document.getElementById('cupPlacementTournamentId').value);
-                    const ordered = [9, 10].map(placement => Number(
-                        document.querySelector(`[data-cup-placement="${placement}"]`).value
-                    ));
-                    const reason = document.getElementById('cupPositions910Reason').value.trim();
-                    const data = await sendJson(`/api/admin/cup-tournaments/${tournamentId}/placements/9-10`, {
-                        method: 'PATCH', body: { ordered_user_ids: ordered, reason },
+                    const user_ids = Array.from(document.getElementById('cupSharedRecipients').selectedOptions).map(option => Number(option.value));
+                    const reason = document.getElementById('cupSharedRecipientsReason').value.trim();
+                    const data = await sendJson(`/api/admin/cup-tournaments/${tournamentId}/shared-prize-recipients`, {
+                        method: 'PATCH', body: { user_ids, reason },
                     });
                     renderCupPlacements(data);
                 }
@@ -1540,6 +1526,7 @@
         document.getElementById('disputeFilter').addEventListener('change', fetchDisputes);
         document.getElementById('reloadDisputes').addEventListener('click', fetchDisputes);
         document.getElementById('cupStatusFilter').addEventListener('change', fetchCupRoster);
+        document.getElementById('cupCapacity').addEventListener('change', fetchCupRoster);
         document.getElementById('reloadCupRoster').addEventListener('click', fetchCupRoster);
         document.getElementById('reloadHybridProfiles').addEventListener('click', fetchHybridProfiles);
         document.getElementById('reloadHybridCaptions').addEventListener('click', fetchHybridCaptions);

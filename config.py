@@ -35,6 +35,22 @@ def build_pilot_economy_config(environ=None):
     cup_require_check_in = _env_bool(
         environ, 'CUP_REQUIRE_CHECK_IN_TO_START', default=True
     )
+    try:
+        cup_allowed_capacities = tuple(sorted({
+            int(value.strip())
+            for value in str(environ.get(
+                'CUP_ALLOWED_CAPACITIES', '16,32,64'
+            )).split(',') if value.strip()
+        }))
+        cup_default_capacity = int(environ.get('CUP_DEFAULT_CAPACITY', '64'))
+    except (TypeError, ValueError):
+        raise RuntimeError('Cup capacities must be comma-separated integers')
+    if not cup_allowed_capacities or any(
+        capacity not in {16, 32, 64} for capacity in cup_allowed_capacities
+    ):
+        raise RuntimeError('CUP_ALLOWED_CAPACITIES may contain only 16, 32 and 64')
+    if cup_default_capacity not in cup_allowed_capacities:
+        raise RuntimeError('CUP_DEFAULT_CAPACITY must be in CUP_ALLOWED_CAPACITIES')
 
     if pilot_mode and paid_entry:
         raise RuntimeError('Paid tournament entry cannot be enabled in PILOT_MODE')
@@ -57,7 +73,10 @@ def build_pilot_economy_config(environ=None):
         'CUP_REQUIRE_CHECK_IN_TO_START': cup_require_check_in,
         'CUP_EVENT_KEY': str(environ.get('CUP_EVENT_KEY') or 'umshova-cup-pilot').strip(),
         'CUP_SEASON': str(environ.get('CUP_SEASON') or '2026').strip(),
-        'CUP_CAPACITY': 64,
+        'CUP_ALLOWED_CAPACITIES': cup_allowed_capacities,
+        'CUP_DEFAULT_CAPACITY': cup_default_capacity,
+        # Backward-compatible alias used by the current qualification service.
+        'CUP_CAPACITY': cup_default_capacity,
     }
 
 
