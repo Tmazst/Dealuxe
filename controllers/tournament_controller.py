@@ -32,6 +32,7 @@ from services.promotional_credit_service import (
     reverse_tournament_entry,
 )
 from services.cup_qualification_service import award_cup_qualification
+from services.cup_event_service import serialize_cup_event_details
 
 
 tournament_bp = Blueprint('tournament', __name__, url_prefix='/api/tournaments')
@@ -238,6 +239,10 @@ def _serialize_tournament(tournament):
         'players_needed': max(tournament.max_players - current_players, 0),
         'created_at': tournament.created_at.isoformat() if tournament.created_at else None,
         'completed_at': tournament.completed_at.isoformat() if tournament.completed_at else None,
+        'event': (
+            serialize_cup_event_details(tournament)
+            if tournament.tournament_type == 'cup' else None
+        ),
         # Final placement list (1st/2nd/3rd + prize amounts) once completed,
         # None otherwise — drives the results podium on the tournament cards.
         'podium': _serialize_podium(tournament),

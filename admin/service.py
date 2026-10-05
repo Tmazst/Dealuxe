@@ -23,6 +23,10 @@ from database import (
 )
 from sqlalchemy import or_
 from services.cup_qualification_service import ACTIVE_QUALIFICATION_STATUSES
+from services.cup_event_service import (
+    apply_cup_event_details,
+    serialize_cup_event_details,
+)
 
 
 def log_admin_action(admin_user_id, action, entity_type=None, entity_id=None, summary=None, details=None):
@@ -157,6 +161,10 @@ def list_tournaments():
             'locked_at': tournament.locked_at.isoformat() if tournament.locked_at else None,
             'started_at': tournament.started_at.isoformat() if tournament.started_at else None,
             'completed_at': tournament.completed_at.isoformat() if tournament.completed_at else None,
+            'event': (
+                serialize_cup_event_details(tournament)
+                if tournament.tournament_type == 'cup' else None
+            ),
         }
         for tournament in tournaments
     ]
@@ -320,6 +328,10 @@ def get_tournament_detail(tournament_id):
         'locked_at': tournament.locked_at.isoformat() if tournament.locked_at else None,
         'started_at': tournament.started_at.isoformat() if tournament.started_at else None,
         'completed_at': tournament.completed_at.isoformat() if tournament.completed_at else None,
+        'event': (
+            serialize_cup_event_details(tournament)
+            if tournament.tournament_type == 'cup' else None
+        ),
         'participants': [
             {
                 'user_id': p.user_id,
@@ -620,7 +632,8 @@ def list_cup_qualifications(event_key=None, status='', capacity=None):
 
 
 def create_cup_tournament(
-    admin_user_id, tournament_name=None, event_key=None, capacity=None
+    admin_user_id, tournament_name=None, event_key=None, capacity=None,
+    event_details=None,
 ):
     """Lock the approved roster into one balanced payout-free Cup bracket."""
     if not current_app.config.get('CUP_ENABLED', False):
@@ -696,6 +709,7 @@ def create_cup_tournament(
         'qualification_ids': [qualification.id for qualification in roster],
         'cash_payouts_enabled': False,
     })
+    apply_cup_event_details(tournament, event_details or {})
 
     for qualification in roster:
         participant = add_tournament_participant(
@@ -729,6 +743,41 @@ def create_cup_tournament(
         'players': capacity,
         'bracket_slots': len(brackets),
         'cash_prizes_enabled': False,
+        'event': serialize_cup_event_details(tournament),
+    }
+
+
+def update_cup_event_details(tournament_id, data, admin_user_id):
+    """Update public Cup date/time/venue information with an audit record."""
+    tournament = Tournament.query.get_or_404(tournament_id)
+    if 'tournament_name' in data:
+        tournament_name = str(data.get('tournament_name') or '').strip()
+        if not tournament_name:
+            raise ValueError('Cup name is required')
+        if len(tournament_name) > 255:
+            raise ValueError('Cup name must be 255 characters or fewer')
+        tournament.tournament_name = tournament_name
+    event = apply_cup_event_details(tournament, data)
+    log_admin_action(
+        admin_user_id,
+        'cup_tournament.update_event_details',
+        entity_type='tournament',
+        entity_id=tournament.id,
+        summary='Updated public Cup event date, time and venue details',
+        details=json.dumps({
+            'details_complete': event['details_complete'],
+            'has_start_at': bool(event['start_at']),
+            'has_check_in_at': bool(event['check_in_at']),
+            'has_venue': bool(event['venue_name']),
+            'has_address': bool(event['venue_address']),
+            'has_public_notes': bool(event['public_notes']),
+        }, sort_keys=True),
+    )
+    db.session.commit()
+    return {
+        'tournament_id': tournament.id,
+        'tournament_name': tournament.tournament_name,
+        'event': event,
     }
 
 

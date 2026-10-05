@@ -37,6 +37,7 @@ from admin.service import (
     move_cup_qualification_to_reserve,
     replace_cup_qualification,
     revoke_cup_qualification,
+    update_cup_event_details,
 )
 from database import User, db
 
@@ -266,6 +267,7 @@ def create_cup_tournament_route():
             tournament_name=data.get('tournament_name'),
             event_key=data.get('event_key'),
             capacity=data.get('capacity'),
+            event_details=data,
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -279,6 +281,21 @@ def create_cup_tournament_route():
         'message': f"{cup['players']}-player Cup created and started",
         'cup': cup,
     }), 201
+
+
+@admin_bp.route(
+    '/cup-tournaments/<int:tournament_id>/event-details', methods=['PATCH']
+)
+@admin_required
+def update_cup_event_details_route(tournament_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        result = update_cup_event_details(
+            tournament_id, data, session['user_id']
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Cup event details updated', **result})
 
 
 @admin_bp.route('/cup-replacement-candidates', methods=['GET'])

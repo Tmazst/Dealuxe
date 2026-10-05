@@ -307,6 +307,29 @@ def ensure_hybrid_game_preferences_schema():
                 ))
 
 
+def ensure_cup_event_details_schema():
+    """Add public Cup event fields to an existing legacy SQLite database."""
+    if db.engine is None or db.engine.name != 'sqlite':
+        return
+    if not inspect(db.engine).has_table('tournaments'):
+        return
+    columns = [
+        ('event_start_at', 'DATETIME'),
+        ('event_check_in_at', 'DATETIME'),
+        ('event_venue_name', 'VARCHAR(160)'),
+        ('event_venue_address', 'VARCHAR(255)'),
+        ('event_public_notes', 'TEXT'),
+    ]
+    with db.session.begin():
+        for column_name, column_definition in columns:
+            if not _table_has_column('tournaments', column_name):
+                db.session.execute(text(
+                    'ALTER TABLE tournaments ADD COLUMN {0} {1}'.format(
+                        column_name, column_definition
+                    )
+                ))
+
+
 def init_db(app):
     """Initialize database with Flask app"""
     environment_database_uri = os.environ.get('DEALUXE_DATABASE_URI')
@@ -353,6 +376,7 @@ def init_db(app):
             ensure_cup_qualification_schema()
             ensure_hybrid_shadow_audit_schema()
             ensure_hybrid_game_preferences_schema()
+            ensure_cup_event_details_schema()
         else:
             database_inspector = inspect(db.engine)
             existing_tables = set(database_inspector.get_table_names())
@@ -1015,6 +1039,14 @@ class Tournament(db.Model):
     runner_up_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     third_place_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     notes = db.Column(db.Text, nullable=True)
+    # Public event information is used primarily by Cup tournaments. Keeping it
+    # on the tournament preserves the current MVP while a fuller Cup Event
+    # lifecycle remains a later Version 3.1 increment.
+    event_start_at = db.Column(PRECISE_DATETIME, nullable=True)
+    event_check_in_at = db.Column(PRECISE_DATETIME, nullable=True)
+    event_venue_name = db.Column(db.String(160), nullable=True)
+    event_venue_address = db.Column(db.String(255), nullable=True)
+    event_public_notes = db.Column(db.Text, nullable=True)
 
     creator = db.relationship('User', foreign_keys='Tournament.creator_id', backref='created_tournaments')
     bet_sessions = db.relationship('BetSession', foreign_keys='BetSession.tournament_id', backref='tournament', lazy='dynamic')
@@ -1039,6 +1071,11 @@ class Tournament(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'event_start_at': self.event_start_at.isoformat() if self.event_start_at else None,
+            'event_check_in_at': self.event_check_in_at.isoformat() if self.event_check_in_at else None,
+            'event_venue_name': self.event_venue_name,
+            'event_venue_address': self.event_venue_address,
+            'event_public_notes': self.event_public_notes,
         }
 
 

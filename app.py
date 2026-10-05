@@ -33,7 +33,7 @@ try:
 except Exception:
     pass
 
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from flask_socketio import SocketIO
 from game.manager_redis import GameManager
 from controllers.flask_controller import FlaskGameController
@@ -418,9 +418,13 @@ def tournaments_page():
 @app.route("/tournaments/<int:tournament_id>")
 def tournament_waiting_room_page(tournament_id):
     tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type == 'cup':
+        return redirect(url_for('cup_details_page', tournament_id=tournament.id))
     user_id = session.get('user_id')
     user = User.query.get(user_id) if user_id else None
-    is_admin = bool(user and (user.is_admin or tournament.creator_id == user_id))
+    is_admin = bool(user and (
+        user.is_admin or user.is_super_admin or tournament.creator_id == user_id
+    ))
     return render_template(
         "tournament_waiting_room.html",
         tournament_code=tournament.tournament_code,
@@ -533,6 +537,51 @@ def payment_callback():
         db.session.rollback()
         print(f"[PAYMENT] Callback processing error: {type(exc).__name__}")
         return jsonify({'error': 'Payment callback processing failed'}), 500
+
+
+@app.route('/cups/<int:tournament_id>')
+def cup_details_page(tournament_id):
+    """Public Cup overview; never reuse the ordinary join/waiting-room page."""
+    from database import TournamentParticipant, TournamentBracket
+    from services.cup_event_service import serialize_cup_event_details
+
+    tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type != 'cup':
+        return redirect(url_for(
+            'tournament_waiting_room_page', tournament_id=tournament.id
+        ))
+    participants = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id
+    ).order_by(TournamentParticipant.registered_at.asc()).all()
+    brackets = TournamentBracket.query.filter_by(
+        tournament_id=tournament.id
+    ).order_by(
+        TournamentBracket.round_number.asc(),
+        TournamentBracket.match_number.asc(),
+    ).all()
+    user_id = session.get('user_id')
+    user = db.session.get(User, user_id) if user_id else None
+    return render_template(
+        'cup_details.html',
+        tournament=tournament,
+        event=serialize_cup_event_details(tournament),
+        participants=[{
+            'username': participant.user.username,
+            'status': participant.status,
+            'final_placement': participant.final_placement,
+        } for participant in participants],
+        round_count=max((bracket.round_number for bracket in brackets), default=0),
+        match_count=sum(
+            1 for bracket in brackets if bracket.player1_id and bracket.player2_id
+        ),
+        completed_match_count=sum(
+            1 for bracket in brackets if bracket.status == 'completed'
+        ),
+        is_participant=any(
+            participant.user_id == user_id for participant in participants
+        ),
+        is_admin=bool(user and (user.is_admin or user.is_super_admin)),
+    )
 
 
 def tournament_id_filter(tournament_code):

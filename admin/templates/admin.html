@@ -19,6 +19,10 @@
         .summary-card { background: #f3f6fb; border-radius: 10px; padding: 14px; }
         .summary-card strong { display: block; font-size: 1.2rem; margin-top: 6px; }
         .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #e3eeff; color: #2953bb; font-size: 0.82rem; }
+        .form-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; }
+        .form-grid label { display: grid; gap: 6px; color: #445; font-weight: 700; }
+        .form-grid input, .form-grid textarea { width: 100%; padding: 8px 10px; border: 1px solid #cfd6e3; border-radius: 7px; }
+        .form-grid .full-width { grid-column: 1 / -1; }
         *, *::before, *::after { box-sizing: border-box; }
         .skip-link { position: fixed; top: 8px; left: 8px; z-index: 10000; padding: 10px 14px; border-radius: 8px; background: #111827; color: white; font-weight: 700; transform: translateY(-160%); }
         .skip-link:focus { transform: translateY(0); outline: 3px solid #EF4036; outline-offset: 2px; }
@@ -35,6 +39,8 @@
             #newCaptionText, #cupPositions58Reason, #cupPositions910Reason { min-width: 0 !important; }
             button { min-height: 44px; }
             .summary-grid { grid-template-columns: 1fr; }
+            .form-grid { grid-template-columns: 1fr; }
+            .form-grid .full-width { grid-column: auto; }
         }
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
@@ -122,6 +128,7 @@
                 </select>
             </label>
             <button id="reloadCupRoster">Reload</button>
+            <a href="#cupEventDetailsPanel">Cup event details</a>
             <button id="createCupTournament" data-action="createCupTournament" disabled>Create Cup</button>
         </div>
         <div class="summary-grid" id="cupSummaryGrid"></div>
@@ -456,6 +463,47 @@
         <pre id="logViewer" style="max-height:420px;overflow:auto;background:#0b0f1a;color:#c9d4f0;padding:12px;border-radius:8px;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-all;">Loading...</pre>
     </div>
 
+    <div class="panel" id="cupEventDetailsPanel">
+        <h2>Cup Event Details</h2>
+        <p class="status">Create or update the public Cup date, time and physical location. These details appear in the separate Tournament Cups section and Cup details page.</p>
+        <div class="form-grid">
+            <label>
+                Cup tournament ID
+                <input id="cupEventTournamentId" type="number" min="1" placeholder="e.g. 18">
+            </label>
+            <label>
+                Cup name
+                <input id="cupEventName" type="text" maxlength="100" value="uMshova Cup">
+            </label>
+            <label>
+                Event start date and time
+                <input id="cupEventStartAt" type="datetime-local">
+            </label>
+            <label>
+                Player check-in date and time
+                <input id="cupEventCheckInAt" type="datetime-local">
+            </label>
+            <label>
+                Physical venue name
+                <input id="cupEventVenueName" type="text" maxlength="160" placeholder="e.g. Botho University Hall">
+            </label>
+            <label>
+                Physical venue address
+                <input id="cupEventVenueAddress" type="text" maxlength="255" placeholder="Building, campus or street details">
+            </label>
+            <label class="full-width">
+                Public event notes
+                <textarea id="cupEventPublicNotes" maxlength="1000" rows="3" placeholder="Arrival instructions, what players should bring, accessibility or programme notes"></textarea>
+            </label>
+        </div>
+        <div class="controls">
+            <button data-action="loadCupEventDetails">Load Cup details</button>
+            <button data-action="saveCupEventDetails">Save public details</button>
+            <button data-action="viewCupPublicPage">View public Cup page</button>
+        </div>
+        <p class="status" id="cupEventDetailsStatus" role="status" aria-live="polite">Dates and venue may be left blank until confirmed; the public page will show “To be announced”.</p>
+    </div>
+
     <div class="panel">
         <div class="controls">
             <h2 style="margin-right:auto;">Security Event Audit</h2>
@@ -535,7 +583,68 @@
                 return;
             }
             const data = await response.json();
-            renderTournaments(data.tournaments || []);
+            const tournaments = data.tournaments || [];
+            renderTournaments(tournaments);
+            const cup = tournaments.find(tournament => tournament.tournament_type === 'cup');
+            if (cup && !document.getElementById('cupEventTournamentId').value) {
+                populateCupEventForm(cup);
+                document.getElementById('cupPlacementTournamentId').value = cup.id;
+                document.getElementById('cupEventDetailsStatus').textContent =
+                    `Loaded ${cup.tournament_name} (#${cup.id}).`;
+            }
+        }
+
+        function datetimeLocalValue(value) {
+            return value ? String(value).slice(0, 16) : '';
+        }
+
+        function populateCupEventForm(cup) {
+            const event = cup.event || {};
+            document.getElementById('cupEventTournamentId').value = cup.id || '';
+            document.getElementById('cupEventName').value = cup.tournament_name || 'uMshova Cup';
+            document.getElementById('cupEventStartAt').value = datetimeLocalValue(event.start_at);
+            document.getElementById('cupEventCheckInAt').value = datetimeLocalValue(event.check_in_at);
+            document.getElementById('cupEventVenueName').value = event.venue_name || '';
+            document.getElementById('cupEventVenueAddress').value = event.venue_address || '';
+            document.getElementById('cupEventPublicNotes').value = event.public_notes || '';
+        }
+
+        function cupEventPayload() {
+            return {
+                tournament_name: document.getElementById('cupEventName').value.trim(),
+                event_start_at: document.getElementById('cupEventStartAt').value || null,
+                event_check_in_at: document.getElementById('cupEventCheckInAt').value || null,
+                event_venue_name: document.getElementById('cupEventVenueName').value.trim(),
+                event_venue_address: document.getElementById('cupEventVenueAddress').value.trim(),
+                event_public_notes: document.getElementById('cupEventPublicNotes').value.trim(),
+            };
+        }
+
+        async function fetchCupEventDetails() {
+            const tournamentId = Number(document.getElementById('cupEventTournamentId').value);
+            if (!tournamentId) throw new Error('Enter a valid Cup tournament ID');
+            const response = await fetch(`/api/admin/tournaments/${tournamentId}`, {
+                credentials: 'same-origin',
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Could not load Cup details');
+            if (data.tournament_type !== 'cup') throw new Error('That tournament is not a Cup');
+            populateCupEventForm(data);
+            document.getElementById('cupPlacementTournamentId').value = data.id;
+            document.getElementById('cupEventDetailsStatus').textContent =
+                `Loaded ${data.tournament_name} (#${data.id}).`;
+            return data;
+        }
+
+        async function saveCupEventDetails() {
+            const tournamentId = Number(document.getElementById('cupEventTournamentId').value);
+            if (!tournamentId) throw new Error('Enter a valid Cup tournament ID');
+            const data = await sendJson(`/api/admin/cup-tournaments/${tournamentId}/event-details`, {
+                method: 'PATCH', body: cupEventPayload(),
+            });
+            document.getElementById('cupEventDetailsStatus').textContent =
+                `Saved public details for ${data.tournament_name}.`;
+            return data;
         }
 
         function renderUsers(users) {
@@ -1472,13 +1581,27 @@
                 if (action === 'createCupTournament') {
                     const capacity = Number(document.getElementById('cupCapacity').value);
                     if (!confirm(`Create and start the ${capacity}-player Cup from the approved active roster?`)) return;
-                    const name = prompt('Cup tournament name:', 'uMshova Cup');
-                    if (name === null) return;
+                    const name = document.getElementById('cupEventName').value.trim() || 'uMshova Cup';
                     const created = await sendJson('/api/admin/cup-tournaments', {
-                        body: { tournament_name: name.trim() || 'uMshova Cup', capacity },
+                        body: { capacity, ...cupEventPayload(), tournament_name: name },
                     });
                     document.getElementById('cupPlacementTournamentId').value = created.cup.tournament_id;
+                    document.getElementById('cupEventTournamentId').value = created.cup.tournament_id;
+                    document.getElementById('cupEventDetailsStatus').textContent =
+                        `Created ${name} (#${created.cup.tournament_id}) with its public event details.`;
                     await fetchCupPlacements();
+                }
+                if (action === 'loadCupEventDetails') {
+                    await fetchCupEventDetails();
+                }
+                if (action === 'saveCupEventDetails') {
+                    await saveCupEventDetails();
+                }
+                if (action === 'viewCupPublicPage') {
+                    const tournamentId = Number(document.getElementById('cupEventTournamentId').value);
+                    if (!tournamentId) throw new Error('Enter or load a valid Cup tournament ID');
+                    window.location.href = `/cups/${tournamentId}`;
+                    return;
                 }
                 if (action === 'loadCupPlacements') {
                     await fetchCupPlacements();
