@@ -1,6 +1,6 @@
 """Seed an idempotent 16-seat Cup qualification rehearsal.
 
-The default creates fifteen clearly labelled fake users. Each wins one
+The default creates fifteen clearly labelled fake qualifiers. Each wins one
 completed synthetic four-player promotional tournament and receives a valid
 qualification through the normal Cup qualification service. Existing users,
 qualifications and genuine records are never deleted or overwritten.
@@ -53,7 +53,7 @@ def _seed_code(event_key, season, index):
 def _fake_identity(prefix, index):
     username = '{0}_{1:02d}'.format(prefix, index)
     email = '{0}-{1:02d}@example.test'.format(prefix.replace('_', '-'), index)
-    full_name = 'Cup Pilot Winner {0:02d}'.format(index)
+    full_name = 'Cup Pilot Qualifier {0:02d}'.format(index)
     return username, email, full_name
 
 
@@ -256,7 +256,7 @@ def _create_completed_four_player_tournament(
 
 def seed_cup_qualifier_rehearsal(
     *, event_key, season, count=15, capacity=16,
-    prefix='cup16_winner', admin_user_id=None,
+    prefix='cup16_qualifier', admin_user_id=None,
 ):
     if int(count) <= 0 or int(capacity) not in {16, 32, 64}:
         raise CupSeedSafetyError('Invalid rehearsal count or Cup capacity')
@@ -381,6 +381,88 @@ def seed_cup_qualifier_rehearsal(
     }
 
 
+def rename_legacy_qualifier_labels(
+    *, event_key, count=15, old_prefix='cup16_winner',
+    new_prefix='cup16_qualifier', admin_user_id=None,
+):
+    """Rename only verified rehearsal accounts with the earlier poor label."""
+    renamed = 0
+    reused = 0
+    usernames = []
+    for index in range(1, int(count) + 1):
+        old_username, old_email, _old_name = _fake_identity(old_prefix, index)
+        new_username, new_email, new_full_name = _fake_identity(new_prefix, index)
+        old_user = User.query.filter_by(username=old_username).first()
+        new_user = User.query.filter_by(username=new_username).first()
+        if old_user is None:
+            if new_user is None or new_user.email != new_email:
+                raise CupSeedSafetyError(
+                    'Expected rehearsal qualifier account is missing'
+                )
+            user = new_user
+            reused += 1
+        else:
+            if old_user.email != old_email:
+                raise CupSeedSafetyError(
+                    'Legacy username is not the expected rehearsal account'
+                )
+            if new_user is not None and new_user.id != old_user.id:
+                raise CupSeedSafetyError(
+                    'New qualifier username already belongs to another account'
+                )
+            email_owner = User.query.filter_by(email=new_email).first()
+            if email_owner is not None and email_owner.id != old_user.id:
+                raise CupSeedSafetyError(
+                    'New qualifier email already belongs to another account'
+                )
+            user = old_user
+
+        qualification = CupQualification.query.filter(
+            CupQualification.user_id == user.id,
+            CupQualification.event_key == event_key,
+            CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES),
+        ).first()
+        source = qualification.source_tournament if qualification else None
+        if not (
+            qualification
+            and source
+            and source.status == 'completed'
+            and source.max_players == 4
+            and source.notes
+            and 'cup_qualification_rehearsal' in source.notes
+        ):
+            raise CupSeedSafetyError(
+                'Account is not backed by the expected qualifying tournament'
+            )
+
+        if user.username != new_username:
+            user.username = new_username
+            user.email = new_email
+            user.full_name = new_full_name
+            renamed += 1
+        usernames.append(new_username)
+
+    if admin_user_id and renamed:
+        db.session.add(AdminAuditLog(
+            admin_user_id=admin_user_id,
+            action='cup_qualification.rename_rehearsal_accounts',
+            entity_type='cup_event',
+            summary='Renamed synthetic Cup accounts from winner to qualifier labels',
+            details=json.dumps({
+                'event_key': event_key,
+                'renamed_accounts': renamed,
+                'new_prefix': new_prefix,
+            }, sort_keys=True),
+        ))
+    db.session.commit()
+    return {
+        'event_key': event_key,
+        'renamed_accounts': renamed,
+        'reused_accounts': reused,
+        'qualifier_usernames': usernames,
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description='Seed fifteen completed four-player Cup qualifier wins.'
@@ -389,7 +471,11 @@ def main(argv=None):
     parser.add_argument('--confirm-event-key', required=True)
     parser.add_argument('--count', type=int, default=15)
     parser.add_argument('--capacity', type=int, default=16)
-    parser.add_argument('--prefix', default='cup16_winner')
+    parser.add_argument('--prefix', default='cup16_qualifier')
+    parser.add_argument(
+        '--rename-legacy-labels', action='store_true',
+        help='Rename verified cup16_winner rehearsal accounts as qualifiers.',
+    )
     args = parser.parse_args(argv)
 
     from dotenv import load_dotenv
@@ -413,14 +499,21 @@ def main(argv=None):
             raise CupSeedSafetyError('Requested capacity is not allowed')
 
         administrator = User.query.filter_by(is_super_admin=True).order_by(User.id).first()
-        report = seed_cup_qualifier_rehearsal(
-            event_key=event_key,
-            season=app.config.get('CUP_SEASON'),
-            count=args.count,
-            capacity=args.capacity,
-            prefix=args.prefix,
-            admin_user_id=administrator.id if administrator else None,
-        )
+        if args.rename_legacy_labels:
+            report = rename_legacy_qualifier_labels(
+                event_key=event_key,
+                count=args.count,
+                admin_user_id=administrator.id if administrator else None,
+            )
+        else:
+            report = seed_cup_qualifier_rehearsal(
+                event_key=event_key,
+                season=app.config.get('CUP_SEASON'),
+                count=args.count,
+                capacity=args.capacity,
+                prefix=args.prefix,
+                admin_user_id=administrator.id if administrator else None,
+            )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

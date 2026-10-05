@@ -15,7 +15,10 @@ from database import (
     db,
 )
 from services.cup_qualification_service import award_cup_qualification
-from tools.seed_cup_qualifiers import seed_cup_qualifier_rehearsal
+from tools.seed_cup_qualifiers import (
+    rename_legacy_qualifier_labels,
+    seed_cup_qualifier_rehearsal,
+)
 
 
 class CupQualifierSeedTests(unittest.TestCase):
@@ -71,13 +74,13 @@ class CupQualifierSeedTests(unittest.TestCase):
         )
         db.session.commit()
 
-    def test_creates_fifteen_winners_and_full_roster_idempotently(self):
+    def test_creates_fifteen_qualifiers_and_full_roster_idempotently(self):
         report = seed_cup_qualifier_rehearsal(
             event_key='umshova-cup-pilot',
             season='2026',
             count=15,
             capacity=16,
-            prefix='cup16_winner',
+            prefix='cup16_qualifier',
         )
         self.assertEqual(report['created_users'], 15)
         self.assertEqual(report['created_tournaments'], 15)
@@ -86,12 +89,42 @@ class CupQualifierSeedTests(unittest.TestCase):
         self.assertEqual(report['check_in_status'], 'not_checked_in')
 
         fake_users = User.query.filter(
-            User.username.like('cup16_winner_%')
+            User.username.like('cup16_qualifier_%')
         ).all()
         self.assertEqual(len(fake_users), 15)
         self.assertTrue(all(user.email.endswith('@example.test') for user in fake_users))
         self.assertEqual(Tournament.query.count(), 16)
         self.assertEqual(CupQualification.query.count(), 16)
+
+    def test_renames_only_verified_legacy_rehearsal_accounts(self):
+        seed_cup_qualifier_rehearsal(
+            event_key='umshova-cup-pilot',
+            season='2026',
+            count=15,
+            capacity=16,
+            prefix='cup16_winner',
+        )
+        report = rename_legacy_qualifier_labels(
+            event_key='umshova-cup-pilot', count=15
+        )
+        self.assertEqual(report['renamed_accounts'], 15)
+        self.assertEqual(
+            User.query.filter(User.username.like('cup16_winner_%')).count(), 0
+        )
+        self.assertEqual(
+            User.query.filter(User.username.like('cup16_qualifier_%')).count(), 15
+        )
+        self.assertTrue(all(
+            user.full_name.startswith('Cup Pilot Qualifier ')
+            for user in User.query.filter(
+                User.username.like('cup16_qualifier_%')
+            ).all()
+        ))
+        repeated = rename_legacy_qualifier_labels(
+            event_key='umshova-cup-pilot', count=15
+        )
+        self.assertEqual(repeated['renamed_accounts'], 0)
+        self.assertEqual(repeated['reused_accounts'], 15)
 
         synthetic = Tournament.query.filter(
             Tournament.tournament_code != 'EXISTING-Q'
@@ -123,7 +156,7 @@ class CupQualifierSeedTests(unittest.TestCase):
             season='2026',
             count=15,
             capacity=16,
-            prefix='cup16_winner',
+            prefix='cup16_qualifier',
         )
         self.assertEqual(repeated['created_users'], 0)
         self.assertEqual(repeated['created_tournaments'], 0)
@@ -135,4 +168,3 @@ class CupQualifierSeedTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
