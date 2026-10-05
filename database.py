@@ -8,28 +8,103 @@ from datetime import datetime
 import os
 from pathlib import Path
 import uuid
-from sqlalchemy import inspect, text
+from sqlalchemy import DateTime as SQLAlchemyDateTime, inspect, text
+from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import synonym
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
 db = SQLAlchemy()
 
+# SQLite already retains microseconds. MySQL requires DATETIME(6) explicitly;
+# without it, a migration silently truncates ordering/audit timestamps.
+PRECISE_DATETIME = SQLAlchemyDateTime().with_variant(
+    MySQLDateTime(fsp=6), 'mysql'
+)
+
 _sqlalchemy_drop_all = db.drop_all
 
 
+_TEST_ENVIRONMENT_NAMES = {'test', 'testing'}
+
+
+def _is_test_environment(app):
+    environment = str(
+        os.environ.get('APP_ENV')
+        or os.environ.get('FLASK_ENV')
+        or os.environ.get('ENV')
+        or ''
+    ).strip().lower()
+    return bool(app.config.get('TESTING')) or environment in _TEST_ENVIRONMENT_NAMES
+
+
+def _is_protected_sqlite_url(url, instance_path):
+    if url.get_backend_name() != 'sqlite' or not url.database:
+        return False
+    if url.database == ':memory:':
+        return False
+    active_path = Path(url.database)
+    if not active_path.is_absolute():
+        active_path = Path(instance_path) / active_path
+    active_path = active_path.resolve()
+    protected_path = (Path(instance_path) / 'dealuxe_game.db').resolve()
+    return active_path == protected_path
+
+
+def _mysql_test_database_is_explicitly_disposable(url):
+    database_name = str(url.database or '').strip().lower()
+    return (
+        url.get_backend_name() == 'mysql'
+        and database_name.endswith(('_test', '_testing'))
+        and str(os.environ.get(
+            'DEALUXE_ALLOW_TEST_DATABASE_DROP', 'false'
+        )).strip().lower() in {'1', 'true', 'yes', 'on'}
+    )
+
+
+def _validate_test_database_target(app):
+    """Refuse test startup when it points at a live/local application DB."""
+    if not _is_test_environment(app):
+        return
+    url = make_url(app.config['SQLALCHEMY_DATABASE_URI'])
+    backend = url.get_backend_name()
+    if backend == 'sqlite':
+        if _is_protected_sqlite_url(url, app.instance_path):
+            raise RuntimeError(
+                'Refusing test startup against instance/dealuxe_game.db. '
+                'Set DEALUXE_DATABASE_URI to an explicit disposable database '
+                'before importing app.'
+            )
+        return
+    if backend == 'mysql' and not _mysql_test_database_is_explicitly_disposable(url):
+        raise RuntimeError(
+            'Refusing test startup against MySQL unless the database name ends '
+            'in _test or _testing and DEALUXE_ALLOW_TEST_DATABASE_DROP=true.'
+        )
+    if backend != 'mysql':
+        raise RuntimeError('Unsupported database backend selected for tests')
+
+
 def _guarded_drop_all(*args, **kwargs):
-    """Refuse test cleanup against the default local development database."""
-    if current_app.config.get('TESTING') and db.engine.url.get_backend_name() == 'sqlite':
-        database_path = db.engine.url.database
-        if database_path:
-            active_path = Path(database_path).resolve()
-            protected_path = (Path(current_app.instance_path) / 'dealuxe_game.db').resolve()
-            if active_path == protected_path:
-                raise RuntimeError(
-                    'Refusing db.drop_all(): tests are still bound to the local '
-                    'development database. Set DEALUXE_DATABASE_URI before importing app.'
-                )
+    """Fail closed before destructive cleanup can reach a persistent database."""
+    url = db.engine.url
+    backend = url.get_backend_name()
+    if _is_protected_sqlite_url(url, current_app.instance_path):
+        raise RuntimeError(
+            'Refusing db.drop_all() against instance/dealuxe_game.db. Select an '
+            'explicit disposable database.'
+        )
+    if backend == 'mysql' and not (
+        _is_test_environment(current_app)
+        and _mysql_test_database_is_explicitly_disposable(url)
+    ):
+        raise RuntimeError(
+            'Refusing db.drop_all() against MySQL. Destructive cleanup is allowed '
+            'only for an explicitly opted-in _test or _testing database.'
+        )
+    if backend not in {'sqlite', 'mysql'}:
+        raise RuntimeError('Refusing db.drop_all() for an unapproved database backend')
     return _sqlalchemy_drop_all(*args, **kwargs)
 
 
@@ -234,25 +309,79 @@ def ensure_hybrid_game_preferences_schema():
 
 def init_db(app):
     """Initialize database with Flask app"""
-    # SQLite configuration (will switch to MySQL later)
+    environment_database_uri = os.environ.get('DEALUXE_DATABASE_URI')
+    if _is_test_environment(app):
+        environment_database_uri = (
+            os.environ.get('DEALUXE_TEST_DATABASE_URI')
+            or environment_database_uri
+        )
     app.config['SQLALCHEMY_DATABASE_URI'] = (
         app.config.get('SQLALCHEMY_DATABASE_URI')
-        or os.environ.get('DEALUXE_DATABASE_URI')
+        or environment_database_uri
         or 'sqlite:///dealuxe_game.db'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ECHO'] = False  # Set to True for SQL debugging
+
+    _validate_test_database_target(app)
     
     db.init_app(app)
     
     with app.app_context():
-        db.create_all()
-        ensure_tournament_schema()
-        ensure_user_account_schema()
-        ensure_payment_schema()
-        ensure_cup_qualification_schema()
-        ensure_hybrid_shadow_audit_schema()
-        ensure_hybrid_game_preferences_schema()
+        backend = db.engine.url.get_backend_name()
+        schema_mode = str(os.environ.get(
+            'DATABASE_SCHEMA_MODE', 'auto'
+        )).strip().lower()
+        if schema_mode not in {'auto', 'create', 'verify'}:
+            raise RuntimeError(
+                'DATABASE_SCHEMA_MODE must be auto, create or verify'
+            )
+
+        should_create = schema_mode == 'create' or (
+            schema_mode == 'auto' and backend == 'sqlite'
+        )
+        if should_create:
+            if backend != 'sqlite':
+                raise RuntimeError(
+                    'Application-start schema creation is disabled for MySQL. '
+                    'Run the reviewed Alembic/bootstrap migration first.'
+                )
+            db.create_all()
+            ensure_tournament_schema()
+            ensure_user_account_schema()
+            ensure_payment_schema()
+            ensure_cup_qualification_schema()
+            ensure_hybrid_shadow_audit_schema()
+            ensure_hybrid_game_preferences_schema()
+        else:
+            database_inspector = inspect(db.engine)
+            existing_tables = set(database_inspector.get_table_names())
+            model_tables = set(db.metadata.tables)
+            missing_tables = sorted(model_tables - existing_tables)
+            stale_columns = []
+            for table_name in sorted(model_tables & existing_tables):
+                existing_columns = {
+                    column['name']
+                    for column in database_inspector.get_columns(table_name)
+                }
+                missing_columns = sorted(
+                    set(db.metadata.tables[table_name].columns.keys())
+                    - existing_columns
+                )
+                if missing_columns:
+                    stale_columns.append(
+                        '{0}({1})'.format(table_name, ','.join(missing_columns))
+                    )
+            if missing_tables or stale_columns:
+                details = []
+                if missing_tables:
+                    details.append('missing tables: ' + ', '.join(missing_tables))
+                if stale_columns:
+                    details.append('missing columns: ' + '; '.join(stale_columns))
+                raise RuntimeError(
+                    'Database schema is not ready; run the reviewed migration. '
+                    + ' | '.join(details)
+                )
         print("[DATABASE] Database initialized successfully")
 
 
@@ -284,7 +413,7 @@ class User(db.Model):
     # Dedicated public-facing avatar. Never substitute private KYC/ID images.
     profile_image_path = db.Column(db.String(255))
     kyc_status = db.Column(db.String(20), default='not_submitted')  # not_submitted/pending_review/verified/rejected
-    kyc_submitted_at = db.Column(db.DateTime)
+    kyc_submitted_at = db.Column(PRECISE_DATETIME)
     is_active = db.Column(db.Boolean, default=True)
     is_admin = db.Column(db.Boolean, default=False)
     is_super_admin = db.Column(db.Boolean, default=False)  # CLI-bootstrap-only role (promotes/demotes admins)
@@ -292,8 +421,8 @@ class User(db.Model):
     verified_referral_count = db.Column(db.Integer, nullable=False, default=0)
     
     # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.now)
-    last_login = db.Column(db.DateTime)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.now)
+    last_login = db.Column(PRECISE_DATETIME)
     
     # Relationships
     player = db.relationship('Player', backref='user', uselist=False, cascade='all, delete-orphan')
@@ -332,7 +461,7 @@ class Player(db.Model):
     # without a destructive rename.
     real_balance = db.Column(db.Float, default=0.0)
     promotional_credit_balance = db.Column('fake_balance', db.Float, default=0.0)
-    promotional_credit_expires_at = db.Column('fake_balance_expires_at', db.DateTime)
+    promotional_credit_expires_at = db.Column('fake_balance_expires_at', PRECISE_DATETIME)
     promotional_credit_target = db.Column('fake_cash_target', db.Float, default=0.0)
 
     # Backward-compatible Python/API aliases. New Version 3 code must use the
@@ -351,11 +480,11 @@ class Player(db.Model):
     # Daily spending limit (E50 / 24h) — regulatory requirement
     daily_spending_limit = db.Column(db.Float, default=50.0)
     daily_spending_amount = db.Column(db.Float, default=0.0)
-    last_spending_reset = db.Column(db.DateTime, nullable=True)
+    last_spending_reset = db.Column(PRECISE_DATETIME, nullable=True)
 
     # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    updated_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships - specify foreign_keys to avoid ambiguity
     bet_sessions = db.relationship('BetSession', 
@@ -550,8 +679,8 @@ class BetSession(db.Model):
     tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
     
     # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    completed_at = db.Column(db.DateTime)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    completed_at = db.Column(PRECISE_DATETIME)
     
     def complete_session(self, winner_id, win_type=None):
         """Mark session as completed with winner"""
@@ -632,8 +761,8 @@ class GameHistory(db.Model):
     total_turns = db.Column(db.Integer, default=0)
     
     # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    completed_at = db.Column(db.DateTime)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    completed_at = db.Column(PRECISE_DATETIME)
     
     def __repr__(self):
         return f'<GameHistory {self.game_id}>'
@@ -712,7 +841,7 @@ class Transaction(db.Model):
     status = db.Column(db.String(20), default='initiated')  # pending/completed/failed
     currency = db.Column(db.String(3), nullable=True, default='SZL')
     payment_environment = db.Column(db.String(20), nullable=True)
-    reconciled_at = db.Column(db.DateTime, nullable=True)
+    reconciled_at = db.Column(PRECISE_DATETIME, nullable=True)
     reconciliation_code = db.Column(db.String(40), nullable=True)
     
     transaction_type = db.Column(db.String(50), nullable=False)  # see TX_* constants above
@@ -729,7 +858,7 @@ class Transaction(db.Model):
     
     description = db.Column(db.String(255))
     tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
     
     def __repr__(self):
         return f'<Transaction {self.id} - {self.transaction_type}: {self.amount}>'
@@ -743,7 +872,7 @@ class ReferralCode(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
     code = db.Column(db.String(20), nullable=False, unique=True, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
 
     user = db.relationship('User', foreign_keys=[user_id])
 
@@ -773,9 +902,9 @@ class Referral(db.Model):
     reward_transaction_id = db.Column(
         db.Integer, db.ForeignKey('transactions.id'), nullable=True, unique=True
     )
-    qualified_at = db.Column(db.DateTime, nullable=True)
-    rewarded_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    qualified_at = db.Column(PRECISE_DATETIME, nullable=True)
+    rewarded_at = db.Column(PRECISE_DATETIME, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
 
     referral_code = db.relationship('ReferralCode')
     referrer = db.relationship('User', foreign_keys=[referrer_id])
@@ -792,9 +921,9 @@ class PricingFeatureSetting(db.Model):
     setting_key = db.Column(db.String(80), unique=True, nullable=False)
     enabled = db.Column(db.Boolean, nullable=False, default=False)
     updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow,
         nullable=False,
     )
 
@@ -818,8 +947,8 @@ class PlanPurchase(db.Model):
     transaction_id = db.Column(
         db.Integer, db.ForeignKey('transactions.id'), nullable=True, unique=True
     )
-    completed_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = db.Column(PRECISE_DATETIME, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
 
     user = db.relationship('User', foreign_keys=[user_id])
     transaction = db.relationship('Transaction')
@@ -840,10 +969,10 @@ class PlanEntitlement(db.Model):
     purchase_id = db.Column(
         db.Integer, db.ForeignKey('plan_purchases.id'), nullable=False, unique=True
     )
-    starts_at = db.Column(db.DateTime, nullable=False)
-    expires_at = db.Column(db.DateTime, nullable=False)
-    revoked_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    starts_at = db.Column(PRECISE_DATETIME, nullable=False)
+    expires_at = db.Column(PRECISE_DATETIME, nullable=False)
+    revoked_at = db.Column(PRECISE_DATETIME, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
 
     user = db.relationship('User', foreign_keys=[user_id])
     purchase = db.relationship('PlanPurchase')
@@ -876,10 +1005,10 @@ class Tournament(db.Model):
     status = db.Column(db.String(20), nullable=False, default='open')
     is_auto_lock = db.Column(db.Boolean, default=False)
     locked_player_count = db.Column(db.Integer, nullable=True)
-    locked_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    started_at = db.Column(db.DateTime, nullable=True)
-    completed_at = db.Column(db.DateTime, nullable=True)
+    locked_at = db.Column(PRECISE_DATETIME, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    started_at = db.Column(PRECISE_DATETIME, nullable=True)
+    completed_at = db.Column(PRECISE_DATETIME, nullable=True)
     finals_match_id = db.Column(db.Integer, nullable=True)
     third_place_match_id = db.Column(db.Integer, nullable=True)
     winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
@@ -934,10 +1063,10 @@ class TournamentParticipant(db.Model):
     payment_method = db.Column(db.String(100), nullable=True)
     final_placement = db.Column(db.Integer, nullable=True)
     prize_awarded = db.Column(db.Float, nullable=False, default=0.0)
-    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
-    payment_completed_at = db.Column(db.DateTime, nullable=True)
+    registered_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    payment_completed_at = db.Column(PRECISE_DATETIME, nullable=True)
     lock_voted = db.Column(db.Boolean, default=False)  # manual-lock consensus vote (D3)
-    withdrew_at = db.Column(db.DateTime, nullable=True)
+    withdrew_at = db.Column(PRECISE_DATETIME, nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
     tournament = db.relationship('Tournament', backref='participants')
@@ -965,9 +1094,9 @@ class CupQualification(db.Model):
     # prevents a user from holding two active seats in the same Cup event while
     # still allowing later wins to be recorded as duplicate_win rows.
     seat_key = db.Column(db.String(160), nullable=True, unique=True)
-    qualified_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    checked_in_at = db.Column(db.DateTime, nullable=True)
-    status_updated_at = db.Column(db.DateTime, nullable=True)
+    qualified_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
+    checked_in_at = db.Column(PRECISE_DATETIME, nullable=True)
+    status_updated_at = db.Column(PRECISE_DATETIME, nullable=True)
     status_updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     replacement_for_id = db.Column(
         db.Integer, db.ForeignKey('cup_qualifications.id'), nullable=True
@@ -1027,12 +1156,12 @@ class DiscoveryProfile(db.Model):
     )
     moderation_note = db.Column(db.String(500), nullable=True)
     moderated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    moderated_at = db.Column(db.DateTime, nullable=True)
+    moderated_at = db.Column(PRECISE_DATETIME, nullable=True)
     is_visible = db.Column(db.Boolean, nullable=False, default=True)
     chat_preference_enabled = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow,
         nullable=False,
     )
 
@@ -1054,9 +1183,9 @@ class UserBlock(db.Model):
     blocker_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     blocked_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow,
         nullable=False,
     )
 
@@ -1086,10 +1215,10 @@ class DiscoveryReport(db.Model):
     status = db.Column(db.String(30), nullable=False, default='pending')
     resolution = db.Column(db.String(1000), nullable=True)
     reviewed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    reviewed_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at = db.Column(PRECISE_DATETIME, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow,
         nullable=False,
     )
 
@@ -1125,9 +1254,9 @@ class DiscoveryMatchAudit(db.Model):
     proposed_seed_order_json = db.Column(db.Text, nullable=False, default='[]')
     legacy_seed_order_json = db.Column(db.Text, nullable=False, default='[]')
     pairs_json = db.Column(db.Text, nullable=False, default='[]')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow,
         nullable=False,
     )
 
@@ -1145,9 +1274,9 @@ class HybridFeatureSetting(db.Model):
     setting_key = db.Column(db.String(80), unique=True, nullable=False)
     enabled = db.Column(db.Boolean, nullable=False, default=False)
     updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow,
         nullable=False,
     )
 
@@ -1161,9 +1290,9 @@ class HybridPilotMetric(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     metric_key = db.Column(db.String(80), unique=True, nullable=False)
     total_count = db.Column(db.Integer, nullable=False, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow,
         nullable=False,
     )
 
@@ -1186,9 +1315,9 @@ class DiscoveryCaptionTemplate(db.Model):
     sort_order = db.Column(db.Integer, nullable=False, default=100)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
-        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
+        PRECISE_DATETIME, default=datetime.utcnow, onupdate=datetime.utcnow,
         nullable=False,
     )
 
@@ -1214,9 +1343,9 @@ class TournamentBracket(db.Model):
     match_id = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(20), nullable=False, default='pending')
     winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    started_at = db.Column(db.DateTime, nullable=True)
-    completed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    started_at = db.Column(PRECISE_DATETIME, nullable=True)
+    completed_at = db.Column(PRECISE_DATETIME, nullable=True)
 
 
 class TournamentMatch(db.Model):
@@ -1239,9 +1368,9 @@ class TournamentMatch(db.Model):
     loser_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     card_count = db.Column(db.Integer, nullable=False, default=6)
     bet_amount = db.Column(db.Float, nullable=False, default=0.0)
-    scheduled_for = db.Column(db.DateTime, nullable=True)
-    started_at = db.Column(db.DateTime, nullable=True)
-    completed_at = db.Column(db.DateTime, nullable=True)
+    scheduled_for = db.Column(PRECISE_DATETIME, nullable=True)
+    started_at = db.Column(PRECISE_DATETIME, nullable=True)
+    completed_at = db.Column(PRECISE_DATETIME, nullable=True)
     win_type = db.Column(db.String(50), nullable=True)
     duration_seconds = db.Column(db.Integer, nullable=True)
     player1_timeout = db.Column(db.Boolean, default=False)
@@ -1268,10 +1397,10 @@ class TournamentPrizePool(db.Model):
 
     status = db.Column(db.String(20), nullable=False, default='pending')  # pending/awarded/withdrawn/failed
 
-    award_date = db.Column(db.DateTime, nullable=True)
-    withdrawal_date = db.Column(db.DateTime, nullable=True)
+    award_date = db.Column(PRECISE_DATETIME, nullable=True)
+    withdrawal_date = db.Column(PRECISE_DATETIME, nullable=True)
     notes = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
 
 class WithdrawalRequest(db.Model):
@@ -1289,7 +1418,7 @@ class WithdrawalRequest(db.Model):
     status = db.Column(db.String(20), nullable=False, default='pending')
     mobile_number = db.Column(db.String(30), nullable=True)
     transaction_id = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
 
 # ========================================
@@ -1314,7 +1443,7 @@ class AdminAuditLog(db.Model):
     entity_id = db.Column(db.Integer, nullable=True)
     summary = db.Column(db.String(255), nullable=True)
     details = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
     def __repr__(self):
         return f'<AdminAuditLog {self.action} by admin {self.admin_user_id}>'
@@ -1337,8 +1466,8 @@ class Dispute(db.Model):
     status = db.Column(db.String(20), nullable=False, default='pending')  # pending/in_review/resolved/rejected
     resolution = db.Column(db.Text, nullable=True)
     resolved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    resolved_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(PRECISE_DATETIME, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
     def __repr__(self):
         return f'<Dispute {self.id} - {self.status}>'
@@ -1357,7 +1486,7 @@ class WalletAdjustment(db.Model):
     delta = db.Column(db.Float, nullable=False)
     reason = db.Column(db.String(255), nullable=False)
     admin_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
     def __repr__(self):
         return f'<WalletAdjustment {self.delta:+.2f} {self.balance_type} for user {self.user_id}>'
@@ -1379,10 +1508,10 @@ class TournamentSchedule(db.Model):
     tournament_id = db.Column(db.Integer, db.ForeignKey('tournaments.id'), nullable=False)
     # seats_filled | in_5min | in_10min | in_20min | custom
     start_option = db.Column(db.String(30), nullable=False, default='seats_filled')
-    scheduled_start_at = db.Column(db.DateTime, nullable=True)
+    scheduled_start_at = db.Column(PRECISE_DATETIME, nullable=True)
     custom_time_str = db.Column(db.String(5), nullable=True)  # 'HH:MM' for display
     fallback_option = db.Column(db.String(30), nullable=False, default='seats_filled')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
     def __repr__(self):
         return f'<TournamentSchedule {self.tournament_id} - {self.start_option}>'
@@ -1404,12 +1533,12 @@ class MatchRoll(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     match_id = db.Column(db.Integer, db.ForeignKey('tournament_matches.id'), nullable=False)
     requested_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    requested_at = db.Column(db.DateTime, default=datetime.utcnow)
-    deadline = db.Column(db.DateTime, nullable=False)
+    requested_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    deadline = db.Column(PRECISE_DATETIME, nullable=False)
     status = db.Column(db.String(20), nullable=False, default='rolling')  # rolling/resolved/cancelled
     winner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    resolved_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved_at = db.Column(PRECISE_DATETIME, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
     def __repr__(self):
         return f'<MatchRoll {self.match_id} - {self.status}>'
@@ -1570,19 +1699,19 @@ class GameRoom(db.Model):
     # Room state
     status = db.Column(db.String(20), default='waiting')  # waiting, in_progress, paused, completed, abandoned
     current_turn_player = db.Column(db.Integer, nullable=True)  # user_id whose turn it is
-    turn_deadline = db.Column(db.DateTime, nullable=True)  # when current turn expires
+    turn_deadline = db.Column(PRECISE_DATETIME, nullable=True)  # when current turn expires
     turn_duration_seconds = db.Column(db.Integer, default=300)  # time limit per turn (5 minutes)
     
     # Pause/Resume
     pause_requested_by = db.Column(db.Integer, nullable=True)  # user_id who requested pause
     pause_approved_by = db.Column(db.Integer, nullable=True)  # user_id who approved pause
-    paused_at = db.Column(db.DateTime, nullable=True)
+    paused_at = db.Column(PRECISE_DATETIME, nullable=True)
     
     # Reconnection tracking
     player1_connected = db.Column(db.Boolean, default=False)
     player2_connected = db.Column(db.Boolean, default=False)
-    player1_last_seen = db.Column(db.DateTime, nullable=True)
-    player2_last_seen = db.Column(db.DateTime, nullable=True)
+    player1_last_seen = db.Column(PRECISE_DATETIME, nullable=True)
+    player2_last_seen = db.Column(PRECISE_DATETIME, nullable=True)
 
     # Discovery profiles are shared in a game by default. Either participant
     # can opt out for that room without changing their global marketer profile.
@@ -1598,9 +1727,9 @@ class GameRoom(db.Model):
     is_tournament_game = db.Column(db.Boolean, default=False)  # schema doc marker (G1)
     
     # Timestamps
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    started_at = db.Column(db.DateTime, nullable=True)
-    completed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    started_at = db.Column(PRECISE_DATETIME, nullable=True)
+    completed_at = db.Column(PRECISE_DATETIME, nullable=True)
     
     # Relationships
     bet_session = db.relationship('BetSession', backref='game_room', uselist=False)
@@ -1701,11 +1830,11 @@ class GameSession(db.Model):
 
     status = db.Column(db.String(20), default='waiting')  # waiting, in_progress, completed, abandoned
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    started_at = db.Column(db.DateTime, nullable=True)
-    ended_at = db.Column(db.DateTime, nullable=True)
-    last_active_at = db.Column(db.DateTime, nullable=True)
-    expires_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
+    started_at = db.Column(PRECISE_DATETIME, nullable=True)
+    ended_at = db.Column(PRECISE_DATETIME, nullable=True)
+    last_active_at = db.Column(PRECISE_DATETIME, nullable=True)
+    expires_at = db.Column(PRECISE_DATETIME, nullable=True)
 
     def __repr__(self):
         return f'<GameSession {self.session_uuid} - {self.status}>'
@@ -1729,7 +1858,7 @@ class Move(db.Model):
 
     idempotency_key = db.Column(db.String(100), index=True)
 
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
     def __repr__(self):
         return f'<Move {self.id} - seq:{self.seq_num} type:{self.action_type}>'
@@ -1743,7 +1872,7 @@ class Snapshot(db.Model):
     game_session_id = db.Column(db.Integer, db.ForeignKey('game_sessions.id'), nullable=False, index=True)
     seq_num = db.Column(db.Integer, nullable=False, index=True)
     snapshot_blob = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow)
 
     def __repr__(self):
         return f'<Snapshot {self.id} - seq:{self.seq_num}>'

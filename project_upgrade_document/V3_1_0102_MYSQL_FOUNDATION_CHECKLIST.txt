@@ -1,0 +1,56 @@
+V3.1-0102 — MySQL/InnoDB foundation and verified SQLite cutover
+Date: 2026-10-05
+Status: IMPLEMENTED AND DATA-VERIFIED; MAIN-FOLDER MERGE PENDING
+
+Objective
+Move the Version 3.1 application schema and the current local pilot records from
+SQLite to MySQL without dropping the SQLite source or silently changing data.
+
+Completed
+[x] Confirmed the private DEALUXE_DATABASE_URI connects to MySQL 8.1.
+[x] Confirmed the target is the explicitly named umshova_dealuxe_3 database.
+[x] Confirmed the target was empty before the baseline was applied.
+[x] Created a consistent, read-only SQLite migration snapshot.
+[x] Passed SQLite integrity_check and foreign_key_check.
+[x] Matched all 34 source tables and columns to current model metadata.
+[x] Added an Alembic baseline whose target must be empty.
+[x] Disabled destructive Alembic downgrade; rollback is backup/restore or forward fix.
+[x] Added a repeatable SQLite-to-MySQL copy and verification tool.
+[x] Preserved primary keys, relationships, password hashes and application records.
+[x] Corrected MySQL timestamp storage to DATETIME(6), preserving microseconds.
+[x] Verified all 34 application tables use InnoDB and utf8mb4.
+[x] Verified 114 copied rows by per-table row counts and privacy-safe SHA-256 digests.
+[x] Verified the SQLite source hash was unchanged throughout the migration.
+[x] Changed MySQL application startup from create-all to schema verification.
+[x] Extended db.drop_all protection to refuse the live MySQL database.
+[x] Required MySQL test databases to end in _test or _testing plus explicit opt-in.
+[x] Removed the obsolete mysql-connector-python-rf dependency declaration.
+[x] Verified Flask starts on MySQL, /login returns HTTP 200 and model queries succeed.
+[x] Passed 30 isolated migration/Cup/security configuration regressions.
+
+Verified migration result
+- Database: umshova_dealuxe_3
+- Application tables: 34
+- Application rows: 114
+- Source SHA-256:
+  807c56fbdb44ee4508cdf88b78339e764fb599099c1bcec1685a8f39938beada
+- Alembic revision: 20261005_mysql_baseline
+- Storage: InnoDB / utf8mb4
+- Flask smoke: passed
+- MySQL drop guard: passed
+
+Required before production/live-event use
+[ ] Merge this verified increment into E:\PROJECTS\uMshova Dealuxe.
+[ ] Stop any old Flask process still holding the SQLite configuration.
+[ ] Start one application instance from the merged main folder and confirm MySQL.
+[ ] Perform manual root login, account, tournament and Cup dashboard acceptance.
+[ ] Configure a recurring encrypted MySQL backup and perform one restore rehearsal.
+[ ] Create a separate umshova_dealuxe_3_test database for destructive integration,
+    load and concurrency tests. Never run those tests against umshova_dealuxe_3.
+[ ] Run the focused MySQL payment, wallet, tournament-seat and concurrency gate on
+    that separate test database before production activation.
+
+Rollback boundary
+The original E:\PROJECTS\uMshova Dealuxe\instance\dealuxe_game.db was never
+dropped or modified by the transfer. Keep it as the rollback source until the
+MySQL acceptance and backup/restore rehearsal are signed off.

@@ -21,7 +21,7 @@ itsdangerous==2.1.2
 Jinja2==3.1.2
 MarkupSafe==2.1.2
 mysql-connector-python==8.1.0
-mysql-connector-python-rf==2.2.2
+alembic==1.20.0
 Pillow==10.0.1
 protobuf==4.21.12
 pyasn1==0.5.0

@@ -1,0 +1,25 @@
+uMshova Dealuxe — MySQL operator quick guide
+
+Normal application setting
+1. Keep the private DEALUXE_DATABASE_URI only in .env.
+2. Use DATABASE_SCHEMA_MODE=auto (or verify) for MySQL.
+3. Start the app normally after migrations have been applied.
+4. Startup will verify the schema and fail closed if tables/columns are missing.
+
+Check the selected database without showing the password
+  .venv\Scripts\python.exe -c "from dotenv import load_dotenv; load_dotenv(); from sqlalchemy import create_engine; import os; e=create_engine(os.environ['DEALUXE_DATABASE_URI']); print(e.url.get_backend_name(), e.url.database)"
+
+Verify the migrated data again
+  .venv\Scripts\python.exe -m tools.mysql_migration --env-file .env --source instance\mysql_migration_source_20261005.db --confirm-database umshova_dealuxe_3 --verify-only
+
+Apply future reviewed schema changes
+  .venv\Scripts\alembic.exe -c alembic.ini upgrade head
+
+Safety rules
+- Never put a real password in source code, alembic.ini or command history.
+- Never run db.drop_all against umshova_dealuxe_3.
+- Never run load/destructive tests against umshova_dealuxe_3.
+- Use a separate database ending in _test or _testing for MySQL tests.
+- Back up MySQL before each reviewed migration.
+- Keep the SQLite source until MySQL backup/restore and acceptance are complete.
+
