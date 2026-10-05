@@ -11,6 +11,11 @@ Status: In progress — capacity and shared-prize increment complete
 [x] Replace published positions 5–10 with one six-player equal-prize group.
 [x] Require an administrator reason and immutable audit record for that group.
 [x] Retain numeric 5–10 slots internally only for backward compatibility.
+[x] Prepare a MySQL administrator-acceptance roster for the 16-seat flow: one
+    existing genuine qualifier plus fifteen clearly labelled synthetic
+    qualifiers, each backed by a completed four-player qualifying tournament.
+[x] Leave every rehearsal seat unchecked and leave the Cup uncreated so the
+    administrator can test check-in, capacity selection and Cup creation in UI.
 
 [ ] Add persistent Cup Event records with draft/qualifying/check-in/ready/active/completed/cancelled lifecycle.
 [ ] Link qualifications and the created tournament to a Cup Event ID.
