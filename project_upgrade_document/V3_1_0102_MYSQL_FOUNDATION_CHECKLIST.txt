@@ -1,6 +1,6 @@
 V3.1-0102 — MySQL/InnoDB foundation and verified SQLite cutover
 Date: 2026-10-05
-Status: IMPLEMENTED AND DATA-VERIFIED; MAIN-FOLDER MERGE PENDING
+Status: IMPLEMENTED, DATA-VERIFIED AND MERGED TO MAIN LOCAL PROJECT
 
 Objective
 Move the Version 3.1 application schema and the current local pilot records from
@@ -40,9 +40,9 @@ Verified migration result
 - MySQL drop guard: passed
 
 Required before production/live-event use
-[ ] Merge this verified increment into E:\PROJECTS\uMshova Dealuxe.
-[ ] Stop any old Flask process still holding the SQLite configuration.
-[ ] Start one application instance from the merged main folder and confirm MySQL.
+[x] Merged the verified increment into E:\PROJECTS\uMshova Dealuxe.
+[x] Confirmed no old Flask listener remained on ports 5000/5010.
+[x] Started the merged main application on port 5010 and confirmed HTTP 200.
 [ ] Perform manual root login, account, tournament and Cup dashboard acceptance.
 [ ] Configure a recurring encrypted MySQL backup and perform one restore rehearsal.
 [ ] Create a separate umshova_dealuxe_3_test database for destructive integration,
