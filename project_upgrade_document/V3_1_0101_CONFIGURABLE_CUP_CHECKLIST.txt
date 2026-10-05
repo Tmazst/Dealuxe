@@ -1,6 +1,6 @@
 V3.1-0101 — Configurable Cup Events and Shared Prize Group
 
-Status: In progress — capacity and shared-prize increment complete
+Status: In progress — capacity, shared-prize and public Cup experience increments complete
 
 [x] Permit only balanced 16, 32 and 64-seat Cup brackets.
 [x] Keep an environment allowlist and default capacity.
@@ -16,12 +16,23 @@ Status: In progress — capacity and shared-prize increment complete
     qualifiers, each backed by a completed four-player qualifying tournament.
 [x] Leave every rehearsal seat unchecked and leave the Cup uncreated so the
     administrator can test check-in, capacity selection and Cup creation in UI.
+[x] Separate created Cups from ordinary 4/8/16-player brackets on the public
+    Tournament page with a distinctive Cup badge and no public join action.
+[x] Redirect legacy Cup detail links to a dedicated public Cup page instead of
+    the ordinary waiting room.
+[x] Persist administrator-managed Cup start/check-in date and time, physical
+    venue, address and public notes; show safe "To be announced" fallbacks.
+[x] Limit the public Cup roster to usernames and competition status; never
+    expose player email addresses, phone numbers or private contact fields.
+[x] Add a forward-only Alembic migration for the Cup event-detail columns and
+    verify it on a newly created disposable database.
 
 [ ] Add persistent Cup Event records with draft/qualifying/check-in/ready/active/completed/cancelled lifecycle.
 [ ] Link qualifications and the created tournament to a Cup Event ID.
 [ ] Allow multiple historical and future Cup events without weakening duplicate-launch protection per event.
 [ ] Freeze capacity and event identity once qualification/check-in begins.
-[ ] Add event dates, qualification dates and administrator notes.
+[ ] Add qualification-window dates and private administrator notes to the
+    future persistent Cup Event record.
 [ ] Add focused 32-player acceptance and full migration rehearsal.
 
 Database safety: every automated test must select a unique temporary database.
