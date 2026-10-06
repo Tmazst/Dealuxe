@@ -121,15 +121,16 @@ else:
 # SOCKETIO INITIALIZATION
 # -----------------------------
 
-# local should use threading async mode (polling transport — the Werkzeug dev
-# server cannot upgrade websockets with the threading driver)
+# Local development begins with polling and upgrades only when the browser and
+# Werkzeug transport agree. This keeps multiplayer usable even when a local
+# WebSocket upgrade is unavailable.
 if app.config.get('IS_LOCAL_ENVIRONMENT'):
     socketio = SocketIO(
         app,
         cors_allowed_origins=app.config['SOCKETIO_ALLOWED_ORIGINS'],
         async_mode='threading',
     )
-    app.config['SOCKET_TRANSPORTS'] = ['websocket', 'polling']
+    app.config['SOCKET_TRANSPORTS'] = ['polling', 'websocket']
 else:
     socketio = SocketIO(
         app,
@@ -797,4 +798,9 @@ def leaderboard(game_id):
 
 
 if __name__ == "__main__":
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(
+        app,
+        debug=True,
+        port=app.config['APP_PORT'],
+        allow_unsafe_werkzeug=True,
+    )

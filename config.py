@@ -282,6 +282,13 @@ def build_runtime_security_config(environ=None):
     ).strip().lower()
     is_local = environment in LOCAL_ENVIRONMENTS
 
+    try:
+        app_port = int(str(environ.get('APP_PORT') or '5010').strip())
+    except (TypeError, ValueError):
+        raise RuntimeError('APP_PORT must be an integer between 1 and 65535')
+    if not 1 <= app_port <= 65535:
+        raise RuntimeError('APP_PORT must be an integer between 1 and 65535')
+
     secret_key = str(environ.get('FLASK_SECRET_KEY') or '').strip()
     generated_secret = False
     if not secret_key:
@@ -290,7 +297,10 @@ def build_runtime_security_config(environ=None):
         secret_key = secrets.token_urlsafe(48)
         generated_secret = True
 
-    default_origins = 'http://127.0.0.1:5000,http://localhost:5000' if is_local else ''
+    default_origins = (
+        'http://127.0.0.1:{0},http://localhost:{0}'.format(app_port)
+        if is_local else ''
+    )
     socketio_origins = _split_origins(
         environ.get('SOCKETIO_ALLOWED_ORIGINS', default_origins)
     )
@@ -526,6 +536,7 @@ def build_runtime_security_config(environ=None):
 
     return {
         'APP_ENV': environment,
+        'APP_PORT': app_port,
         'IS_LOCAL_ENVIRONMENT': is_local,
         'SECRET_KEY': secret_key,
         'SESSION_SECRET_GENERATED': generated_secret,

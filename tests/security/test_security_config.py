@@ -12,8 +12,9 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
         self.assertNotIn('*', config['SOCKETIO_ALLOWED_ORIGINS'])
         self.assertEqual(
             config['SOCKETIO_ALLOWED_ORIGINS'],
-            ['http://127.0.0.1:5000', 'http://localhost:5000'],
+            ['http://127.0.0.1:5010', 'http://localhost:5010'],
         )
+        self.assertEqual(config['APP_PORT'], 5010)
         self.assertEqual(config['REQUEST_SECURITY_MODE'], 'monitor')
         self.assertTrue(config['REQUEST_SECURITY_CHECK_FETCH_METADATA'])
         self.assertTrue(config['REQUEST_SECURITY_CHECK_ORIGIN'])
@@ -41,6 +42,31 @@ class RuntimeSecurityConfigTests(unittest.TestCase):
         self.assertEqual(config['REDIS_GAME_STATE_SECURITY_MODE'], 'monitor')
         self.assertEqual(config['REDIS_GAME_STATE_TTL_SECONDS'], 86400)
         self.assertEqual(config['REDIS_GAME_STATE_MAX_BYTES'], 262144)
+
+    def test_local_origins_follow_the_configured_app_port(self):
+        config = build_runtime_security_config({
+            'ENV': 'development',
+            'APP_PORT': '5055',
+        })
+
+        self.assertEqual(config['APP_PORT'], 5055)
+        self.assertEqual(config['SOCKETIO_ALLOWED_ORIGINS'], [
+            'http://127.0.0.1:5055',
+            'http://localhost:5055',
+        ])
+        self.assertEqual(
+            config['REQUEST_SECURITY_TRUSTED_ORIGINS'],
+            config['SOCKETIO_ALLOWED_ORIGINS'],
+        )
+
+    def test_invalid_app_port_fails_closed(self):
+        for value in ('not-a-port', '0', '65536'):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(RuntimeError, 'APP_PORT'):
+                    build_runtime_security_config({
+                        'ENV': 'development',
+                        'APP_PORT': value,
+                    })
 
     def test_production_requires_explicit_session_secret(self):
         with self.assertRaisesRegex(RuntimeError, 'FLASK_SECRET_KEY'):
