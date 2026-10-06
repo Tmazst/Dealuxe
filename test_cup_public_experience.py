@@ -194,7 +194,7 @@ class CupPublicExperienceTests(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertIn('Cup results', live_body)
         self.assertIn('Live', live_body)
-        self.assertEqual(live_body.count('result-score">1'), 2)
+        self.assertIn('<span>1</span><span class="divider">-</span><span>1</span>', live_body)
 
         match.status = 'completed'
         match.winner_id = opponent.id
@@ -213,8 +213,7 @@ class CupPublicExperienceTests(unittest.TestCase):
         self.assertIn('cup16_qualifier_11', final_body)
         self.assertIn('Eliminated', final_body)
         self.assertIn('Advanced', final_body)
-        self.assertEqual(final_body.count('result-score">0'), 1)
-        self.assertEqual(final_body.count('result-score">1'), 1)
+        self.assertIn('<span>0</span><span class="divider">-</span><span>1</span>', final_body)
         self.assertNotIn(opponent.email, final_body)
         self.assertNotIn(opponent.phone, final_body)
 

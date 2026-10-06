@@ -96,11 +96,13 @@
         .result-state { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; }
         .result-state.live { color: #ffe879; background: rgba(255,216,74,.12); }
         .result-state.final { color: var(--cup-cyan); background: rgba(62,230,181,.11); }
-        .result-team { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 38px; }
-        .result-team + .result-team { border-top: 1px solid rgba(255,255,255,.07); }
-        .result-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 850; }
-        .result-score { min-width: 24px; text-align: center; color: white; font-size: 1.18rem; font-weight: 950; }
-        .result-label { min-width: 82px; text-align: right; font-size: .68rem; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
+        .result-line { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; min-height: 42px; }
+        .result-side { min-width: 0; }
+        .result-side.away { text-align: right; }
+        .result-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 850; }
+        .result-scoreline { display: inline-flex; align-items: center; gap: 8px; color: white; font-size: 1.2rem; font-weight: 950; white-space: nowrap; }
+        .result-scoreline .divider { color: var(--cup-muted); }
+        .result-label { display: block; margin-top: 4px; font-size: .63rem; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
         .result-label.advanced { color: var(--cup-cyan); }
         .result-label.eliminated { color: #ff717d; }
         .result-label.playing { color: #ffe879; }
@@ -219,27 +221,28 @@
                                 <span class="result-state final"><i class="fa-solid fa-check" aria-hidden="true"></i> Final</span>
                             {% endif %}
                         </div>
-                        <div class="result-team">
-                            <span class="result-name">{{ result.player1_name }}</span>
-                            <strong class="result-score">{{ result.player1_score }}</strong>
-                            {% if result.status == 'live' %}
-                                <span class="result-label playing">Playing</span>
-                            {% elif result.winner_id == result.player1_id %}
-                                <span class="result-label advanced"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Advanced</span>
-                            {% else %}
-                                <span class="result-label eliminated"><i class="fa-solid fa-xmark" aria-hidden="true"></i> Eliminated</span>
-                            {% endif %}
-                        </div>
-                        <div class="result-team">
-                            <span class="result-name">{{ result.player2_name }}</span>
-                            <strong class="result-score">{{ result.player2_score }}</strong>
-                            {% if result.status == 'live' %}
-                                <span class="result-label playing">Playing</span>
-                            {% elif result.winner_id == result.player2_id %}
-                                <span class="result-label advanced"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Advanced</span>
-                            {% else %}
-                                <span class="result-label eliminated"><i class="fa-solid fa-xmark" aria-hidden="true"></i> Eliminated</span>
-                            {% endif %}
+                        <div class="result-line">
+                            <div class="result-side home">
+                                <span class="result-name">{{ result.player1_name }}</span>
+                                {% if result.status == 'live' %}
+                                    <span class="result-label playing">Playing</span>
+                                {% elif result.winner_id == result.player1_id %}
+                                    <span class="result-label advanced"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Advanced</span>
+                                {% else %}
+                                    <span class="result-label eliminated"><i class="fa-solid fa-xmark" aria-hidden="true"></i> Eliminated</span>
+                                {% endif %}
+                            </div>
+                            <strong class="result-scoreline"><span>{{ result.player1_score }}</span><span class="divider">-</span><span>{{ result.player2_score }}</span></strong>
+                            <div class="result-side away">
+                                <span class="result-name">{{ result.player2_name }}</span>
+                                {% if result.status == 'live' %}
+                                    <span class="result-label playing">Playing</span>
+                                {% elif result.winner_id == result.player2_id %}
+                                    <span class="result-label advanced"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Advanced</span>
+                                {% else %}
+                                    <span class="result-label eliminated"><i class="fa-solid fa-xmark" aria-hidden="true"></i> Eliminated</span>
+                                {% endif %}
+                            </div>
                         </div>
                     </article>
                 {% else %}
