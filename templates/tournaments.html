@@ -156,12 +156,12 @@
             <!-- Connected to the create-tournament modal (POST /api/tournaments/create); hidden automatically when the player already has a tournament in progress -->
             <a class="button button-primary" style="background-color: rgb(216, 8, 8) !important;" href="#" id="createTournamentBtn" aria-haspopup="dialog"><i class="fa-solid fa-trophy"></i> Create tournament</a>
             <!-- Connected to GET /api/tournaments/me/next-match; points at the player's next fixture (game room / bracket) or falls back to /lobby -->
-            <a class="button button-secondary" href="/lobby" id="nextMatchBtn"><i class="fa-regular fa-circle-play"></i> Next Match</a>
+            <a class="button button-secondary" href="#" id="nextMatchBtn"><i class="fa-regular fa-circle-play"></i> Next Match</a>
         </div>
         <p class="hero-note" id="nextMatchInfo" style="display:none;"></p>
 
         <!-- Seats-full / tournament-starting prompt (visible to participants) -->
-        <div class="arena-notice" id="arenaNotice" style="display:none; align-items:center; gap:14px; margin:0 auto 22px; padding:14px 18px; border:1px solid rgba(250,204,21,.45); border-radius:14px; background:rgba(250,204,21,.10); color:#fff; max-width:1250px; justify-content:space-between;">
+        <div class="arena-notice" id="arenaNotice" style="display:none; align-items:center; gap:14px; margin:0 auto; padding:14px 18px; border:1px solid rgba(250,204,21,.45); border-radius:14px; background:rgba(250,204,21,.10); color:#fff; max-width:1250px; justify-content:space-between;">
             <span id="arenaNoticeText"></span>
             <span style="display:flex; align-items:center; gap:10px;">
                 <a class="button button-primary" id="arenaNoticeBtn" href="#" style="margin:0; padding:10px 16px; font-size:.82rem;">Go to game</a>

@@ -144,7 +144,7 @@
                 {% if event.season %}<span class="status-badge">Season {{ event.season }}</span>{% endif %}
             </div>
             <h1>{{ tournament.tournament_name }}</h1>
-            <p class="hero-copy">A qualified-player Cup event. View the public schedule, venue, roster and live bracket progress here—separate from ordinary four-player tournament waiting rooms.</p>
+            <p class="hero-copy">A qualified-player Cup event. View the schedule, venue, roster and live bracket progress here.</p>
             <div class="hero-actions">
                 <a class="cup-button primary" href="/tournaments/{{ tournament.id }}/bracket"><i class="fa-solid fa-diagram-project"></i> View Cup bracket</a>
                 <a class="cup-button secondary" href="/tournaments#cups"><i class="fa-solid fa-trophy"></i> All Tournament Cups</a>
@@ -154,7 +154,7 @@
         <section class="detail-grid" aria-label="Cup event information">
             <article class="panel">
                 <h2>Event details</h2>
-                <p class="panel-intro">The official public information set by the Cup administrators.</p>
+                <p class="panel-intro">The official Cupinformation.</p>
                 <div class="event-list">
                     <div class="event-row">
                         <i class="fa-regular fa-calendar"></i>
@@ -253,7 +253,7 @@
 
         <section class="panel participant-panel" aria-labelledby="roster-title">
             <h2 id="roster-title">Qualified player roster</h2>
-            <p class="panel-intro">Only public player names and competition status are shown.</p>
+            <p class="panel-intro">Public player names and competition status.</p>
             <div class="roster">
                 {% for participant in participants %}
                     <div class="player">
