@@ -5,7 +5,7 @@ BEGIN IMMEDIATE;
 
 CREATE TABLE tournaments_v31 (
     id INTEGER NOT NULL PRIMARY KEY,
-    tournament_code VARCHAR(20) NOT NULL,
+    tournament_code VARCHAR(32) NOT NULL,
     tournament_name VARCHAR(255) NOT NULL,
     tournament_type VARCHAR(20) NOT NULL,
     creator_id INTEGER NOT NULL,

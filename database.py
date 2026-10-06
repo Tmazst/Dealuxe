@@ -1018,7 +1018,9 @@ class Tournament(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    tournament_code = db.Column(db.String(20), unique=True, nullable=False, index=True)
+    # Historical timestamp-based codes are 22 characters long. Keep room for
+    # both those values and the current 20-character UUID-based format.
+    tournament_code = db.Column(db.String(32), unique=True, nullable=False, index=True)
     tournament_name = db.Column(db.String(255), nullable=False)
     tournament_type = db.Column(db.String(20), nullable=False)  # standard, premium, deluxe, cup
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)

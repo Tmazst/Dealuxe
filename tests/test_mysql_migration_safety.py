@@ -13,6 +13,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy import DateTime as SQLAlchemyDateTime
 
 from database import (
+    Tournament,
     db,
     _is_protected_sqlite_url,
     _mysql_test_database_is_explicitly_disposable,
@@ -28,6 +29,9 @@ from tools.mysql_migration import (
 
 
 class MySQLMigrationSafetyTests(unittest.TestCase):
+    def test_tournament_code_column_accepts_historical_timestamp_format(self):
+        self.assertGreaterEqual(Tournament.tournament_code.type.length, 22)
+
     def test_mysql_datetime_columns_keep_microseconds(self):
         datetime_columns = [
             column
