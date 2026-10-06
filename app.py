@@ -543,7 +543,7 @@ def payment_callback():
 @app.route('/cups/<int:tournament_id>')
 def cup_details_page(tournament_id):
     """Public Cup overview; never reuse the ordinary join/waiting-room page."""
-    from database import TournamentParticipant, TournamentBracket
+    from database import TournamentParticipant, TournamentBracket, TournamentMatch
     from services.cup_event_service import serialize_cup_event_details
 
     tournament = Tournament.query.get_or_404(tournament_id)
@@ -560,6 +560,46 @@ def cup_details_page(tournament_id):
         TournamentBracket.round_number.asc(),
         TournamentBracket.match_number.asc(),
     ).all()
+    brackets_by_id = {bracket.id: bracket for bracket in brackets}
+    matches = TournamentMatch.query.filter(
+        TournamentMatch.tournament_id == tournament.id,
+        TournamentMatch.status.in_(('in_progress', 'completed')),
+    ).order_by(
+        TournamentMatch.completed_at.desc(),
+        TournamentMatch.started_at.desc(),
+        TournamentMatch.id.desc(),
+    ).all()
+    result_user_ids = {
+        user_id
+        for match in matches
+        for user_id in (match.player1_id, match.player2_id)
+        if user_id
+    }
+    result_users = {
+        user.id: user.username
+        for user in User.query.filter(User.id.in_(result_user_ids)).all()
+    } if result_user_ids else {}
+    results = []
+    for match in matches:
+        bracket = brackets_by_id.get(match.bracket_id)
+        completed = match.status == 'completed' and match.winner_id is not None
+        results.append({
+            'round_name': bracket.round_name if bracket else 'Cup match',
+            'match_number': bracket.match_number if bracket else None,
+            'status': 'completed' if completed else 'live',
+            'player1_name': result_users.get(match.player1_id, 'Player'),
+            'player2_name': result_users.get(match.player2_id, 'Player'),
+            'player1_score': (
+                1 if not completed or match.winner_id == match.player1_id else 0
+            ),
+            'player2_score': (
+                1 if not completed or match.winner_id == match.player2_id else 0
+            ),
+            'winner_id': match.winner_id if completed else None,
+            'player1_id': match.player1_id,
+            'player2_id': match.player2_id,
+            'completed_at': match.completed_at,
+        })
     user_id = session.get('user_id')
     user = db.session.get(User, user_id) if user_id else None
     return render_template(
@@ -578,6 +618,7 @@ def cup_details_page(tournament_id):
         completed_match_count=sum(
             1 for bracket in brackets if bracket.status == 'completed'
         ),
+        results=results,
         is_participant=any(
             participant.user_id == user_id for participant in participants
         ),

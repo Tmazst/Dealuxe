@@ -26,6 +26,8 @@ from controllers.tournament_controller import _serialize_tournament
 from database import (
     Player,
     Tournament,
+    TournamentBracket,
+    TournamentMatch,
     TournamentParticipant,
     User,
     create_tournament_record,
@@ -155,6 +157,66 @@ class CupPublicExperienceTests(unittest.TestCase):
         self.assertNotIn(self.player.email, body)
         self.assertNotIn(self.player.phone, body)
         self.assertNotIn('Waiting for players', body)
+
+    def test_cup_results_use_simple_live_and_final_scores(self):
+        opponent = User(
+            username='cup16_qualifier_11',
+            email='qualifier-private@example.test',
+            phone='+26876000011',
+        )
+        opponent.set_password('test-password')
+        db.session.add(opponent)
+        db.session.flush()
+        bracket = TournamentBracket(
+            tournament_id=self.cup.id,
+            round_number=1,
+            round_name='Round of 16',
+            match_number=1,
+            player1_id=self.player.id,
+            player2_id=opponent.id,
+            status='scheduled',
+        )
+        db.session.add(bracket)
+        db.session.flush()
+        match = TournamentMatch(
+            tournament_id=self.cup.id,
+            bracket_id=bracket.id,
+            player1_id=self.player.id,
+            player2_id=opponent.id,
+            status='in_progress',
+            started_at=datetime(2026, 11, 14, 10, 5),
+        )
+        db.session.add(match)
+        db.session.commit()
+
+        live_body = self.client.get(
+            '/cups/{0}'.format(self.cup.id)
+        ).get_data(as_text=True)
+        self.assertIn('Cup results', live_body)
+        self.assertIn('Live', live_body)
+        self.assertEqual(live_body.count('result-score">1'), 2)
+
+        match.status = 'completed'
+        match.winner_id = opponent.id
+        match.loser_id = self.player.id
+        match.completed_at = datetime(2026, 11, 14, 10, 20)
+        bracket.status = 'completed'
+        bracket.winner_id = opponent.id
+        bracket.completed_at = match.completed_at
+        db.session.commit()
+
+        final_body = self.client.get(
+            '/cups/{0}'.format(self.cup.id)
+        ).get_data(as_text=True)
+        self.assertIn('Final', final_body)
+        self.assertIn('Opera', final_body)
+        self.assertIn('cup16_qualifier_11', final_body)
+        self.assertIn('Eliminated', final_body)
+        self.assertIn('Advanced', final_body)
+        self.assertEqual(final_body.count('result-score">0'), 1)
+        self.assertEqual(final_body.count('result-score">1'), 1)
+        self.assertNotIn(opponent.email, final_body)
+        self.assertNotIn(opponent.phone, final_body)
 
     def test_public_serializer_contains_contact_free_event_metadata(self):
         payload = _serialize_tournament(self.cup)

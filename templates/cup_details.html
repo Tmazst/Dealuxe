@@ -89,6 +89,21 @@
         .stat span { color: var(--cup-muted); text-transform: uppercase; letter-spacing: .08em; font-size: .65rem; font-weight: 900; }
         .stat strong { display: block; margin-top: 7px; color: white; font-size: 1.35rem; }
         .participant-panel { margin-top: 20px; }
+        .results-panel { margin-top: 20px; }
+        .results-list { display: grid; gap: 11px; margin-top: 18px; }
+        .result-card { padding: 15px 17px; border: 1px solid var(--cup-line); border-radius: 13px; background: rgba(255,255,255,.035); }
+        .result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11px; color: var(--cup-muted); font-size: .7rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+        .result-state { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; }
+        .result-state.live { color: #ffe879; background: rgba(255,216,74,.12); }
+        .result-state.final { color: var(--cup-cyan); background: rgba(62,230,181,.11); }
+        .result-team { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 38px; }
+        .result-team + .result-team { border-top: 1px solid rgba(255,255,255,.07); }
+        .result-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 850; }
+        .result-score { min-width: 24px; text-align: center; color: white; font-size: 1.18rem; font-weight: 950; }
+        .result-label { min-width: 82px; text-align: right; font-size: .68rem; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
+        .result-label.advanced { color: var(--cup-cyan); }
+        .result-label.eliminated { color: #ff717d; }
+        .result-label.playing { color: #ffe879; }
         .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 9px; margin-top: 18px; }
         .player { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--cup-line); border-radius: 11px; background: rgba(255,255,255,.03); }
         .seat { flex: 0 0 33px; display: grid; place-items: center; width: 33px; height: 33px; border-radius: 9px; color: #302500; background: var(--cup-gold); font-weight: 900; font-size: .78rem; }
@@ -188,6 +203,49 @@
                 </div>
                 {% if is_participant %}<div class="event-notice">You are on this Cup roster. Use “View Cup bracket” to find your assigned match.</div>{% endif %}
             </aside>
+        </section>
+
+        <section class="panel results-panel" aria-labelledby="results-title">
+            <h2 id="results-title">Cup results</h2>
+            <p class="panel-intro">Live matches show 1–1. When a match finishes, the winner is shown as 1 and the eliminated player as 0.</p>
+            <div class="results-list">
+                {% for result in results %}
+                    <article class="result-card">
+                        <div class="result-head">
+                            <span>{{ result.round_name }}{% if result.match_number %} · Match {{ result.match_number }}{% endif %}</span>
+                            {% if result.status == 'live' %}
+                                <span class="result-state live"><i class="fa-solid fa-circle" aria-hidden="true"></i> Live</span>
+                            {% else %}
+                                <span class="result-state final"><i class="fa-solid fa-check" aria-hidden="true"></i> Final</span>
+                            {% endif %}
+                        </div>
+                        <div class="result-team">
+                            <span class="result-name">{{ result.player1_name }}</span>
+                            <strong class="result-score">{{ result.player1_score }}</strong>
+                            {% if result.status == 'live' %}
+                                <span class="result-label playing">Playing</span>
+                            {% elif result.winner_id == result.player1_id %}
+                                <span class="result-label advanced"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Advanced</span>
+                            {% else %}
+                                <span class="result-label eliminated"><i class="fa-solid fa-xmark" aria-hidden="true"></i> Eliminated</span>
+                            {% endif %}
+                        </div>
+                        <div class="result-team">
+                            <span class="result-name">{{ result.player2_name }}</span>
+                            <strong class="result-score">{{ result.player2_score }}</strong>
+                            {% if result.status == 'live' %}
+                                <span class="result-label playing">Playing</span>
+                            {% elif result.winner_id == result.player2_id %}
+                                <span class="result-label advanced"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Advanced</span>
+                            {% else %}
+                                <span class="result-label eliminated"><i class="fa-solid fa-xmark" aria-hidden="true"></i> Eliminated</span>
+                            {% endif %}
+                        </div>
+                    </article>
+                {% else %}
+                    <div class="event-notice">Results will appear here when the first Cup match begins.</div>
+                {% endfor %}
+            </div>
         </section>
 
         <section class="panel participant-panel" aria-labelledby="roster-title">
