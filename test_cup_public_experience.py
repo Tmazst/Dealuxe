@@ -181,8 +181,8 @@ class CupPublicExperienceTests(unittest.TestCase):
         match = TournamentMatch(
             tournament_id=self.cup.id,
             bracket_id=bracket.id,
-            player1_id=self.player.id,
-            player2_id=opponent.id,
+            player1_id=opponent.id,
+            player2_id=self.player.id,
             status='in_progress',
             started_at=datetime(2026, 11, 14, 10, 5),
         )
@@ -214,6 +214,10 @@ class CupPublicExperienceTests(unittest.TestCase):
         self.assertIn('Eliminated', final_body)
         self.assertIn('Advanced', final_body)
         self.assertIn('<span>0</span><span class="divider">-</span><span>1</span>', final_body)
+        result_start = final_body.index('<div class="result-line">')
+        result_end = final_body.index('</article>', result_start)
+        result_markup = final_body[result_start:result_end]
+        self.assertLess(result_markup.index('Opera'), result_markup.index('cup16_qualifier_11'))
         self.assertNotIn(opponent.email, final_body)
         self.assertNotIn(opponent.phone, final_body)
 

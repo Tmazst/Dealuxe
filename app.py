@@ -583,21 +583,27 @@ def cup_details_page(tournament_id):
     for match in matches:
         bracket = brackets_by_id.get(match.bracket_id)
         completed = match.status == 'completed' and match.winner_id is not None
+        if completed:
+            left_player_id = match.loser_id or (
+                match.player2_id
+                if match.winner_id == match.player1_id
+                else match.player1_id
+            )
+            right_player_id = match.winner_id
+        else:
+            left_player_id = match.player1_id
+            right_player_id = match.player2_id
         results.append({
             'round_name': bracket.round_name if bracket else 'Cup match',
             'match_number': bracket.match_number if bracket else None,
             'status': 'completed' if completed else 'live',
-            'player1_name': result_users.get(match.player1_id, 'Player'),
-            'player2_name': result_users.get(match.player2_id, 'Player'),
-            'player1_score': (
-                1 if not completed or match.winner_id == match.player1_id else 0
-            ),
-            'player2_score': (
-                1 if not completed or match.winner_id == match.player2_id else 0
-            ),
+            'player1_name': result_users.get(left_player_id, 'Player'),
+            'player2_name': result_users.get(right_player_id, 'Player'),
+            'player1_score': 0 if completed else 1,
+            'player2_score': 1,
             'winner_id': match.winner_id if completed else None,
-            'player1_id': match.player1_id,
-            'player2_id': match.player2_id,
+            'player1_id': left_player_id,
+            'player2_id': right_player_id,
             'completed_at': match.completed_at,
         })
     user_id = session.get('user_id')
