@@ -373,7 +373,38 @@ def _apply_baseline(project_root):
     command.upgrade(config, 'head')
 
 
-def migrate(source_path, expected_database, project_root):
+def _assert_empty_migration_schema(target_engine):
+    """Allow recovery only from an Alembic-created schema with zero data."""
+    inspector = inspect(target_engine)
+    existing = set(inspector.get_table_names())
+    expected = set(db.metadata.tables) | {'alembic_version'}
+    if existing != expected:
+        raise MigrationSafetyError(
+            'Resume requires exactly the reviewed migration schema '
+            '(target={0}, expected={1})'.format(len(existing), len(expected))
+        )
+    populated = []
+    preparer = target_engine.dialect.identifier_preparer
+    with target_engine.connect() as connection:
+        for table_name in sorted(db.metadata.tables):
+            count = connection.execute(text(
+                'SELECT COUNT(*) FROM {0}'.format(preparer.quote(table_name))
+            )).scalar_one()
+            if count:
+                populated.append(table_name)
+    if populated:
+        raise MigrationSafetyError(
+            'Resume refused because the target contains application data in: '
+            + ', '.join(populated)
+        )
+
+
+def migrate(
+    source_path,
+    expected_database,
+    project_root,
+    resume_empty_target=False,
+):
     source, source_engine = _source_engine(source_path)
     target_engine = _target_engine(expected_database)
     source_hash_before = _file_sha256(source)
@@ -382,9 +413,13 @@ def migrate(source_path, expected_database, project_root):
 
     existing = set(inspect(target_engine).get_table_names())
     if existing:
-        raise MigrationSafetyError(
-            'The MySQL target must be empty; found {0} table(s)'.format(len(existing))
-        )
+        if not resume_empty_target:
+            raise MigrationSafetyError(
+                'The MySQL target must be empty; found {0} table(s). If this '
+                'is a schema-only remainder from a failed first transfer, use '
+                '--resume-empty-target.'.format(len(existing))
+            )
+        _assert_empty_migration_schema(target_engine)
 
     _apply_baseline(project_root)
     _schema_audit(source_engine, target_engine)
@@ -425,6 +460,13 @@ def main(argv=None):
             'dropping tables, then re-run full verification.'
         ),
     )
+    parser.add_argument(
+        '--resume-empty-target', action='store_true',
+        help=(
+            'Resume after a failed first copy only when the reviewed MySQL '
+            'schema exists and every application table is empty.'
+        ),
+    )
     args = parser.parse_args(argv)
 
     env_file = Path(args.env_file).expanduser().resolve()
@@ -435,9 +477,15 @@ def main(argv=None):
     source, source_engine = _source_engine(args.source)
     target_engine = _target_engine(args.confirm_database)
 
-    if args.verify_only and args.repair_datetime_precision:
+    selected_recovery_modes = sum(bool(value) for value in (
+        args.verify_only,
+        args.repair_datetime_precision,
+        args.resume_empty_target,
+    ))
+    if selected_recovery_modes > 1:
         parser.error(
-            '--verify-only and --repair-datetime-precision are mutually exclusive'
+            '--verify-only, --repair-datetime-precision and '
+            '--resume-empty-target are mutually exclusive'
         )
     if args.verify_only:
         _sqlite_integrity(source)
@@ -467,7 +515,12 @@ def main(argv=None):
             'repair': 'datetime_precision',
         }
     else:
-        report = migrate(source, args.confirm_database, project_root)
+        report = migrate(
+            source,
+            args.confirm_database,
+            project_root,
+            resume_empty_target=args.resume_empty_target,
+        )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

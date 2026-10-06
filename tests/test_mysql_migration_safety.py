@@ -20,6 +20,7 @@ from database import (
 )
 from tools.mysql_migration import (
     MigrationSafetyError,
+    _assert_empty_migration_schema,
     _file_sha256,
     _schema_audit,
     _source_engine,
@@ -29,6 +30,29 @@ from tools.mysql_migration import (
 
 
 class MySQLMigrationSafetyTests(unittest.TestCase):
+    def test_resume_requires_exact_empty_migration_schema(self):
+        from sqlalchemy import create_engine, text
+
+        engine = create_engine('sqlite:///:memory:')
+        db.metadata.create_all(bind=engine)
+        with engine.begin() as connection:
+            connection.execute(text(
+                'CREATE TABLE alembic_version (version_num VARCHAR(64) NOT NULL)'
+            ))
+            connection.execute(text(
+                "INSERT INTO alembic_version (version_num) VALUES "
+                "('20261005_cup_event_details')"
+            ))
+        _assert_empty_migration_schema(engine)
+
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO game_sessions (session_uuid) "
+                "VALUES ('resume-safety-check')"
+            ))
+        with self.assertRaisesRegex(MigrationSafetyError, 'application data'):
+            _assert_empty_migration_schema(engine)
+
     def test_tournament_code_column_accepts_historical_timestamp_format(self):
         self.assertGreaterEqual(Tournament.tournament_code.type.length, 22)
 
