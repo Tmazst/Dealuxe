@@ -38,6 +38,9 @@ from admin.service import (
     replace_cup_qualification,
     revoke_cup_qualification,
     update_cup_event_details,
+    assign_manual_cup_seat,
+    start_allocated_cup,
+    update_cup_allocations,
 )
 from database import User, db
 
@@ -268,6 +271,8 @@ def create_cup_tournament_route():
             event_key=data.get('event_key'),
             capacity=data.get('capacity'),
             event_details=data,
+            creation_mode=data.get('creation_mode', 'roster'),
+            seat_allocations=data.get('seat_allocations') or {},
         )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
@@ -278,9 +283,59 @@ def create_cup_tournament_route():
             'error': 'Cup creation failed safely; no tournament was started'
         }), 500
     return jsonify({
-        'message': f"{cup['players']}-player Cup created and started",
+        'message': (
+            f"{cup['capacity']}-player empty Cup created"
+            if cup.get('status') == 'open'
+            else f"{cup['players']}-player Cup created and started"
+        ),
         'cup': cup,
     }), 201
+
+
+@admin_bp.route('/cup-tournaments/<int:tournament_id>/seats', methods=['POST'])
+@admin_required
+def assign_manual_cup_seat_route(tournament_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        result = assign_manual_cup_seat(
+            tournament_id=tournament_id,
+            user_id=data.get('user_id'),
+            source=data.get('source'),
+            reason=data.get('reason'),
+            reference=data.get('reference'),
+            admin_user_id=session['user_id'],
+        )
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Cup seat assigned', **result}), 201
+
+
+@admin_bp.route('/cup-tournaments/<int:tournament_id>/start', methods=['POST'])
+@admin_required
+def start_allocated_cup_route(tournament_id):
+    try:
+        result = start_allocated_cup(tournament_id, session['user_id'])
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Allocated Cup start failed')
+        return jsonify({'error': 'Cup start failed safely; no bracket was started'}), 500
+    return jsonify({'message': 'Cup locked and started', 'cup': result})
+
+
+@admin_bp.route('/cup-tournaments/<int:tournament_id>/allocations', methods=['PATCH'])
+@admin_required
+def update_cup_allocations_route(tournament_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        result = update_cup_allocations(
+            tournament_id, data.get('seat_allocations') or {},
+            session['user_id'], data.get('reason'),
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Cup allocations updated', **result})
 
 
 @admin_bp.route(

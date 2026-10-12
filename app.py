@@ -543,7 +543,10 @@ def payment_callback():
 @app.route('/cups/<int:tournament_id>')
 def cup_details_page(tournament_id):
     """Public Cup overview; never reuse the ordinary join/waiting-room page."""
-    from database import TournamentParticipant, TournamentBracket, TournamentMatch
+    from database import (
+        CupQualification, TournamentParticipant, TournamentBracket,
+        TournamentMatch,
+    )
     from services.cup_event_service import serialize_cup_event_details
 
     tournament = Tournament.query.get_or_404(tournament_id)
@@ -608,6 +611,12 @@ def cup_details_page(tournament_id):
         })
     user_id = session.get('user_id')
     user = db.session.get(User, user_id) if user_id else None
+    seat_sources = {
+        row.user_id: row.seat_source or 'bracket_winner'
+        for row in CupQualification.query.filter_by(
+            target_cup_tournament_id=tournament.id
+        ).all()
+    }
     return render_template(
         'cup_details.html',
         tournament=tournament,
@@ -616,6 +625,7 @@ def cup_details_page(tournament_id):
             'username': participant.user.username,
             'status': participant.status,
             'final_placement': participant.final_placement,
+            'seat_source': seat_sources.get(participant.user_id, 'bracket_winner'),
         } for participant in participants],
         round_count=max((bracket.round_number for bracket in brackets), default=0),
         match_count=sum(
@@ -625,6 +635,12 @@ def cup_details_page(tournament_id):
             1 for bracket in brackets if bracket.status == 'completed'
         ),
         results=results,
+        allocations={
+            'bracket_winner': int(tournament.cup_qualifier_seats or 0),
+            'admin_invite': int(tournament.cup_admin_invite_seats or 0),
+            'sponsor': int(tournament.cup_sponsor_seats or 0),
+            'testing': int(tournament.cup_testing_seats or 0),
+        },
         is_participant=any(
             participant.user_id == user_id for participant in participants
         ),

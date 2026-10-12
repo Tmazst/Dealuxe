@@ -26,9 +26,21 @@ Status: In progress — capacity, shared-prize and public Cup experience increme
     expose player email addresses, phone numbers or private contact fields.
 [x] Add a forward-only Alembic migration for the Cup event-detail columns and
     verify it on a newly created disposable database.
+[x] Preserve full-roster Cup creation and add a second empty-Cup creation option.
+[x] Require predefined administrator-invite, sponsor and testing allocations;
+    calculate remaining bracket-winner seats from Cup capacity.
+[x] Allow controlled 64-seat testing allocations for full rehearsals.
+[x] Attach future bracket winners only to available qualifier seats and retain
+    later winners as reserves when that allocation is full.
+[x] Allow audited manual assignments for invite, sponsor and testing seats.
+[x] Prevent duplicate players, allocation overfill and reductions below occupied seats.
+[x] Require an explicit administrator start after all allocated seats are filled.
+[x] Publish neutral seat-source labels without administrative reasons or contacts.
+[x] Add a forward MySQL migration and isolated 16/64-seat regression coverage.
 
 [ ] Add persistent Cup Event records with draft/qualifying/check-in/ready/active/completed/cancelled lifecycle.
-[ ] Link qualifications and the created tournament to a Cup Event ID.
+[x] Link qualifications to the target Cup tournament for the MVP allocation flow.
+[ ] Replace the MVP tournament link with a dedicated persistent Cup Event ID.
 [ ] Allow multiple historical and future Cup events without weakening duplicate-launch protection per event.
 [ ] Freeze capacity and event identity once qualification/check-in begins.
 [ ] Add qualification-window dates and private administrator notes to the

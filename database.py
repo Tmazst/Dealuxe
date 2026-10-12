@@ -266,6 +266,10 @@ def ensure_cup_qualification_schema():
         ('original_user_id', 'INTEGER'),
         ('replacement_source_type', 'VARCHAR(30)'),
         ('replacement_source_reference', 'VARCHAR(120)'),
+        ('target_cup_tournament_id', 'INTEGER'),
+        ("seat_source", "VARCHAR(30) DEFAULT 'bracket_winner'"),
+        ('seat_source_reference', 'VARCHAR(120)'),
+        ('seat_assigned_by', 'INTEGER'),
     ]
     with db.session.begin():
         for column_name, column_definition in columns:
@@ -319,6 +323,11 @@ def ensure_cup_event_details_schema():
         ('event_venue_name', 'VARCHAR(160)'),
         ('event_venue_address', 'VARCHAR(255)'),
         ('event_public_notes', 'TEXT'),
+        ('cup_creation_mode', 'VARCHAR(30)'),
+        ('cup_qualifier_seats', 'INTEGER'),
+        ('cup_admin_invite_seats', 'INTEGER'),
+        ('cup_sponsor_seats', 'INTEGER'),
+        ('cup_testing_seats', 'INTEGER'),
     ]
     with db.session.begin():
         for column_name, column_definition in columns:
@@ -1049,6 +1058,11 @@ class Tournament(db.Model):
     event_venue_name = db.Column(db.String(160), nullable=True)
     event_venue_address = db.Column(db.String(255), nullable=True)
     event_public_notes = db.Column(db.Text, nullable=True)
+    cup_creation_mode = db.Column(db.String(30), nullable=True)
+    cup_qualifier_seats = db.Column(db.Integer, nullable=True)
+    cup_admin_invite_seats = db.Column(db.Integer, nullable=True)
+    cup_sponsor_seats = db.Column(db.Integer, nullable=True)
+    cup_testing_seats = db.Column(db.Integer, nullable=True)
 
     creator = db.relationship('User', foreign_keys='Tournament.creator_id', backref='created_tournaments')
     bet_sessions = db.relationship('BetSession', foreign_keys='BetSession.tournament_id', backref='tournament', lazy='dynamic')
@@ -1078,6 +1092,11 @@ class Tournament(db.Model):
             'event_venue_name': self.event_venue_name,
             'event_venue_address': self.event_venue_address,
             'event_public_notes': self.event_public_notes,
+            'cup_creation_mode': self.cup_creation_mode,
+            'cup_qualifier_seats': self.cup_qualifier_seats,
+            'cup_admin_invite_seats': self.cup_admin_invite_seats,
+            'cup_sponsor_seats': self.cup_sponsor_seats,
+            'cup_testing_seats': self.cup_testing_seats,
         }
 
 
@@ -1123,7 +1142,7 @@ class CupQualification(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     source_tournament_id = db.Column(
-        db.Integer, db.ForeignKey('tournaments.id'), nullable=False
+        db.Integer, db.ForeignKey('tournaments.id'), nullable=True
     )
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     season = db.Column(db.String(40), nullable=False)
@@ -1143,14 +1162,30 @@ class CupQualification(db.Model):
     original_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     replacement_source_type = db.Column(db.String(30), nullable=True)
     replacement_source_reference = db.Column(db.String(120), nullable=True)
+    target_cup_tournament_id = db.Column(
+        db.Integer, db.ForeignKey('tournaments.id'), nullable=True
+    )
+    seat_source = db.Column(
+        db.String(30), nullable=False, default='bracket_winner'
+    )
+    seat_source_reference = db.Column(db.String(120), nullable=True)
+    seat_assigned_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
-    source_tournament = db.relationship('Tournament', backref='cup_qualifications')
+    source_tournament = db.relationship(
+        'Tournament', foreign_keys=[source_tournament_id],
+        backref='cup_qualifications',
+    )
     user = db.relationship(
         'User', foreign_keys=[user_id], backref='cup_qualifications'
     )
     status_admin = db.relationship('User', foreign_keys=[status_updated_by])
     original_user = db.relationship('User', foreign_keys=[original_user_id])
+    target_cup = db.relationship(
+        'Tournament', foreign_keys=[target_cup_tournament_id],
+        backref='targeted_qualifications',
+    )
+    seat_assigner = db.relationship('User', foreign_keys=[seat_assigned_by])
 
     def to_dict(self):
         return {
@@ -1169,6 +1204,10 @@ class CupQualification(db.Model):
             'original_user_id': self.original_user_id,
             'replacement_source_type': self.replacement_source_type,
             'replacement_source_reference': self.replacement_source_reference,
+            'target_cup_tournament_id': self.target_cup_tournament_id,
+            'seat_source': self.seat_source,
+            'seat_source_reference': self.seat_source_reference,
+            'seat_assigned_by': self.seat_assigned_by,
         }
 
 

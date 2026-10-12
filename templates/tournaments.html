@@ -404,7 +404,7 @@
                         <span class="status ${escapeHtml(tournament.status)}">${escapeHtml(labelForStatus(tournament.status))}</span>
                     </div>
                     <h3>${escapeHtml(tournament.name)}</h3>
-                    <p class="cup-card-copy">${season} · ${current}/${maximum} qualified players</p>
+                    <p class="cup-card-copy">${season} · ${current}/${maximum} seats filled</p>
                     <div class="cup-event-grid">
                         <div class="cup-event"><i class="fa-regular fa-calendar"></i><div><small>Date and time</small><strong>${escapeHtml(formatCupDate(event.start_at))}</strong></div></div>
                         <div class="cup-event"><i class="fa-solid fa-location-dot"></i><div><small>Physical location</small><strong>${escapeHtml(event.venue_name || 'Venue to be announced')}</strong></div></div>

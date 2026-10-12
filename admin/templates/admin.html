@@ -131,6 +131,18 @@
             <a href="#cupEventDetailsPanel">Cup event details</a>
             <button id="createCupTournament" data-action="createCupTournament" disabled>Create Cup</button>
         </div>
+        <div class="controls" style="margin-top:12px;">
+            <label>
+                Creation option:
+                <select id="cupCreationMode">
+                    <option value="roster">Create and start from full roster</option>
+                    <option value="empty">Create empty Cup with reserved seats</option>
+                </select>
+            </label>
+            <label>Admin-invite seats <input id="cupAdminInviteSeats" type="number" min="0" value="0" style="width:85px;"></label>
+            <label>Sponsor seats <input id="cupSponsorSeats" type="number" min="0" value="0" style="width:85px;"></label>
+            <label>Testing seats <input id="cupTestingSeats" type="number" min="0" value="0" style="width:85px;"></label>
+        </div>
         <div class="summary-grid" id="cupSummaryGrid"></div>
         <p class="status" id="cupRosterStatus" role="status" aria-live="polite"></p>
         <table id="cupRosterTable" aria-label="uMshova Cup qualification roster">
@@ -148,6 +160,27 @@
             </thead>
             <tbody></tbody>
         </table>
+    </div>
+
+    <div class="panel" id="cupAllocatedSeatPanel">
+        <h2>Empty Cup Seat Management</h2>
+        <p class="status">Assign registered users only within the predefined administrator-invite, sponsor or testing allocations. Bracket winners fill their allocation automatically.</p>
+        <div class="controls">
+            <label>Cup ID <input id="allocatedCupId" type="number" min="1" style="width:90px;"></label>
+            <label>User ID <input id="allocatedCupUserId" type="number" min="1" style="width:100px;"></label>
+            <label>Seat source
+                <select id="allocatedCupSeatSource">
+                    <option value="admin_invite">Administrator invite</option>
+                    <option value="sponsor">Sponsor participant</option>
+                    <option value="testing">Testing participant</option>
+                </select>
+            </label>
+            <label>Reference <input id="allocatedCupReference" type="text" maxlength="120" placeholder="Sponsor or invitation reference"></label>
+            <label>Reason <input id="allocatedCupReason" type="text" maxlength="500" placeholder="Required audited reason"></label>
+            <button data-action="assignAllocatedCupSeat">Assign seat</button>
+            <button data-action="startAllocatedCup">Lock and start Cup</button>
+        </div>
+        <p class="status" id="allocatedCupStatus" role="status" aria-live="polite">Create or load an empty Cup to manage its seat allocations.</p>
     </div>
 
     <div class="panel">
@@ -713,6 +746,18 @@
                 <div class="summary-card"><span class="pill">Awaiting check-in</span><strong>${data.unchecked_seats}</strong></div>
                 <div class="summary-card"><span class="pill">Reserves</span><strong>${data.counts.reserve || 0}</strong></div>
             `;
+            if (data.target_cup) {
+                const cup = data.target_cup;
+                document.getElementById('allocatedCupId').value = cup.id;
+                const allocations = cup.allocations || {};
+                const filled = cup.allocation_counts || {};
+                document.getElementById('allocatedCupStatus').textContent =
+                    `${cup.name} (#${cup.id}) · ${cup.players}/${cup.capacity} seats · ` +
+                    `Qualifiers ${filled.bracket_winner || 0}/${allocations.bracket_winner || 0}, ` +
+                    `Invites ${filled.admin_invite || 0}/${allocations.admin_invite || 0}, ` +
+                    `Sponsors ${filled.sponsor || 0}/${allocations.sponsor || 0}, ` +
+                    `Testing ${filled.testing || 0}/${allocations.testing || 0}.`;
+            }
             let readinessMessage;
             if (!data.roster_full) {
                 readinessMessage = `${data.remaining_seats} active seat(s) remain before the ${data.capacity}-player lock.`;
@@ -724,7 +769,10 @@
                 readinessMessage = 'Preflight passed: all required seats and check-ins are ready.';
             }
             document.getElementById('cupRosterStatus').textContent = readinessMessage;
-            document.getElementById('createCupTournament').disabled = !(data.ready_to_start && data.cup_enabled);
+            const creationMode = document.getElementById('cupCreationMode').value;
+            document.getElementById('createCupTournament').disabled = !data.cup_enabled ||
+                Boolean(data.target_cup) ||
+                (creationMode === 'roster' && !data.ready_to_start);
             cupRosterTableBody.innerHTML = '';
             (data.qualifications || []).forEach(q => {
                 const active = q.status === 'qualified' || q.status === 'checked_in';
@@ -1580,16 +1628,51 @@
                 }
                 if (action === 'createCupTournament') {
                     const capacity = Number(document.getElementById('cupCapacity').value);
-                    if (!confirm(`Create and start the ${capacity}-player Cup from the approved active roster?`)) return;
+                    const creationMode = document.getElementById('cupCreationMode').value;
+                    const allocations = {
+                        admin_invite: Number(document.getElementById('cupAdminInviteSeats').value || 0),
+                        sponsor: Number(document.getElementById('cupSponsorSeats').value || 0),
+                        testing: Number(document.getElementById('cupTestingSeats').value || 0),
+                    };
+                    const message = creationMode === 'empty'
+                        ? `Create an empty ${capacity}-player Cup with the selected reserved-seat allocations?`
+                        : `Create and start the ${capacity}-player Cup from the approved active roster?`;
+                    if (!confirm(message)) return;
                     const name = document.getElementById('cupEventName').value.trim() || 'uMshova Cup';
                     const created = await sendJson('/api/admin/cup-tournaments', {
-                        body: { capacity, ...cupEventPayload(), tournament_name: name },
+                        body: {
+                            capacity,
+                            creation_mode: creationMode,
+                            seat_allocations: allocations,
+                            ...cupEventPayload(),
+                            tournament_name: name,
+                        },
                     });
                     document.getElementById('cupPlacementTournamentId').value = created.cup.tournament_id;
                     document.getElementById('cupEventTournamentId').value = created.cup.tournament_id;
                     document.getElementById('cupEventDetailsStatus').textContent =
                         `Created ${name} (#${created.cup.tournament_id}) with its public event details.`;
-                    await fetchCupPlacements();
+                    if (creationMode === 'roster') await fetchCupPlacements();
+                    await fetchCupRoster();
+                }
+                if (action === 'assignAllocatedCupSeat') {
+                    const tournamentId = Number(document.getElementById('allocatedCupId').value);
+                    const userId = Number(document.getElementById('allocatedCupUserId').value);
+                    const source = document.getElementById('allocatedCupSeatSource').value;
+                    const reference = document.getElementById('allocatedCupReference').value.trim();
+                    const reason = document.getElementById('allocatedCupReason').value.trim();
+                    const assigned = await sendJson(`/api/admin/cup-tournaments/${tournamentId}/seats`, {
+                        body: { user_id: userId, source, reference, reason },
+                    });
+                    document.getElementById('allocatedCupStatus').textContent = assigned.message;
+                    await fetchCupRoster();
+                }
+                if (action === 'startAllocatedCup') {
+                    const tournamentId = Number(document.getElementById('allocatedCupId').value);
+                    if (!confirm('Lock the completed allocations and generate the Cup bracket now?')) return;
+                    const started = await sendJson(`/api/admin/cup-tournaments/${tournamentId}/start`);
+                    document.getElementById('allocatedCupStatus').textContent = started.message;
+                    await fetchCupRoster();
                 }
                 if (action === 'loadCupEventDetails') {
                     await fetchCupEventDetails();
@@ -1650,6 +1733,7 @@
         document.getElementById('reloadDisputes').addEventListener('click', fetchDisputes);
         document.getElementById('cupStatusFilter').addEventListener('change', fetchCupRoster);
         document.getElementById('cupCapacity').addEventListener('change', fetchCupRoster);
+        document.getElementById('cupCreationMode').addEventListener('change', fetchCupRoster);
         document.getElementById('reloadCupRoster').addEventListener('click', fetchCupRoster);
         document.getElementById('reloadHybridProfiles').addEventListener('click', fetchHybridProfiles);
         document.getElementById('reloadHybridCaptions').addEventListener('click', fetchHybridCaptions);

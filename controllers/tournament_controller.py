@@ -243,6 +243,13 @@ def _serialize_tournament(tournament):
             serialize_cup_event_details(tournament)
             if tournament.tournament_type == 'cup' else None
         ),
+        'cup_creation_mode': tournament.cup_creation_mode,
+        'cup_allocations': ({
+            'bracket_winner': int(tournament.cup_qualifier_seats or 0),
+            'admin_invite': int(tournament.cup_admin_invite_seats or 0),
+            'sponsor': int(tournament.cup_sponsor_seats or 0),
+            'testing': int(tournament.cup_testing_seats or 0),
+        } if tournament.tournament_type == 'cup' else None),
         # Final placement list (1st/2nd/3rd + prize amounts) once completed,
         # None otherwise — drives the results podium on the tournament cards.
         'podium': _serialize_podium(tournament),

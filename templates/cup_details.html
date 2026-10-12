@@ -196,13 +196,16 @@
 
             <aside class="panel">
                 <h2>Cup format</h2>
-                <p class="panel-intro">This Cup is already assembled from qualified players. It is not an open public-join bracket.</p>
+                <p class="panel-intro">{% if tournament.cup_creation_mode == 'empty' and tournament.status == 'open' %}This Cup is filling through bracket winners and its predefined invited, sponsor and testing allocations. It is not open for public self-joining.{% else %}This Cup is assembled from approved participants. It is not an open public-join bracket.{% endif %}</p>
                 <div class="stat-grid">
                     <div class="stat"><span>Qualified players</span><strong>{{ participants|length }}/{{ tournament.max_players }}</strong></div>
                     <div class="stat"><span>Format</span><strong>Knockout</strong></div>
                     <div class="stat"><span>Rounds</span><strong>{{ round_count }}</strong></div>
                     <div class="stat"><span>Matches complete</span><strong>{{ completed_match_count }}/{{ match_count }}</strong></div>
                 </div>
+                {% if tournament.cup_creation_mode == 'empty' %}
+                    <div class="event-notice">Seat allocation: {{ allocations.bracket_winner }} qualifiers · {{ allocations.admin_invite }} invited · {{ allocations.sponsor }} sponsor · {{ allocations.testing }} testing.</div>
+                {% endif %}
                 {% if is_participant %}<div class="event-notice">You are on this Cup roster. Use “View Cup bracket” to find your assigned match.</div>{% endif %}
             </aside>
         </section>
@@ -260,7 +263,7 @@
                         <span class="seat">{{ loop.index }}</span>
                         <div class="player-copy">
                             <strong>{{ participant.username }}</strong>
-                            <small>{% if participant.final_placement %}Position {{ participant.final_placement }}{% else %}{{ participant.status.replace('_', ' ') }}{% endif %}</small>
+                            <small>{% if participant.final_placement %}Position {{ participant.final_placement }}{% elif participant.seat_source == 'sponsor' %}Sponsor participant{% elif participant.seat_source == 'testing' %}Testing participant{% elif participant.seat_source == 'admin_invite' %}Invited participant{% else %}Qualified{% endif %}</small>
                         </div>
                     </div>
                 {% else %}
