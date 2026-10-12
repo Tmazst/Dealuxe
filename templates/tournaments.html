@@ -150,15 +150,15 @@
         </nav>
         <section class="three_cards" >
             <img src="{{ url_for('static', filename='images/3_cards.png') }}" alt="uMshova Deluxe tournament arena" style="width: 100%; max-width: 150px; height:auto; ">
-        </section>
+        </section><br>
 
-        <div class="hero-actions">
+        <div style="max-width:1200px;margin:0 auto;" class="hero-actions">
             <!-- Connected to the create-tournament modal (POST /api/tournaments/create); hidden automatically when the player already has a tournament in progress -->
             <a class="button button-primary" style="background-color: rgb(216, 8, 8) !important;" href="#" id="createTournamentBtn" aria-haspopup="dialog"><i class="fa-solid fa-trophy"></i> Create tournament</a>
             <!-- Connected to GET /api/tournaments/me/next-match; points at the player's next fixture (game room / bracket) or falls back to /lobby -->
             <a class="button button-secondary" href="#" id="nextMatchBtn"><i class="fa-regular fa-circle-play"></i> Next Match</a>
         </div>
-        <p class="hero-note" id="nextMatchInfo" style="display:none;"></p>
+        <p style="max-width:1200px;margin:0 auto;" class="hero-note" id="nextMatchInfo" style="display:none;"></p>
 
         <!-- Seats-full / tournament-starting prompt (visible to participants) -->
         <div class="arena-notice" id="arenaNotice" style="display:none; align-items:center; gap:14px; margin:0 auto; padding:14px 18px; border:1px solid rgba(250,204,21,.45); border-radius:14px; background:rgba(250,204,21,.10); color:#fff; max-width:1250px; justify-content:space-between;">
