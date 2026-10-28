@@ -40,7 +40,9 @@
         <button class="account-modal-close" id="accountModalClose" aria-label="Close">&times;</button>
         <div class="account-modal-header">👤 My account</div>
         <div id="accountModalBody">Loading...</div>
-        <a href="/admin" style="color:blue">Dashboard</a>
+        {% if current_user.is_authenticated and (current_user.is_admin or current_user.is_super_admin) %}
+            <a href="/admin" style="color:blue">Dashboard</a>
+        {% endif %}
         <button class="account-logout" id="accountLogout">Logout</button>
     </div>
 </div>
