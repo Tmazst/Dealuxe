@@ -467,7 +467,25 @@
                     <div class="card-meta"><span class="type-badge ${escapeHtml(tournament.type)}">${escapeHtml(labelForType(tournament.type))}</span><span class="status ${escapeHtml(tournament.status)}">${escapeHtml(labelForStatus(tournament.status))}</span></div>
                     <h3>${escapeHtml(tournament.name)}</h3><p class="creator"><i class="fa-solid fa-user"></i>Hosted by ${escapeHtml(tournament.creator || 'uMshova')}</p>
                     ${resultBody}
-                    <div class="card-actions">${canJoin ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})"><i class="fa-solid fa-bolt"></i> ${pilotMode ? `Join with E${amount(tournament.entry_fee).toFixed(2)} credit` : `Join for E${amount(tournament.entry_fee).toFixed(2)}`}</button>` : `<button class="button button-primary" type="button" onclick="viewBracket(${Number(tournament.id)})"><i class="fa-solid ${isComplete ? 'fa-trophy' : 'fa-gamepad'}"></i> ${isComplete ? 'View results' : 'Go to game'}</button>`}<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})"><i class="fa-solid fa-arrow-right"></i> Details</button></div>
+                    <div class="card-actions">
+                            ${canJoin
+                                ? `<button class="button button-join" type="button" onclick="joinTournament(${Number(tournament.id)})">
+                                        <i class="fa-solid fa-bolt"></i>
+                                        ${pilotMode ? `Join with ${amount(tournament.entry_fee).toFixed(2)} credits` : `Join for E${amount(tournament.entry_fee).toFixed(2)}`}
+                                </button>`
+                                : `<button class="button button-primary" type="button" onclick="viewBracket(${Number(tournament.id)})">
+                                        <i class="fa-solid ${isComplete ? 'fa-trophy' : 'fa-gamepad'}"></i>
+                                        ${isComplete ? 'View results' : 'Go to game'}
+                                </button>`
+                            }
+
+                            ${!isComplete
+                                ? `<button class="button button-detail" type="button" onclick="viewTournament(${Number(tournament.id)})">
+                                        <i class="fa-solid fa-arrow-right"></i> Details
+                                </button>`
+                                : ''
+                            }
+                    </div>
                 </article>`;
             }).join('');
         }
