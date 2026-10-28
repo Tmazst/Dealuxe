@@ -281,11 +281,11 @@
                     <label for="tournamentName">Tournament name <span style="text-transform:none; font-weight:400;">(optional)</span></label>
                     <input type="text" id="tournamentName" placeholder="e.g. Friday Night Showdown" maxlength="80">
                 </div>
-                <label class="checkbox-field" for="autoLock">
-                    <input type="checkbox" id="autoLock">
-                    <span>Auto-lock early if the table fills before a scheduled start</span>
+                <label class="checkbox-field" for="autoLock" >
+                    <input type="checkbox" id="autoLock" checked>
+                    <span>Auto-lock early if the table fills before a scheduled start(leave it checked)</span>
                 </label>
-                <div class="form-field">
+                <!-- <div class="form-field">
                     <label>Start time</label>
                     <div class="schedule-grid" id="scheduleGrid">
                         <label class="schedule-option">
@@ -311,10 +311,10 @@
                         </label>
                     </div>
                     <small class="schedule-hint">Scheduled tournaments must start within 24 hours. If seats are not filled by the start time, it will start as soon as they are.</small>
-                </div>
+                </div> -->
                 <div class="modal-actions">
                     <button class="button button-secondary" type="button" id="createCancelBtn">Cancel</button>
-                    <button class="button button-primary" type="button" id="createSubmitBtn" style="background: linear-gradient(135deg, rgb(216, 8, 8), #b91c1c);"><i class="fa-solid fa-bolt"></i> {% if config.PILOT_MODE %}Create with E10 credit{% else %}Create &amp; pay E10.00{% endif %}</button>
+                    <button class="button button-primary" type="button" id="createSubmitBtn" style="background: linear-gradient(135deg, rgb(216, 8, 8), #b91c1c);"><i class="fa-solid fa-bolt"></i> {% if config.PILOT_MODE %}Create with 10 credits{% else %}Create &amp; pay E10.00{% endif %}</button>
                 </div>
             </div>
         </div>
