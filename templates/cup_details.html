@@ -154,7 +154,7 @@
         <section class="detail-grid" aria-label="Cup event information">
             <article class="panel">
                 <h2>Event details</h2>
-                <p class="panel-intro">The official Cupinformation.</p>
+                <p class="panel-intro">The official Cup information.</p>
                 <div class="event-list">
                     <div class="event-row">
                         <i class="fa-regular fa-calendar"></i>
@@ -196,7 +196,7 @@
 
             <aside class="panel">
                 <h2>Cup format</h2>
-                <p class="panel-intro">{% if tournament.cup_creation_mode == 'empty' and tournament.status == 'open' %}This Cup is filling through bracket winners and its predefined invited, sponsor and testing allocations. It is not open for public self-joining.{% else %}This Cup is assembled from approved participants. It is not an open public-join bracket.{% endif %}</p>
+                <p class="panel-intro">{% if tournament.cup_creation_mode == 'empty' and tournament.status == 'open' %}This Cup is filling through bracket winners and its predefined stakeholders. It is not open for public self-joining.{% else %}This Cup is assembled from approved participants. It is not an open public-join bracket.{% endif %}</p>
                 <div class="stat-grid">
                     <div class="stat"><span>Qualified players</span><strong>{{ participants|length }}/{{ tournament.max_players }}</strong></div>
                     <div class="stat"><span>Format</span><strong>Knockout</strong></div>

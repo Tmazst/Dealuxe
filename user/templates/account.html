@@ -395,7 +395,7 @@
                         <div class="amount real">E{{ '%.2f'|format(player.real_balance or 0) }}</div>
                     </div>
                     <div class="balance-tile">
-                        <div class="label">Promotional credits</div>
+                        <div class="label">Credits</div>
                         <div class="amount promotional">E{{ '%.2f'|format(player.promotional_credit_balance or 0) }}</div>
                         <small>Non-withdrawable · valid for 30 days</small>
                     </div>
@@ -442,9 +442,9 @@
             {% if hybrid_available %}
             <!-- Hybrid discovery profile -->
             <section class="card">
-                <h2>Hybrid Discovery <small>MVP pilot</small></h2>
+                <h2>Hybrid Discovery</h2>
                 <p class="page-sub" style="margin-bottom:14px;">
-                    Tell us what you offer or need. During shadow testing, suggested
+                    Tell us what you offer/sell or need to buy. During shadow testing, suggested
                     tournament pairings are visible only to administrators and do not
                     change the live bracket.
                 </p>
@@ -621,8 +621,9 @@
             <h2>🤝 Invite &amp; Earn Tournament Credit</h2>
             <p class="page-sub">
                 Referral codes are available to every user on every plan. Share your code;
-                after the new player completes their first valid tournament, you receive
-                E10 non-withdrawable promotional credit.
+                after the new player completes their first valid tournament,{% if config.PILOT_MODE %} you receive
+                10 credits for playing.
+                {% else %} you receive E10 real non-withdrawable balance to play with.{% endif %}
             </p>
             <div class="form-group">
                 <label class="form-label" for="referralCode">Your referral code</label>
@@ -639,7 +640,7 @@
                 <div>
                     <p class="pricing-kicker">Play · Promote · Connect</p>
                     <h2 class="pricing-title" id="pricingTitle">Choose how far your business can reach</h2>
-                    <p class="pricing-intro">Seekers build demand for free. Upgrade when you want smarter seller matching, wider bracket discovery or automatic alerts.</p>
+                    <p class="pricing-intro">Buyers build demand for free. Upgrade when you want smarter seller matching, wider bracket discovery or automatic alerts.</p>
                 </div>
                 <div class="current-plan-badge" aria-label="Your current pricing plan">
                     <span>Your current plan</span>
