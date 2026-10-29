@@ -33,7 +33,7 @@ try:
 except Exception:
     pass
 
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, abort, render_template, request, jsonify, session, redirect, url_for
 from flask_socketio import SocketIO
 from game.manager_redis import GameManager
 from controllers.flask_controller import FlaskGameController
@@ -420,6 +420,8 @@ def tournaments_page():
 def tournament_waiting_room_page(tournament_id):
     tournament = Tournament.query.get_or_404(tournament_id)
     if tournament.tournament_type == 'cup':
+        if tournament.status == 'cancelled':
+            abort(404)
         return redirect(url_for('cup_details_page', tournament_id=tournament.id))
     user_id = session.get('user_id')
     user = User.query.get(user_id) if user_id else None
@@ -437,6 +439,8 @@ def tournament_waiting_room_page(tournament_id):
 @app.route("/tournaments/<int:tournament_id>/bracket")
 def tournament_bracket_page(tournament_id):
     tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type == 'cup' and tournament.status == 'cancelled':
+        abort(404)
     
     if not tournament:
         return jsonify({"Status":f"Tournament with not found"})
@@ -554,6 +558,8 @@ def cup_details_page(tournament_id):
         return redirect(url_for(
             'tournament_waiting_room_page', tournament_id=tournament.id
         ))
+    if tournament.status == 'cancelled':
+        abort(404)
     participants = TournamentParticipant.query.filter_by(
         tournament_id=tournament.id
     ).order_by(TournamentParticipant.registered_at.asc()).all()

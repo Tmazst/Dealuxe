@@ -26,6 +26,7 @@ from admin.service import (
     read_backend_logs,
     clear_backend_logs,
     create_cup_tournament,
+    revoke_cup_tournament,
     get_cup_placements,
     assign_cup_positions_5_to_8,
     assign_cup_positions_9_to_10,
@@ -290,6 +291,19 @@ def create_cup_tournament_route():
         ),
         'cup': cup,
     }), 201
+
+
+@admin_bp.route('/cup-tournaments/<int:tournament_id>/revoke', methods=['POST'])
+@admin_required
+def revoke_cup_tournament_route(tournament_id):
+    try:
+        return jsonify(revoke_cup_tournament(tournament_id, session['user_id']))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Cup revocation failed')
+        return jsonify({'error': 'Cup revocation failed safely'}), 500
 
 
 @admin_bp.route('/cup-tournaments/<int:tournament_id>/seats', methods=['POST'])

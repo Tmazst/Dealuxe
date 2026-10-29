@@ -1097,7 +1097,12 @@ def init_tournament_events(socketio, app=None):
         except (TypeError, ValueError):
             limit = 50
 
-        query = Tournament.query.order_by(Tournament.created_at.desc())
+        query = Tournament.query.filter(
+            ~(
+                (Tournament.tournament_type == 'cup')
+                & (Tournament.status == 'cancelled')
+            )
+        ).order_by(Tournament.created_at.desc())
         if filter_name != 'all':
             query = query.filter_by(status=filter_name)
         tournaments = query.limit(limit).all()
@@ -1313,7 +1318,12 @@ def init_tournament_events(socketio, app=None):
 
 @tournament_bp.route('', methods=['GET'])
 def list_tournaments():
-    tournaments = Tournament.query.order_by(Tournament.created_at.desc()).all()
+    tournaments = Tournament.query.filter(
+        ~(
+            (Tournament.tournament_type == 'cup')
+            & (Tournament.status == 'cancelled')
+        )
+    ).order_by(Tournament.created_at.desc()).all()
     return jsonify({'tournaments': [_serialize_tournament(t) for t in tournaments]})
 
 
@@ -2147,6 +2157,8 @@ def complete_match(tournament_id, match_id):
 @tournament_bp.route('/<int:tournament_id>', methods=['GET'])
 def get_tournament(tournament_id):
     tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type == 'cup' and tournament.status == 'cancelled':
+        abort(404)
     participants = TournamentParticipant.query.filter_by(tournament_id=tournament.id).all()
     return jsonify({
         'tournament': _serialize_tournament_detail(tournament),

@@ -195,6 +195,55 @@ def cancel_tournament(tournament_id, admin_user_id=None):
     return {'tournament_id': tournament.id, 'status': tournament.status}
 
 
+def revoke_cup_tournament(tournament_id, admin_user_id):
+    """Revoke a Cup while retaining its records referenced by foreign keys."""
+    tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type != 'cup':
+        raise ValueError('Only Cup tournaments can be revoked here')
+    if tournament.status == 'completed':
+        raise ValueError('A completed Cup cannot be revoked')
+    if tournament.status == 'cancelled':
+        raise ValueError('This Cup has already been revoked')
+
+    now = datetime.utcnow()
+    tournament.status = 'cancelled'
+    tournament.completed_at = tournament.completed_at or now
+    for participant in TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id
+    ).all():
+        participant.status = 'eliminated'
+    for match in TournamentMatch.query.filter_by(
+        tournament_id=tournament.id
+    ).all():
+        if match.status != 'completed':
+            match.status = 'cancelled'
+
+    # Seats assigned directly to this allocated Cup are revoked with it. The
+    # qualification history and all FK references remain available for audit.
+    qualifications = CupQualification.query.filter_by(
+        target_cup_tournament_id=tournament.id
+    ).filter(CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES)).all()
+    for qualification in qualifications:
+        qualification.status = 'revoked'
+        qualification.seat_key = None
+        qualification.status_updated_at = now
+        qualification.status_updated_by = admin_user_id
+        qualification.notes = (qualification.notes or '') + '\nCup revoked by administrator.'
+
+    log_admin_action(
+        admin_user_id, 'cup_tournament.revoke',
+        entity_type='tournament', entity_id=tournament.id,
+        summary=f"Revoked Cup '{tournament.tournament_name}'",
+        details=json.dumps({'revoked_seats': len(qualifications)}),
+    )
+    db.session.commit()
+    return {
+        'tournament_id': tournament.id,
+        'status': tournament.status,
+        'revoked_seats': len(qualifications),
+    }
+
+
 def lock_tournament(tournament_id, admin_user_id=None):
     tournament = Tournament.query.get_or_404(tournament_id)
     tournament.status = 'locked'
@@ -725,7 +774,10 @@ def create_cup_tournament(
             'Cup capacity must be one of: '
             + ', '.join(str(value) for value in allowed_capacities)
         )
-    existing = Tournament.query.filter_by(tournament_type='cup').first()
+    existing = Tournament.query.filter(
+        Tournament.tournament_type == 'cup',
+        Tournament.status.notin_(('cancelled', 'completed')),
+    ).first()
     if existing is not None:
         raise ValueError('A Cup tournament has already been created for this pilot')
 

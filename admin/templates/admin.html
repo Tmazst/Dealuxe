@@ -720,7 +720,7 @@
                     <td>
                         <button data-action="lockTournament" data-id="${tournament.id}">Lock</button>
                         <button data-action="startTournament" data-id="${tournament.id}">Start</button>
-                        <button data-action="cancelTournament" data-id="${tournament.id}">Cancel</button>
+                        ${tournament.tournament_type === 'cup' && tournament.status !== 'cancelled' && tournament.status !== 'completed' ? `<button data-action="revokeCup" data-id="${tournament.id}">Revoke Cup</button>` : ''}
                     </td>
                 `;
                 tournamentsTableBody.appendChild(row);
@@ -1540,6 +1540,12 @@
                 }
                 if (action === 'cancelTournament') {
                     await sendTournamentAction(userId, 'cancel');
+                }
+                if (action === 'revokeCup') {
+                    if (!confirm('Revoke this Cup? It will be cancelled, active allocated seats will be revoked, and its history will be retained.')) return;
+                    await sendJson(`/api/admin/cup-tournaments/${userId}/revoke`);
+                    await fetchTournaments();
+                    await fetchCupRoster();
                 }
                 if (action === 'awardCredits') {
                     const amount = prompt('Amount to award (E):', '10');
