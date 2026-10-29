@@ -69,6 +69,10 @@ def _serialize_user(user):
         'last_login': user.last_login.isoformat() if user.last_login else None,
         'real_balance': player.real_balance if player else None,
         'promotional_credit_balance': player.promotional_credit_balance if player else None,
+        'promotional_credit_expires_at': (
+            player.promotional_credit_expires_at.isoformat()
+            if player and player.promotional_credit_expires_at else None
+        ),
         'fake_balance': player.fake_balance if player else None,
     }
 
@@ -132,6 +136,18 @@ def update_user(user_id, data, admin_user_id=None):
             except (TypeError, ValueError) as exc:
                 raise ValueError(f'Invalid value for {field}') from exc
             changes.append(f"{target_field}={data[field]}")
+
+    if (
+        player
+        and any(field in data for field in (
+            'promotional_credit_balance', 'fake_balance'
+        ))
+        and float(player.promotional_credit_balance or 0.0) > 0
+    ):
+        from config import GameConfig
+        player.promotional_credit_expires_at = (
+            datetime.utcnow() + GameConfig.get_promotional_credit_expiry()
+        )
 
     if admin_user_id:
         log_admin_action(
@@ -552,6 +568,11 @@ def adjust_wallet(admin_user_id, user_id, balance_type, delta, reason):
         player.real_balance = new_balance
     else:
         player.promotional_credit_balance = new_balance
+        if delta > 0 and new_balance > 0:
+            from config import GameConfig
+            player.promotional_credit_expires_at = (
+                datetime.utcnow() + GameConfig.get_promotional_credit_expiry()
+            )
 
     db.session.add(WalletAdjustment(
         user_id=user_id,
@@ -578,6 +599,35 @@ def award_credits(admin_user_id, user_id, amount, balance_type='promotional', re
         admin_user_id, user_id, balance_type, float(amount),
         reason or 'Promotional credits awarded',
     )
+
+
+def renew_promotional_credits(admin_user_id, user_id, reason):
+    """Extend a positive promotional balance by its configured lifetime."""
+    player = get_player_by_user_id(user_id)
+    if player is None:
+        raise ValueError('Player profile not found')
+    balance = round(float(player.promotional_credit_balance or 0.0), 2)
+    if balance <= 0:
+        raise ValueError('There is no promotional credit balance to renew')
+    reason = str(reason or '').strip()
+    if not reason:
+        raise ValueError('A reason is required to renew promotional credits')
+
+    from config import GameConfig
+    expires_at = datetime.utcnow() + GameConfig.get_promotional_credit_expiry()
+    player.promotional_credit_expires_at = expires_at
+    log_admin_action(
+        admin_user_id, 'wallet.promotional_credits.renew',
+        entity_type='wallet', entity_id=user_id,
+        summary=f'Renewed promotional credits for user #{user_id}',
+        details=json.dumps({'balance': balance, 'reason': reason}),
+    )
+    db.session.commit()
+    return {
+        'user_id': user_id,
+        'balance': balance,
+        'expires_at': expires_at.isoformat(),
+    }
 
 
 # -----------------------------

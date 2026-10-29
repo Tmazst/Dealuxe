@@ -6,6 +6,7 @@ from security.observability import read_security_audit
 from admin.service import (
     adjust_wallet,
     award_credits,
+    renew_promotional_credits,
     cancel_tournament,
     complete_tournament,
     create_dispute,
@@ -133,6 +134,19 @@ def award_user_credits(user_id):
     except (ValueError, TypeError) as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'message': 'Credits awarded', 'wallet': result})
+
+
+@admin_bp.route('/users/<int:user_id>/credits/renew', methods=['POST'])
+@admin_required
+def renew_user_promotional_credits(user_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        result = renew_promotional_credits(
+            session['user_id'], user_id, data.get('reason')
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Promotional credits renewed', 'wallet': result})
 
 
 @admin_bp.route('/wallets/<int:user_id>/adjust', methods=['POST'])
