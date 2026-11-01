@@ -705,9 +705,10 @@ def _serialize_cup_qualification(qualification, seat_number=None):
 def list_cup_qualifications(event_key=None, status='', capacity=None):
     event_key = (event_key or current_app.config.get('CUP_EVENT_KEY') or '').strip()
     target_cup = None
-    for candidate in Tournament.query.filter_by(tournament_type='cup').order_by(
-        Tournament.id.desc()
-    ).all():
+    for candidate in Tournament.query.filter(
+        Tournament.tournament_type == 'cup',
+        Tournament.status.notin_(('cancelled', 'completed')),
+    ).order_by(Tournament.id.desc()).all():
         try:
             candidate_event = json.loads(candidate.notes or '{}').get('event_key')
         except (TypeError, ValueError):

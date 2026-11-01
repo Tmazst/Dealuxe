@@ -130,7 +130,7 @@
             </label>
             <button id="reloadCupRoster">Reload</button>
             <a href="#cupEventDetailsPanel">Cup event details</a>
-            <button id="createCupTournament" data-action="createCupTournament" disabled>Create Cup</button>
+            <button id="createCupTournament" data-action="createCupTournament" disabled>Create and start Cup</button>
         </div>
         <div class="controls" style="margin-top:12px;">
             <label>
@@ -140,10 +140,12 @@
                     <option value="empty">Create empty Cup with reserved seats</option>
                 </select>
             </label>
+            <button type="button" id="setupEmptyTestCup">Set up empty test Cup</button>
             <label>Admin-invite seats <input id="cupAdminInviteSeats" type="number" min="0" value="0" style="width:85px;"></label>
             <label>Sponsor seats <input id="cupSponsorSeats" type="number" min="0" value="0" style="width:85px;"></label>
             <label>Testing seats <input id="cupTestingSeats" type="number" min="0" value="0" style="width:85px;"></label>
         </div>
+        <p class="status">For a test session, choose a capacity, select “Set up empty test Cup”, then create it. The preset assigns every seat to the Testing allocation so you can add test players afterward.</p>
         <div class="summary-grid" id="cupSummaryGrid"></div>
         <p class="status" id="cupRosterStatus" role="status" aria-live="polite"></p>
         <table id="cupRosterTable" aria-label="uMshova Cup qualification roster">
@@ -619,7 +621,10 @@
             const data = await response.json();
             const tournaments = data.tournaments || [];
             renderTournaments(tournaments);
-            const cup = tournaments.find(tournament => tournament.tournament_type === 'cup');
+            const cup = tournaments.find(tournament =>
+                tournament.tournament_type === 'cup' &&
+                !['cancelled', 'completed'].includes(tournament.status)
+            );
             if (cup && !document.getElementById('cupEventTournamentId').value) {
                 populateCupEventForm(cup);
                 document.getElementById('cupPlacementTournamentId').value = cup.id;
@@ -761,19 +766,28 @@
                     `Sponsors ${filled.sponsor || 0}/${allocations.sponsor || 0}, ` +
                     `Testing ${filled.testing || 0}/${allocations.testing || 0}.`;
             }
+            const creationMode = document.getElementById('cupCreationMode').value;
             let readinessMessage;
-            if (!data.roster_full) {
+            if (data.target_cup) {
+                readinessMessage = `Cup #${data.target_cup.id} (${data.target_cup.status}) is already active. Revoke it before creating another Cup.`;
+            } else if (!data.cup_enabled) {
+                readinessMessage = 'Cup creation is disabled by CUP_ENABLED on the server.';
+            } else if (creationMode === 'empty') {
+                const testingSeats = Number(document.getElementById('cupTestingSeats').value || 0);
+                readinessMessage = `Empty Cup setup selected. ${testingSeats}/${data.capacity} seats allocated for testing; roster check-in is not required.`;
+            } else if (!data.roster_full) {
                 readinessMessage = `${data.remaining_seats} active seat(s) remain before the ${data.capacity}-player lock.`;
             } else if (data.check_in_required && data.unchecked_seats) {
                 readinessMessage = `Launch blocked: ${data.unchecked_seats} active player(s) still need to check in.`;
-            } else if (!data.cup_enabled) {
-                readinessMessage = 'Roster and check-in are ready. Cup creation remains controlled by CUP_ENABLED.';
             } else {
                 readinessMessage = 'Preflight passed: all required seats and check-ins are ready.';
             }
             document.getElementById('cupRosterStatus').textContent = readinessMessage;
-            const creationMode = document.getElementById('cupCreationMode').value;
-            document.getElementById('createCupTournament').disabled = !data.cup_enabled ||
+            const createButton = document.getElementById('createCupTournament');
+            createButton.textContent = creationMode === 'empty'
+                ? 'Create empty Cup'
+                : 'Create and start Cup';
+            createButton.disabled = !data.cup_enabled ||
                 Boolean(data.target_cup) ||
                 (creationMode === 'roster' && !data.ready_to_start);
             cupRosterTableBody.innerHTML = '';
@@ -1750,6 +1764,14 @@
         document.getElementById('cupStatusFilter').addEventListener('change', fetchCupRoster);
         document.getElementById('cupCapacity').addEventListener('change', fetchCupRoster);
         document.getElementById('cupCreationMode').addEventListener('change', fetchCupRoster);
+        document.getElementById('setupEmptyTestCup').addEventListener('click', () => {
+            const capacity = Number(document.getElementById('cupCapacity').value);
+            document.getElementById('cupCreationMode').value = 'empty';
+            document.getElementById('cupAdminInviteSeats').value = 0;
+            document.getElementById('cupSponsorSeats').value = 0;
+            document.getElementById('cupTestingSeats').value = capacity;
+            fetchCupRoster();
+        });
         document.getElementById('reloadCupRoster').addEventListener('click', fetchCupRoster);
         document.getElementById('reloadHybridProfiles').addEventListener('click', fetchHybridProfiles);
         document.getElementById('reloadHybridCaptions').addEventListener('click', fetchHybridCaptions);
