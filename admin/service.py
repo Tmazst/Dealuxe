@@ -673,9 +673,24 @@ def _set_cup_allocations(tournament, capacity, values):
             raise ValueError('Cup seat allocations cannot be negative')
         reserved[source] = count
     reserved_total = sum(reserved.values())
-    if reserved_total > capacity:
-        raise ValueError('Reserved Cup seats cannot exceed Cup capacity')
-    tournament.cup_qualifier_seats = capacity - reserved_total
+    if 'bracket_winner' in values:
+        try:
+            bracket_winners = int(values.get('bracket_winner') or 0)
+        except (TypeError, ValueError):
+            raise ValueError('Bracket-winner seats must be a whole number')
+        if bracket_winners < 0:
+            raise ValueError('Bracket-winner seats cannot be negative')
+        if bracket_winners + reserved_total != capacity:
+            raise ValueError(
+                f'Bracket-winner and manual allocations must total {capacity} seats'
+            )
+    else:
+        if reserved_total > capacity:
+            raise ValueError('Reserved Cup seats cannot exceed Cup capacity')
+        # Preserve the old API behavior for callers that only submit manual
+        # allocations: ordinary tournament winners receive all remaining seats.
+        bracket_winners = capacity - reserved_total
+    tournament.cup_qualifier_seats = bracket_winners
     tournament.cup_admin_invite_seats = reserved['admin_invite']
     tournament.cup_sponsor_seats = reserved['sponsor']
     tournament.cup_testing_seats = reserved['testing']
@@ -765,6 +780,9 @@ def list_cup_qualifications(event_key=None, status='', capacity=None):
         'event_key': event_key,
         'season': current_app.config.get('CUP_SEASON'),
         'cup_enabled': bool(current_app.config.get('CUP_ENABLED', False)),
+        'qualification_enabled': bool(
+            current_app.config.get('CUP_QUALIFICATION_ENABLED', False)
+        ),
         'capacity': capacity,
         'allowed_capacities': list(allowed_capacities),
         'active_seats': len(active_records),
