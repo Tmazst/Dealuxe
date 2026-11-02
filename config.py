@@ -27,6 +27,15 @@ def build_pilot_economy_config(environ=None):
     paid_entry = _env_bool(environ, 'PAID_TOURNAMENT_ENTRY_ENABLED', default=False)
     cash_prizes = _env_bool(environ, 'CASH_PRIZES_ENABLED', default=False)
     pilot_credits = _env_bool(environ, 'PILOT_CREDITS_ENABLED', default=pilot_mode)
+    pilot_referral_credits = _env_bool(
+        environ, 'PILOT_REFERRAL_CREDITS_ENABLED', default=pilot_credits
+    )
+    try:
+        pilot_referral_credit_amount = float(
+            environ.get('PILOT_REFERRAL_CREDIT_AMOUNT', '10')
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError('PILOT_REFERRAL_CREDIT_AMOUNT must be a positive number') from exc
     cup_enabled = _env_bool(environ, 'CUP_ENABLED', default=False)
     cup_qualification = _env_bool(
         environ, 'CUP_QUALIFICATION_ENABLED', default=pilot_mode
@@ -58,6 +67,8 @@ def build_pilot_economy_config(environ=None):
         raise RuntimeError('Cash prizes cannot be enabled in PILOT_MODE')
     if pilot_mode and not pilot_credits:
         raise RuntimeError('PILOT_CREDITS_ENABLED is required in PILOT_MODE')
+    if pilot_referral_credit_amount <= 0:
+        raise RuntimeError('PILOT_REFERRAL_CREDIT_AMOUNT must be a positive number')
     if cup_cash_payouts:
         raise RuntimeError('CUP_CASH_PAYOUTS_ENABLED is not available in Version 3')
 
@@ -66,6 +77,8 @@ def build_pilot_economy_config(environ=None):
         'PAID_TOURNAMENT_ENTRY_ENABLED': paid_entry,
         'CASH_PRIZES_ENABLED': cash_prizes,
         'PILOT_CREDITS_ENABLED': pilot_credits,
+        'PILOT_REFERRAL_CREDITS_ENABLED': pilot_referral_credits,
+        'PILOT_REFERRAL_CREDIT_AMOUNT': pilot_referral_credit_amount,
         'PILOT_TOURNAMENT_ENTRY_COST': 10.0,
         'CUP_ENABLED': cup_enabled,
         'CUP_QUALIFICATION_ENABLED': cup_qualification,

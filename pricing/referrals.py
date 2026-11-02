@@ -78,6 +78,61 @@ def attribute_referral(code_value, referred_user_id, *, commit=True):
     return record
 
 
+def reward_referral_for_verified_registration(
+    referred_user_id, *, amount=REFERRAL_REWARD_AMOUNT
+):
+    """Award a pilot referral once the invited account is verified.
+
+    The referral row is claimed before the wallet is changed, and the ledger
+    entry has a unique external reference.  Either guard prevents duplicate
+    credits if verification is retried or two requests overlap.
+    """
+    referral = Referral.query.filter_by(
+        referred_user_id=int(referred_user_id)
+    ).first()
+    if referral is None or referral.status == 'rewarded':
+        return False
+
+    referrer = db.session.get(User, referral.referrer_id)
+    player = Player.query.filter_by(user_id=referral.referrer_id).first()
+    if not (referrer and referrer.is_active and player):
+        return False
+
+    claimed = Referral.query.filter_by(
+        id=referral.id, status='pending'
+    ).update({'status': 'rewarding'}, synchronize_session=False)
+    if claimed != 1:
+        return False
+    db.session.flush()
+    referral.status = 'rewarding'
+
+    reward_amount = float(amount)
+    balance_before = float(player.promotional_credit_balance or 0.0)
+    player.grant_promotional_credits(reward_amount, commit=False)
+    transaction = Transaction(
+        player_id=player.id,
+        external_ref_id=f'pilot-referral:{referral.id}',
+        transaction_type=TX_REFERRAL_REWARD,
+        amount=reward_amount,
+        balance_type='promotional',
+        balance_before=balance_before,
+        balance_after=player.promotional_credit_balance,
+        description='Pilot referral reward after verified registration',
+        status='completed',
+    )
+    db.session.add(transaction)
+    db.session.flush()
+
+    now = datetime.utcnow()
+    referral.reward_amount = reward_amount
+    referral.status = 'rewarded'
+    referral.qualified_at = now
+    referral.rewarded_at = now
+    referral.reward_transaction_id = transaction.id
+    referrer.verified_referral_count = int(referrer.verified_referral_count or 0) + 1
+    return True
+
+
 def reward_referral_for_completed_tournament(referred_user_id, tournament):
     """Reward once after the referred account's first valid ordinary event."""
     referral = Referral.query.filter_by(

@@ -1052,15 +1052,15 @@ def _finalize_tournament(tournament):
             capacity=current_app.config.get('CUP_CAPACITY', 64),
         )
 
-    # Universal referral rewards are commercial-plan independent and become
-    # eligible only after the referred account completes a valid ordinary
-    # tournament. The service is idempotent, so recovery/replay cannot double
-    # credit the referrer.
-    from pricing.referrals import reward_referral_for_completed_tournament
-    for participant in TournamentParticipant.query.filter_by(
-        tournament_id=tournament.id
-    ).all():
-        reward_referral_for_completed_tournament(participant.user_id, tournament)
+    # Legacy (non-pilot) referrals qualify after a first completed ordinary
+    # tournament. Pilot referrals are instead settled at verified registration,
+    # so this path must not later issue a second reward.
+    if not current_app.config.get('PILOT_MODE'):
+        from pricing.referrals import reward_referral_for_completed_tournament
+        for participant in TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id
+        ).all():
+            reward_referral_for_completed_tournament(participant.user_id, tournament)
 
     queue_tournament_results(tournament)
 

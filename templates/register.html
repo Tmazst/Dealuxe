@@ -316,7 +316,7 @@
                 </label>
                 {{ form.referral_code(class="form-control", placeholder="Enter the code shared with you") }}
                 <small style="display:block;margin-top:6px;color:rgba(255,255,255,.65);">
-                    Your referrer receives E10 promotional credit after your first valid tournament.
+                    {% if config.PILOT_MODE %}Your referrer receives 10 credits after your account is verified.{% else %}Your referrer receives E10 promotional credit after your first valid tournament.{% endif %}
                 </small>
                 {% if form.referral_code.errors %}
                     {% for error in form.referral_code.errors %}

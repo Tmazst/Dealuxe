@@ -24,6 +24,7 @@ from pricing.referrals import (
     find_active_referral_code,
     get_or_create_referral_code,
     normalize_referral_code,
+    reward_referral_for_verified_registration,
 )
 from security import (
     audit_security_event,
@@ -124,6 +125,14 @@ def _complete_registration(
     get_or_create_referral_code(user.id, commit=False)
     if referral_code:
         attribute_referral(referral_code, user.id, commit=False)
+        if (
+            current_app.config.get('PILOT_MODE')
+            and current_app.config.get('PILOT_REFERRAL_CREDITS_ENABLED')
+        ):
+            reward_referral_for_verified_registration(
+                user.id,
+                amount=current_app.config['PILOT_REFERRAL_CREDIT_AMOUNT'],
+            )
     if commit:
         db.session.commit()
     return user, player
@@ -261,6 +270,10 @@ def register():
     
     # Handle form submission
     form = RegistrationForm()
+    if request.method == 'GET':
+        # A shared referral link is only a convenience prefill; the normal
+        # server-side code validation and self-referral protection still apply.
+        form.referral_code.data = normalize_referral_code(request.args.get('ref'))
     
     if form.validate_on_submit():
         username = form.username.data
@@ -664,6 +677,20 @@ def get_current_user():
             'last_login': user.last_login.isoformat() if user.last_login else None
         },
         'player': player.to_dict() if player else None
+    })
+
+
+@auth_bp.route('/api/auth/referral-link', methods=['GET'])
+@login_required
+def get_referral_link():
+    """Return the authenticated player's reusable, shareable invitation link."""
+    code = get_or_create_referral_code(session['user_id'])
+    public_base_url = str(current_app.config.get('PUBLIC_APP_URL') or '').rstrip('/')
+    register_url = f'{public_base_url}/register' if public_base_url else url_for('auth.register', _external=True)
+    return jsonify({
+        'code': code.code,
+        'link': f'{register_url}?ref={code.code}',
+        'pilot_reward_credits': current_app.config.get('PILOT_REFERRAL_CREDIT_AMOUNT', 10.0),
     })
 
 

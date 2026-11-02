@@ -115,6 +115,10 @@
         .tournament-card h3 { font-size: 1.3rem; margin: 0 0 8px; color: white; }.creator { color: var(--muted); font-size: .83rem; margin: 0; }.creator i { color: var(--accent-1); margin-right: 6px; }.card-prize { display: flex; align-items: baseline; justify-content: space-between; margin: 23px 0 16px; }.card-prize span { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }.card-prize strong { font-size: 1.75rem; color: var(--gold); letter-spacing: -.04em; }
         .slots { display: flex; justify-content: space-between; color: var(--muted); font-size: .83rem; margin-bottom: 8px; }.slots strong { color: white; }.progress { height: 7px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,.09); }.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-1), var(--success)); border-radius: inherit; }.card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }.card-actions .button { min-height: 42px; padding-inline: 10px; font-size: .77rem; }.button-join { background: var(--success); color: #08251d; }.button-detail { background: rgba(255,255,255,.045); color: white; border-color: var(--line); }
         .empty-state { border: 1px dashed rgba(255,255,255,.2); border-radius: 15px; padding: 68px 20px; text-align: center; color: var(--muted); grid-column: 1 / -1; }.empty-state i { color: var(--accent-1); font-size: 2.5rem; margin-bottom: 14px; }.empty-state h3 { color: white; margin: 0 0 7px; }
+        .referral-share-button { position: fixed; right: 22px; bottom: 24px; z-index: 45; width: 54px; height: 54px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,228,107,.6); border-radius: 50%; background: linear-gradient(135deg, var(--gold), #f59e0b); color: #201606; box-shadow: 0 14px 32px rgba(0,0,0,.34); cursor: pointer; font-size: 1.18rem; transition: transform .2s, box-shadow .2s; }
+        .referral-share-button:hover, .referral-share-button:focus-visible { transform: translateY(-3px) scale(1.04); box-shadow: 0 19px 38px rgba(0,0,0,.45); outline: none; }
+        .referral-share-button::before { content: 'Invite players'; position: absolute; right: 64px; width: max-content; padding: 8px 10px; border-radius: 8px; background: #141a2b; color: white; font-size: .74rem; font-weight: 800; opacity: 0; pointer-events: none; transform: translateX(5px); transition: .18s; box-shadow: 0 8px 22px rgba(0,0,0,.28); }
+        .referral-share-button:hover::before, .referral-share-button:focus-visible::before { opacity: 1; transform: translateX(0); }
         /* Results podium on completed tournament cards (1st / 2nd / 3rd + prizes) */
         .card-podium { display: flex; flex-direction: column; gap: 6px; margin: 20px 0 16px; }
         .podium-row { display: flex; align-items: center; gap: 9px; font-size: .82rem; padding: 8px 11px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255,255,255,.045); }
@@ -127,7 +131,7 @@
         .completed-note { text-align: center; justify-content: center; }
         .how-to-play { margin-top: 92px; padding: 34px; border: 1px solid var(--line); border-radius: 20px; background: linear-gradient(115deg, rgba(139,92,246,.16), rgba(15,23,36,.76) 58%); }.how-grid { display: grid; grid-template-columns: .9fr 1.4fr; gap: 44px; align-items: center; }.how-copy h2 { font-size: clamp(1.8rem, 3.5vw, 3rem); letter-spacing: -.045em; margin: 10px 0; }.how-copy p { color: var(--muted); line-height: 1.6; }.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }.step { border: 1px solid var(--line); padding: 17px; background: rgba(8,5,20,.32); border-radius: 12px; }.step i { color: var(--gold); font-size: 1.35rem; margin-bottom: 16px; }.step span { display: block; color: var(--success); font-size: .69rem; font-weight: 900; letter-spacing: .1em; margin-bottom: 6px; }.step strong { display: block; font-size: .94rem; }.step p { font-size: .78rem; margin: 7px 0 0; }
         @media (max-width: 820px) { .nav { padding-inline: 12px; }.nav-links { gap: 4px 12px; }.nav-links a { gap: 5px; }.nav-links a .nav-label { display: none; }.nav-links a i { font-size: 1.05rem; }.nav-links .nav-play { padding: 8px 11px; }.account-widget { gap: 6px; }.nav-links .account-widget a.account-link { padding: 7px 10px; font-size: .74rem; }.hero, .how-grid { grid-template-columns: 1fr; }.hero { padding-top: 48px; }.prize-strip { grid-template-columns: 1fr; }.prize-strip article { border-right: 0; border-bottom: 1px solid var(--line); }.prize-strip article:last-child { border-bottom: 0; }.how-to-play { padding: 24px; }.steps { grid-template-columns: 1fr; }.section-head { align-items: start; flex-direction: column; }.section-head a { display: none; } }
-        @media (max-width: 480px) { .arena { padding-inline: 15px; }.nav { min-height: 52px; }.hero h1 { font-size: 3rem; }.prize-board { padding: 19px; }.prize-total strong { font-size: 3rem; }.filters { width: 100%; }.filter { flex: 1; }.card-actions { grid-template-columns: 1fr; }.cup-event-grid { grid-template-columns: 1fr; }.cup-card { padding: 21px; } }
+        @media (max-width: 480px) { .arena { padding-inline: 15px; }.nav { min-height: 52px; }.hero h1 { font-size: 3rem; }.prize-board { padding: 19px; }.prize-total strong { font-size: 3rem; }.filters { width: 100%; }.filter { flex: 1; }.card-actions { grid-template-columns: 1fr; }.cup-event-grid { grid-template-columns: 1fr; }.cup-card { padding: 21px; }.referral-share-button { right: 16px; bottom: 16px; }.referral-share-button::before { display: none; } }
     .three_cards{
         width:100%;
         max-width:1250px;
@@ -318,6 +322,9 @@
                 </div>
             </div>
         </div>
+        {% if config.PILOT_MODE %}<button class="referral-share-button" id="referralShareButton" type="button" aria-label="Invite players and earn referral credits" title="Invite players">
+            <i class="fa-solid fa-share-nodes" aria-hidden="true"></i>
+        </button>{% endif %}
     </main>
 
     <script src="/static/js/socket.io.min.js"></script>
@@ -328,6 +335,42 @@
         let tournamentsData = [];
         const grid = document.getElementById('tournaments-grid');
         const cupsGrid = document.getElementById('cups-grid');
+
+        async function shareReferralLink() {
+            const shareButton = document.getElementById('referralShareButton');
+            if (shareButton) shareButton.disabled = true;
+            try {
+                const response = await fetch('/api/auth/referral-link', {
+                    headers: { 'Accept': 'application/json' },
+                    cache: 'no-store',
+                });
+                if (response.status === 401) {
+                    window.location.href = '/login?next=' + encodeURIComponent('/tournaments');
+                    return;
+                }
+                if (!response.ok) throw new Error('Unable to prepare your invitation link.');
+                const referral = await response.json();
+                const credits = Number(referral.pilot_reward_credits || 10);
+                const message = `Join me on uMshova Dealuxe. Use my invitation link to get started — I earn ${credits} credits when your account is verified.`;
+                if (navigator.share) {
+                    await navigator.share({ title: 'Join uMshova Dealuxe', text: message, url: referral.link });
+                    return;
+                }
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(referral.link);
+                    alert('Your invitation link has been copied. Share it with a new player!');
+                    return;
+                }
+                window.prompt('Copy and share your invitation link:', referral.link);
+            } catch (error) {
+                if (error && error.name === 'AbortError') return;
+                alert(error.message || 'Unable to prepare your invitation link. Please try again.');
+            } finally {
+                if (shareButton) shareButton.disabled = false;
+            }
+        }
+        const referralShareButton = document.getElementById('referralShareButton');
+        if (referralShareButton) referralShareButton.addEventListener('click', shareReferralLink);
 
         socket.on('connect', fetchTournaments);
         socket.on('connect_error', (error) => {
