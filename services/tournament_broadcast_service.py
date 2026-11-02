@@ -50,14 +50,15 @@ def queue_tournament_created(tournament, creator_username):
     """Queue a public announcement only after tournament creation commits."""
     pilot = bool(current_app.config.get('PILOT_MODE'))
     lines = [
-        f'🏆 {tournament.tournament_name} Open',
+        f'🏆 New Tournament Created: {tournament.tournament_name}',
         '',
-        f'{tournament.max_players}-player bracket hosted by {creator_username}.',
+        f' Status: Open',
+        f'{tournament.max_players}-player bracket hosted by: {creator_username}.',
         f'Entry: {_amount(tournament.entry_fee, pilot)}',
     ]
     public_url = str(current_app.config.get('PUBLIC_APP_URL') or '').strip()
     if public_url:
-        lines.append(f'Join now: {public_url}/tournaments/{tournament.id}/bracket')
+        lines.append(f'Play now: {public_url}/#tournaments')
     if pilot and current_app.config.get('CUP_QUALIFICATION_ENABLED'):
         lines.extend(['', 'Winner qualifies to contest in the upcoming uMshova Cup Tournament.'])
     return _queue(tournament, 'created', '\n'.join(lines))
@@ -115,18 +116,27 @@ def process_tournament_broadcasts(limit=10):
     if not _enabled():
         return 0
     now = datetime.utcnow()
-    rows = TournamentBroadcast.query.filter(
-        TournamentBroadcast.status.in_(('pending', 'retry')),
-        (TournamentBroadcast.next_attempt_at.is_(None)) | (TournamentBroadcast.next_attempt_at <= now),
-    ).order_by(TournamentBroadcast.created_at).limit(limit).all()
     sent = 0
-    for row in rows:
+    for _ in range(limit):
+        # Claim one message before contacting OpenWA. The lease protects against
+        # duplicate sends when two application workers overlap during deploys or
+        # restarts; an expired lease is recoverable after a worker crash.
+        row = TournamentBroadcast.query.filter(
+            TournamentBroadcast.status.in_(('pending', 'retry', 'sending')),
+            (TournamentBroadcast.next_attempt_at.is_(None)) | (TournamentBroadcast.next_attempt_at <= now),
+        ).order_by(TournamentBroadcast.created_at).with_for_update(skip_locked=True).first()
+        if row is None:
+            break
+        row.status = 'sending'
+        row.next_attempt_at = now + timedelta(minutes=5)
         row.attempt_count += 1
+        db.session.commit()
         try:
             row.openwa_message_id = _deliver(row)
             row.status = 'sent'
             row.sent_at = datetime.utcnow()
             row.last_error = None
+            row.next_attempt_at = None
             sent += 1
         except (HTTPError, URLError, ValueError, OSError, RuntimeError) as exc:
             row.last_error = type(exc).__name__
