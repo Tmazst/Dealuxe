@@ -35,6 +35,24 @@ from security import (
 
 auth_bp = Blueprint('auth', __name__)
 
+PASSWORD_REQUIREMENTS_MESSAGE = (
+    'Password must be at least 8 characters and include a lowercase letter, '
+    'an uppercase letter, and a special character.'
+)
+
+
+def _password_requirements_error(password):
+    """Return a safe validation message when a new password is too weak."""
+    value = str(password or '')
+    if (
+        len(value) < 8
+        or not any(character.islower() for character in value)
+        or not any(character.isupper() for character in value)
+        or not any(not character.isalnum() and not character.isspace() for character in value)
+    ):
+        return PASSWORD_REQUIREMENTS_MESSAGE
+    return None
+
 
 def _record_registration_setup_failure(exc, channel=None):
     """Record a searchable, non-sensitive cause for the support reference."""
@@ -115,8 +133,11 @@ def _registration_pending_data(data):
     email = str(data.get('email') or '').strip().lower()
     password = str(data.get('password') or '')
     channel = str(data.get('verification_channel') or data.get('channel') or '').lower()
-    if len(username) < 3 or len(username) > 20 or not email or len(password) < 6:
-        raise ValueError('Enter a valid username, email and password (at least 6 characters).')
+    password_error = _password_requirements_error(password)
+    if len(username) < 3 or len(username) > 20 or not email:
+        raise ValueError('Enter a valid username and email address.')
+    if password_error:
+        raise ValueError(password_error)
     if channel not in {'email', 'whatsapp'}:
         raise ValueError('Choose email or WhatsApp for your verification code.')
     if get_user_by_username(username):
@@ -385,8 +406,9 @@ def forgot_password():
     if request.method == 'POST' and request.form.get('verification_code'):
         new_password = str(request.form.get('new_password') or '')
         confirm_password = str(request.form.get('confirm_password') or '')
-        if len(new_password) < 6:
-            flash('Your new password must be at least 6 characters.', 'error')
+        password_error = _password_requirements_error(new_password)
+        if password_error:
+            flash(password_error, 'error')
             return render_template('forgot_password.html', verification_pending=True,
                                    expires_in=_password_reset_remaining(token))
         if new_password != confirm_password:

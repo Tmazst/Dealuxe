@@ -26,7 +26,7 @@ class RegistrationForm(FlaskForm):
     name = StringField("Full Name", validators=[DataRequired(), Length(min=3, max=80)])
     email = StringField("Email", validators=[DataRequired(), Email()])
     phone = NormalizedPhoneField("Phone Number", validators=[DataRequired()])
-    password = PasswordField("Password", validators=[DataRequired(), Length(min=6)])
+    password = PasswordField("Password", validators=[DataRequired(), Length(min=8)])
     country = SelectField('Country', choices=[
         ('Eswatini', 'Eswatini'), ('South Africa', 'South Africa'),
         ('Lesotho', 'Lesotho'), ('Mozambique', 'Mozambique'),
