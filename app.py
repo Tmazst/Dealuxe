@@ -256,8 +256,12 @@ def start_background_scheduler(app, socketio):
     print('[APP] Background scheduler started')
 
 
-start_openwa_session_on_boot(app)
-start_background_scheduler(app, socketio)
+# The durable WhatsApp broadcaster runs in its own systemd worker. Keeping it
+# outside Gunicorn prevents a slow provider request from timing out gameplay
+# requests or causing a web-worker restart/retry duplicate.
+if str(os.environ.get('DEALUXE_BROADCAST_WORKER', '')).lower() not in {'1', 'true', 'yes'}:
+    start_openwa_session_on_boot(app)
+    start_background_scheduler(app, socketio)
 
 #-------------------
 # Routes Methods

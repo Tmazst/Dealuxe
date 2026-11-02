@@ -1,0 +1,17 @@
+[Unit]
+Description=Dealuxe tournament WhatsApp broadcast worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/dealuxe-2/Dealuxe
+Environment=DEALUXE_BROADCAST_WORKER=true
+ExecStart=/var/www/dealuxe-2/Dealuxe/venv-v3/bin/python -m services.tournament_broadcast_worker
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

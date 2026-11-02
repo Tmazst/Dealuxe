@@ -2056,9 +2056,6 @@ def process_scheduled_events():
     for roll in rolls:
         _resolve_roll(roll)
 
-    # Durable OpenWA group announcements are delivered outside player requests.
-    from services.tournament_broadcast_service import process_tournament_broadcasts
-    process_tournament_broadcasts()
 
 
 def start_tournament_match_helper(tournament_id, match_id, user_id=None):
