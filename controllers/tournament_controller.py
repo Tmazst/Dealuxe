@@ -31,9 +31,13 @@ from database import (
 from services.promotional_credit_service import (
     debit_tournament_entry,
     reverse_tournament_entry,
+    award_tournament_prize,
 )
 from services.cup_qualification_service import award_cup_qualification
 from services.cup_event_service import serialize_cup_event_details
+from services.tournament_broadcast_service import (
+    queue_tournament_created, queue_tournament_results,
+)
 
 
 tournament_bp = Blueprint('tournament', __name__, url_prefix='/api/tournaments')
@@ -999,7 +1003,7 @@ def _finalize_tournament(tournament):
         row = TournamentPrizePool.query.filter_by(
             tournament_id=tournament.id, placement=placement
         ).first()
-        amount = row.prize_amount if row and not _is_promotional_tournament(tournament) else 0.0
+        amount = row.prize_amount if row else 0.0
 
         participant = TournamentParticipant.query.filter_by(
             tournament_id=tournament.id, user_id=user_id
@@ -1014,22 +1018,25 @@ def _finalize_tournament(tournament):
             row.status = 'awarded'
             row.award_date = datetime.utcnow()
 
-        # Credit the player's real wallet.
+        # Pilot prizes mirror cash values as non-withdrawable credits.
         player = Player.query.filter_by(user_id=user_id).first()
         if player is not None and amount > 0:
-            balance_before = player.real_balance
-            player.real_balance += amount
-            player.total_winnings += amount
-            log_transaction(
-                player_id=player.id,
-                transaction_type=TX_PRIZE_AWARD,
-                amount=amount,
-                balance_type='real',
-                balance_before=balance_before,
-                balance_after=player.real_balance,
-                description=f'Tournament #{tournament.id} prize (placement {placement})',
-                tournament_id=tournament.id,
-            )
+            if _is_promotional_tournament(tournament):
+                award_tournament_prize(player, amount, tournament.id, placement)
+            else:
+                balance_before = player.real_balance
+                player.real_balance += amount
+                player.total_winnings += amount
+                log_transaction(
+                    player_id=player.id,
+                    transaction_type=TX_PRIZE_AWARD,
+                    amount=amount,
+                    balance_type='real',
+                    balance_before=balance_before,
+                    balance_after=player.real_balance,
+                    description=f'Tournament #{tournament.id} prize (placement {placement})',
+                    tournament_id=tournament.id,
+                )
 
     if (
         current_app.config.get('CUP_QUALIFICATION_ENABLED', False)
@@ -1054,6 +1061,8 @@ def _finalize_tournament(tournament):
         tournament_id=tournament.id
     ).all():
         reward_referral_for_completed_tournament(participant.user_id, tournament)
+
+    queue_tournament_results(tournament)
 
 
 def _maybe_finalize(tournament):
@@ -1587,7 +1596,7 @@ def create_tournament():
         participant.paid_amount = entry_fee
         participant.payment_method = charge_result.get('payment_method', participant.payment_method)
         tournament.current_player_count = 1
-        tournament.prize_pool_amount = 0.0 if _is_promotional_tournament(tournament) else entry_fee
+        tournament.prize_pool_amount = entry_fee
         _ensure_prize_pool(tournament)
         db.session.commit()
     except Exception:
@@ -1597,6 +1606,13 @@ def create_tournament():
         current_app.logger.exception('Tournament creation transaction failed')
         return jsonify({'error': 'Tournament could not be created; entry credit was not charged'}), 500
     _emit_tournament_updated(tournament)
+
+    try:
+        queue_tournament_created(tournament, _get_username(user_id))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('Tournament broadcast outbox creation failed tournament_id=%s', tournament.id)
 
     return jsonify({'tournament': _serialize_tournament(tournament), 'message': 'Tournament created'})
 
@@ -1647,8 +1663,7 @@ def join_tournament(tournament_id):
         participant.paid_amount = tournament.entry_fee
         participant.payment_method = charge_result.get('payment_method', participant.payment_method)
         tournament.current_player_count += 1
-        if not _is_promotional_tournament(tournament):
-            tournament.prize_pool_amount += tournament.entry_fee
+        tournament.prize_pool_amount += tournament.entry_fee
         _ensure_prize_pool(tournament)
     except Exception:
         db.session.rollback()
@@ -2040,6 +2055,10 @@ def process_scheduled_events():
     ).all()
     for roll in rolls:
         _resolve_roll(roll)
+
+    # Durable OpenWA group announcements are delivered outside player requests.
+    from services.tournament_broadcast_service import process_tournament_broadcasts
+    process_tournament_broadcasts()
 
 
 def start_tournament_match_helper(tournament_id, match_id, user_id=None):

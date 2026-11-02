@@ -4,6 +4,7 @@ from database import (
     Transaction,
     TX_PROMOTIONAL_ENTRY,
     TX_PROMOTIONAL_ENTRY_REVERSAL,
+    TX_PROMOTIONAL_CREDIT,
     db,
 )
 
@@ -92,4 +93,22 @@ def reverse_tournament_entry(player, amount, tournament_id):
         description=f'Pilot tournament entry reversal #{tournament_id}',
     ))
     db.session.flush()
+    return True
+
+
+def award_tournament_prize(player, amount, tournament_id, placement):
+    """Award an idempotent pilot tournament prize as non-cash credits."""
+    amount = round(float(amount), 2)
+    reference = f'pilot-prize:{tournament_id}:{placement}:{player.id}'
+    if Transaction.query.filter_by(external_ref_id=reference).first() is not None:
+        return False
+    balance_before = float(player.promotional_credit_balance or 0.0)
+    player.grant_promotional_credits(amount, commit=False)
+    db.session.add(Transaction(
+        player_id=player.id, external_ref_id=reference, status='completed',
+        transaction_type=TX_PROMOTIONAL_CREDIT, amount=amount,
+        balance_type='promotional', balance_before=balance_before,
+        balance_after=player.promotional_credit_balance, tournament_id=tournament_id,
+        description=f'Pilot tournament #{tournament_id} prize (placement {placement})',
+    ))
     return True

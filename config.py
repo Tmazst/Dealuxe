@@ -156,6 +156,9 @@ def build_openwa_scaffold_config(environ=None):
     registration_codes = _env_bool(
         environ, 'OPENWA_REGISTRATION_CODES_ENABLED', default=False
     )
+    tournament_broadcasts = _env_bool(
+        environ, 'OPENWA_TOURNAMENT_BROADCASTS_ENABLED', default=False
+    )
     master = _env_bool(environ, 'OPENWA_ENABLED', default=False)
     children = {
         'OPENWA_SUPPORT_ENABLED': _env_bool(
@@ -186,6 +189,9 @@ def build_openwa_scaffold_config(environ=None):
         'OPENWA_ENABLED': False,
         'OPENWA_IMPLEMENTATION_STATUS': 'registration_codes_only' if registration_codes else 'scaffold_only',
         'OPENWA_REGISTRATION_CODES_ENABLED': registration_codes,
+        'OPENWA_TOURNAMENT_BROADCASTS_ENABLED': tournament_broadcasts,
+        'OPENWA_BROADCAST_GROUP_ID': environ.get('OPENWA_BROADCAST_GROUP_ID', ''),
+        'PUBLIC_APP_URL': environ.get('PUBLIC_APP_URL', '').rstrip('/'),
         'OPENWA_API_URL': environ.get('OPENWA_API_URL', ''),
         'OPENWA_API_KEY': environ.get('OPENWA_API_KEY', ''),
         'OPENWA_API_MODE': environ.get('OPENWA_API_MODE', 'multi_session'),
