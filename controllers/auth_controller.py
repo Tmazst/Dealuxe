@@ -133,7 +133,7 @@ def _registration_pending_data(data):
     username = str(data.get('username') or '').strip()
     email = str(data.get('email') or '').strip().lower()
     password = str(data.get('password') or '')
-    channel = str(data.get('verification_channel') or data.get('channel') or '').lower()
+    channel = str(data.get('verification_channel') or data.get('channel') or 'whatsapp').lower()
     password_error = _password_requirements_error(password)
     if len(username) < 3 or len(username) > 20 or not email:
         raise ValueError('Enter a valid username and email address.')

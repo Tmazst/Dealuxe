@@ -220,13 +220,7 @@
         <form action="{{ url_for('auth.register') }}" method="POST" id="register-form">
             {{ form.hidden_tag() }}
             
-            <div class="form-group">
-                <label class="form-label" for="verification_channel"><i class="fa-solid fa-paper-plane"></i> Send verification code by</label>
-                <select class="form-control" id="verification_channel" name="verification_channel" required>
-                    <option value="email">Email</option>
-                    <option value="whatsapp" checked>WhatsApp</option>
-                </select>
-            </div>
+            <input type="hidden" name="verification_channel" value="whatsapp">
 
             <div class="form-group">
                 <label class="form-label">
