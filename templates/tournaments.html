@@ -232,8 +232,8 @@
             <div class="section-head">
                 <div><div class="eyebrow"><i class="fa-solid fa-circle"></i> Choose your table</div><h2 id="tournaments-title">Tournament brackets</h2><p>{% if config.PILOT_MODE %}Pick an ordinary 4, 8 or 16-player bracket, use promotional credit and play to qualify for a Cup.{% else %}Pick an ordinary bracket, reserve your seat and play for the pool.{% endif %}</p></div>
                 <div class="filters" aria-label="Tournament filters">
-                    <button class="filter active" type="button" data-filter="all">All</button>
-                    <button class="filter" type="button" data-filter="open">Open</button>
+                    <button class="filter" type="button" data-filter="all">All</button>
+                    <button class="filter active" type="button" data-filter="open">Open</button>
                     <button class="filter" type="button" data-filter="in_progress">Live</button>
                     <button class="filter" type="button" data-filter="completed">Results</button>
                 </div>
@@ -324,7 +324,7 @@
     <script>
         const socket = io({ transports: {{ config.SOCKET_TRANSPORTS|tojson }} });
         const pilotMode = {{ config.PILOT_MODE|tojson }};
-        let currentFilter = 'all';
+        let currentFilter = 'open';
         let tournamentsData = [];
         const grid = document.getElementById('tournaments-grid');
         const cupsGrid = document.getElementById('cups-grid');
@@ -493,6 +493,7 @@
         async function joinTournament(tournamentId) {
             const response = await fetch(`/api/tournaments/${tournamentId}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
             const result = await response.json();
+            if (response.status === 401) { window.location.href = '/login?next=' + encodeURIComponent('/tournaments'); return; }
             if (!response.ok) { alert(result.error || 'Unable to join tournament'); return; }
             if (result.payment && result.payment.payment_url) { window.location.href = result.payment.payment_url; return; }
             window.location.href = `/tournaments/${tournamentId}`;
@@ -554,8 +555,8 @@
             event.preventDefault();
             try {
                 const res = await fetch('/api/auth/me', { headers: { 'Accept': 'application/json' } });
-                if (!res.ok) { window.location.href = '/login'; return; }
-            } catch (err) { window.location.href = '/login'; return; }
+                if (!res.ok) { window.location.href = '/login?next=' + encodeURIComponent('/tournaments'); return; }
+            } catch (err) { window.location.href = '/login?next=' + encodeURIComponent('/tournaments'); return; }
             openCreateModal();
         });
         document.getElementById('createModalClose').addEventListener('click', closeCreateModal);
@@ -601,7 +602,7 @@
                     }),
                 });
                 const result = await res.json();
-                if (res.status === 401) { window.location.href = '/login'; return; }
+                if (res.status === 401) { window.location.href = '/login?next=' + encodeURIComponent('/tournaments'); return; }
                 if (!res.ok) { alert(result.error || 'Unable to create tournament'); return; }
                 if (result.payment && result.payment.payment_url) { window.location.href = result.payment.payment_url; return; }
                 {% if not config.PILOT_MODE %}

@@ -196,9 +196,33 @@
             {% endif %}
         {% endwith %}
         
+        {% if verification_pending %}
+        <form action="{{ url_for('auth.register') }}" method="POST" id="verification-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <p style="color:rgba(255,255,255,.8);text-align:center">Enter the 6-digit code we sent. It expires in <strong id="verification-countdown">05:00</strong>.</p>
+            <div class="form-group">
+                <label class="form-label" for="verification_code"><i class="fa-solid fa-key"></i> Verification code</label>
+                <input class="form-control" id="verification_code" name="verification_code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus>
+            </div>
+            <button type="submit" class="submit-btn"><i class="fa-solid fa-check"></i> Verify and create account</button>
+            <p id="verification-expired" style="display:none;color:#fca5a5;text-align:center">This code has expired. Please start registration again.</p>
+            <p style="text-align:center"><a class="auth-link" href="{{ url_for('auth.register') }}">Start again</a></p>
+        </form>
+        <script>
+        (function(){let seconds={{ expires_in|default(300)|int }};const display=document.getElementById('verification-countdown');const form=document.getElementById('verification-form');const expired=document.getElementById('verification-expired');function tick(){display.textContent=String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0');if(seconds<=0){form.querySelector('button').disabled=true;expired.style.display='block';return;}seconds--;setTimeout(tick,1000);}tick();})();
+        </script>
+        {% else %}
         <form action="{{ url_for('auth.register') }}" method="POST" id="register-form">
             {{ form.hidden_tag() }}
             
+            <div class="form-group">
+                <label class="form-label" for="verification_channel"><i class="fa-solid fa-paper-plane"></i> Send verification code by</label>
+                <select class="form-control" id="verification_channel" name="verification_channel" required>
+                    <option value="email">Email</option>
+                    <option value="whatsapp">WhatsApp</option>
+                </select>
+            </div>
+
             <div class="form-group">
                 <label class="form-label">
                     <i class="fa-solid fa-user"></i>
@@ -298,6 +322,7 @@
                 Create Account
             </button>
         </form>
+        {% endif %}
         
         <div class="auth-footer">
             <p>Already have an account? <a href="{{ url_for('auth.login') }}" class="auth-link">Sign in here</a></p>

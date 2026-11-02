@@ -17,6 +17,7 @@ from database import (
     CupQualification,
     MatchRoll,
     Transaction,
+    AdminAuditLog,
     User,
     Player,
     DiscoveryProfile,
@@ -1130,9 +1131,18 @@ def init_tournament_events(socketio, app=None):
         # to build the bracket and broadcast the countdown.
         _recover_full_waiting_tournament(tournament)
         summary = _serialize_tournament(tournament)
+        my_participation = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id,
+            user_id=user_id,
+            status='registered',
+        ).first()
         emit('joined_tournament', {
             'tournament': summary,
             'is_creator': _can_manage_tournament(tournament, user_id),
+            'my_payment': ({
+                'payment_method': my_participation.payment_method,
+                'paid_amount': my_participation.paid_amount,
+            } if my_participation else None),
         })
         emit('tournament_updated', summary)
         emit('tournament_participants', {
@@ -1227,26 +1237,43 @@ def init_tournament_events(socketio, app=None):
         user_id = _get_current_user_id()
         if not user_id:
             emit('tournament_error', {'message': 'Authentication required'})
-            return
+            return {'ok': False, 'error': 'Authentication required'}
         tournament = get_tournament_from_payload(data)
         if tournament is None:
-            return
+            return {'ok': False, 'error': 'Tournament not found'}
 
-        if tournament.status in ('in_progress', 'completed', 'cancelled'):
-            emit('tournament_error', {'message': 'Tournament is already in progress or started'})
-            return
+        if tournament.status != 'open':
+            error = 'Tournament is no longer open for withdrawals'
+            emit('tournament_error', {'message': error})
+            return {'ok': False, 'error': error}
 
         participant = TournamentParticipant.query.filter_by(
-            tournament_id=tournament.id, user_id=user_id
+            tournament_id=tournament.id, user_id=user_id, status='registered'
         ).first()
         if participant is None:
-            emit('tournament_error', {'message': 'You are not a tournament participant'})
-            return
+            error = 'You are not an active tournament participant'
+            emit('tournament_error', {'message': error})
+            return {'ok': False, 'error': error}
+        if tournament.creator_id == user_id:
+            error = 'The tournament host cannot leave while the tournament is open'
+            emit('tournament_error', {'message': error})
+            return {'ok': False, 'error': error}
 
         ok, error = _withdraw_participant(tournament, participant)
         if not ok:
             emit('tournament_error', {'message': error})
-            return
+            return {'ok': False, 'error': error}
+        db.session.add(AdminAuditLog(
+            admin_user_id=user_id,
+            action='tournament.participant_left',
+            entity_type='tournament',
+            entity_id=tournament.id,
+            summary=f"{_get_username(user_id)} left '{tournament.tournament_name}'",
+            details=(
+                f'participant_user_id={user_id}; payment_status={participant.payment_status}; '
+                f'payment_method={participant.payment_method}; paid_amount={participant.paid_amount}'
+            ),
+        ))
         db.session.commit()
         leave_room(_tournament_room(tournament.id))
         socketio.emit('participant_left', {
@@ -1255,6 +1282,61 @@ def init_tournament_events(socketio, app=None):
             'current_players': _serialize_tournament(tournament)['current_players'],
         }, room=_tournament_room(tournament.id))
         _emit_tournament_updated(tournament)
+        return {'ok': True}
+
+    @socketio.on('remove_tournament_participant')
+    def handle_remove_tournament_participant(data=None):
+        user_id = _get_current_user_id()
+        if not user_id:
+            return {'ok': False, 'error': 'Authentication required'}
+        tournament = get_tournament_from_payload(data)
+        if tournament is None:
+            return {'ok': False, 'error': 'Tournament not found'}
+        if not _can_manage_tournament(tournament, user_id):
+            return {'ok': False, 'error': 'Only the tournament host or an administrator can remove players'}
+        if tournament.status != 'open':
+            return {'ok': False, 'error': 'Players can only be removed while the tournament is open'}
+        try:
+            target_user_id = int((data or {}).get('user_id'))
+        except (TypeError, ValueError):
+            return {'ok': False, 'error': 'Choose a valid player'}
+        if target_user_id == tournament.creator_id:
+            return {'ok': False, 'error': 'The tournament host cannot be removed'}
+        if target_user_id == user_id:
+            return {'ok': False, 'error': 'Use the Leave tournament button to leave your own seat'}
+        participant = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id,
+            user_id=target_user_id,
+            status='registered',
+        ).first()
+        if participant is None:
+            return {'ok': False, 'error': 'That player is not an active participant'}
+        ok, error = _withdraw_participant(tournament, participant)
+        if not ok:
+            return {'ok': False, 'error': error}
+        db.session.add(AdminAuditLog(
+            admin_user_id=user_id,
+            action='tournament.participant_removed',
+            entity_type='tournament',
+            entity_id=tournament.id,
+            summary=(
+                f"{_get_username(target_user_id)} removed from "
+                f"'{tournament.tournament_name}' by {_get_username(user_id)}"
+            ),
+            details=(
+                f'actor_user_id={user_id}; participant_user_id={target_user_id}; '
+                f'payment_status={participant.payment_status}; '
+                f'payment_method={participant.payment_method}; paid_amount={participant.paid_amount}'
+            ),
+        ))
+        db.session.commit()
+        socketio.emit('participant_removed', {
+            'user_id': target_user_id,
+            'username': _get_username(target_user_id),
+            'current_players': _serialize_tournament(tournament)['current_players'],
+        }, room=_tournament_room(tournament.id))
+        _emit_tournament_updated(tournament)
+        return {'ok': True}
 
     @socketio.on('start_tournament_match')
     def handle_start_tournament_match(data=None):

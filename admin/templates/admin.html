@@ -443,11 +443,11 @@
             <h2 style="margin-right:auto;">Audit Log</h2>
             <span class="status" id="auditViewing"></span>
         </div>
-        <table id="auditTable" aria-label="Administrator audit log">
+        <table id="auditTable" aria-label="Audit log">
             <thead>
                 <tr>
                     <th>Time</th>
-                    <th>Admin</th>
+                    <th>Actor</th>
                     <th>Action</th>
                     <th>Summary</th>
                     <th>Details</th>
@@ -730,6 +730,7 @@
                     <td>
                         <button data-action="lockTournament" data-id="${tournament.id}">Lock</button>
                         <button data-action="startTournament" data-id="${tournament.id}">Start</button>
+                        ${tournament.tournament_type !== 'cup' && ['open', 'locked', 'in_progress'].includes(tournament.status) ? `<button data-action="cancelTournament" data-id="${tournament.id}">Cancel tournament</button>` : ''}
                         ${tournament.tournament_type === 'cup' && tournament.status !== 'cancelled' && tournament.status !== 'completed' ? `<button data-action="revokeCup" data-id="${tournament.id}">Revoke Cup</button>` : ''}
                     </td>
                 `;
@@ -1574,7 +1575,9 @@
                     await sendTournamentAction(userId, 'start');
                 }
                 if (action === 'cancelTournament') {
+                    if (!confirm('Cancel this ordinary tournament? Players will no longer be able to continue it.')) return;
                     await sendTournamentAction(userId, 'cancel');
+                    await fetchTournaments();
                 }
                 if (action === 'revokeCup') {
                     if (!confirm('Revoke this Cup? It will be cancelled, active allocated seats will be revoked, and its history will be retained.')) return;

@@ -152,6 +152,10 @@ def build_openwa_scaffold_config(environ=None):
     turning the placeholder into a live WhatsApp channel.
     """
     environ = os.environ if environ is None else environ
+    # Registration OTP delivery is the only live OpenWA use authorized so far.
+    registration_codes = _env_bool(
+        environ, 'OPENWA_REGISTRATION_CODES_ENABLED', default=False
+    )
     master = _env_bool(environ, 'OPENWA_ENABLED', default=False)
     children = {
         'OPENWA_SUPPORT_ENABLED': _env_bool(
@@ -175,12 +179,27 @@ def build_openwa_scaffold_config(environ=None):
         )
     if master:
         raise RuntimeError(
-            'openWA is scaffolded but not implemented or approved; '
-            'keep OPENWA_ENABLED=false'
+            'OPENWA_ENABLED controls other OpenWA functions and must remain false; '
+            'registration codes use OPENWA_REGISTRATION_CODES_ENABLED'
         )
     return {
         'OPENWA_ENABLED': False,
-        'OPENWA_IMPLEMENTATION_STATUS': 'scaffold_only',
+        'OPENWA_IMPLEMENTATION_STATUS': 'registration_codes_only' if registration_codes else 'scaffold_only',
+        'OPENWA_REGISTRATION_CODES_ENABLED': registration_codes,
+        'OPENWA_API_URL': environ.get('OPENWA_API_URL', ''),
+        'OPENWA_API_KEY': environ.get('OPENWA_API_KEY', ''),
+        'OPENWA_API_MODE': environ.get('OPENWA_API_MODE', 'multi_session'),
+        'OPENWA_SESSION_ID': environ.get('OPENWA_SESSION_ID', ''),
+        'OPENWA_API_VERSION': environ.get('OPENWA_API_VERSION', 'v5'),
+        'OPENWA_TIMEOUT': environ.get('OPENWA_TIMEOUT', '10'),
+        'SMTP_HOST': environ.get('SMTP_HOST', ''),
+        'SMTP_PORT': environ.get('SMTP_PORT', '587'),
+        'SMTP_USERNAME': environ.get('SMTP_USERNAME', ''),
+        'SMTP_PASSWORD': environ.get('SMTP_PASSWORD', ''),
+        'SMTP_FROM': environ.get('SMTP_FROM', ''),
+        'SMTP_USE_TLS': environ.get('SMTP_USE_TLS', 'true'),
+        'SMTP_USE_SSL': environ.get('SMTP_USE_SSL', 'false'),
+        'SMTP_TIMEOUT': environ.get('SMTP_TIMEOUT', '10'),
         **children,
     }
 

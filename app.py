@@ -213,6 +213,26 @@ init_hybrid_chat_events(socketio, app)
 # (fires scheduled tournament starts + resolves no-show roll deadlines)
 # -----------------------------
 
+def start_openwa_session_on_boot(app):
+    """Recover the registration-code WhatsApp session outside player requests."""
+    if not app.config.get('OPENWA_REGISTRATION_CODES_ENABLED'):
+        return
+
+    import threading
+
+    def _run():
+        with app.app_context():
+            try:
+                from services.registration_verification import start_configured_openwa_session
+                start_configured_openwa_session()
+            except Exception as exc:
+                # Keep Flask available even when OpenWA itself is down; this is
+                # an operational warning for the backend log/admin to act on.
+                print(f'[OPENWA] Startup session check failed: {type(exc).__name__}')
+
+    threading.Thread(target=_run, daemon=True, name='openwa-session-startup').start()
+    print('[OPENWA] Startup session check scheduled')
+
 def start_background_scheduler(app, socketio):
     import threading
     import time
@@ -236,6 +256,7 @@ def start_background_scheduler(app, socketio):
     print('[APP] Background scheduler started')
 
 
+start_openwa_session_on_boot(app)
 start_background_scheduler(app, socketio)
 
 #-------------------
@@ -424,6 +445,8 @@ def tournament_waiting_room_page(tournament_id):
             abort(404)
         return redirect(url_for('cup_details_page', tournament_id=tournament.id))
     user_id = session.get('user_id')
+    if not user_id:
+        return redirect(url_for('auth.login', next=request.path))
     user = User.query.get(user_id) if user_id else None
     is_admin = bool(user and (
         user.is_admin or user.is_super_admin or tournament.creator_id == user_id
@@ -433,6 +456,7 @@ def tournament_waiting_room_page(tournament_id):
         tournament_code=tournament.tournament_code,
         tournament_id=tournament.id,
         is_admin=is_admin,
+        current_user_id=user_id,
     )
 
 

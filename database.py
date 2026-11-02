@@ -477,6 +477,25 @@ class User(db.Model):
         return f'<User {self.username}>'
 
 
+class RegistrationVerification(db.Model):
+    """Short-lived registration challenge; designed for additional purposes later."""
+    __tablename__ = 'registration_verifications'
+
+    id = db.Column(db.Integer, primary_key=True)
+    challenge_token_hash = db.Column(db.String(64), nullable=False, unique=True)
+    purpose = db.Column(db.String(30), nullable=False, default='registration')
+    channel = db.Column(db.String(10), nullable=False)
+    recipient = db.Column(db.String(160), nullable=False)
+    code_hash = db.Column(db.String(64), nullable=False)
+    pending_data = db.Column(db.Text, nullable=False)
+    expires_at = db.Column(PRECISE_DATETIME, nullable=False)
+    resend_after = db.Column(PRECISE_DATETIME, nullable=False)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    resends = db.Column(db.Integer, nullable=False, default=0)
+    consumed_at = db.Column(PRECISE_DATETIME)
+    created_at = db.Column(PRECISE_DATETIME, nullable=False, default=datetime.now)
+
+
 # ========================================
 # PLAYER MODEL (Wallet & Stats)
 # ========================================
@@ -1628,7 +1647,7 @@ class MatchRoll(db.Model):
 
 def create_user(
     username, email, password, phone=None, full_name=None, country=None,
-    *, commit=True,
+    *, commit=True, password_hash=None,
 ):
     """Create a new user and associated player"""
     user = User(
@@ -1638,7 +1657,7 @@ def create_user(
         full_name=full_name,
         country=country,
     )
-    user.set_password(password)
+    user.password_hash = password_hash if password_hash else generate_password_hash(password)
     
     db.session.add(user)
     db.session.flush()  # Get user.id before creating player

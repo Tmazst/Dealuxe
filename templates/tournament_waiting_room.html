@@ -116,6 +116,49 @@
             color: var(--accent-2);
         }
 
+        .leave-fee-notice {
+            display: none;
+            margin: 0;
+            padding: 10px 12px;
+            border: 1px solid rgba(255, 255, 255, .18);
+            border-radius: 8px;
+            color: var(--muted);
+            font-size: .9rem;
+            line-height: 1.45;
+        }
+
+        .remove-confirm-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(3, 7, 18, .78);
+            backdrop-filter: blur(5px);
+        }
+
+        .remove-confirm-overlay.is-open { display: flex; }
+
+        .remove-confirm-dialog {
+            width: min(100%, 440px);
+            padding: 24px;
+            border: 1px solid var(--accent-1);
+            border-radius: 14px;
+            background: var(--bg-2);
+            color: white;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .45);
+        }
+
+        .remove-confirm-dialog h2 { margin: 0 0 12px; font-size: 1.3rem; }
+        .remove-confirm-dialog p { color: var(--muted); line-height: 1.5; }
+        .remove-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+        .remove-confirm-actions button { padding: 11px 16px; border: 0; border-radius: 8px; font-weight: 700; cursor: pointer; }
+        .remove-confirm-cancel { background: var(--glass-strong); color: white; }
+        .remove-confirm-submit { background: #dc2626; color: white; }
+        .remove-confirm-actions button:disabled { opacity: .6; cursor: wait; }
+
         .prize-table {
             background: var(--glass-strong);
             border: 1px solid var(--accent-1);
@@ -630,6 +673,10 @@
                     <button class="btn-large btn-copy" onclick="copyToClipboard()">
                         📋 Copy Code
                     </button>
+                    <button class="btn-large btn-leave" id="leave-tournament-btn" onclick="leaveTournament()" style="display:none;">
+                        <i class="fa-solid fa-right-from-bracket"></i> Leave tournament
+                    </button>
+                    <p class="leave-fee-notice" id="leave-fee-notice" role="status" aria-live="polite"></p>
                     <button class="btn-large btn-leave" onclick="window.location.href = '/';">
                         <i class="fa-solid fa-arrow-left"></i> Back Home
                     </button>
@@ -649,6 +696,18 @@
         </div>
     </div>
 
+    <div class="remove-confirm-overlay" id="remove-confirm-overlay">
+        <section class="remove-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="remove-confirm-title" aria-describedby="remove-confirm-message" tabindex="-1">
+            <h2 id="remove-confirm-title">Remove player?</h2>
+            <p id="remove-confirm-message">The player will be removed and their seat released. Any refund follows the current payment rules; removal will be declined if the fee cannot be refunded here.</p>
+            <p id="remove-confirm-status" role="status" aria-live="polite"></p>
+            <div class="remove-confirm-actions">
+                <button class="remove-confirm-cancel" id="cancel-remove-player" type="button">Keep player</button>
+                <button class="remove-confirm-submit" id="confirm-remove-player" type="button">Remove player</button>
+            </div>
+        </section>
+    </div>
+
     <script src="/static/js/socket.io.min.js"></script>
     <script>
         const socket = io({
@@ -657,7 +716,13 @@
 
         let tournamentCode = '{{ tournament_code }}';
         let isAdmin = {{ is_admin|lower|default('false') }};
+        const currentUserId = {{ current_user_id|tojson }};
         const pilotMode = {{ config.PILOT_MODE|tojson }};
+        const paymentMockMode = {{ config.MOJAPOS_MOCK_MODE|default(false)|tojson }};
+        let tournamentStatus = 'open';
+        let leaveFeeNotice = '';
+        let currentPayment = null;
+        let pendingRemoval = null;
         let countdownInterval = null;
 
         socket.on('connect', () => {
@@ -674,12 +739,22 @@
         socket.on('joined_tournament', (data) => {
             console.log('✅ Joined tournament room');
             if (data && data.tournament) updateUI(data.tournament);
+            currentPayment = data && data.my_payment ? data.my_payment : null;
             updatePlayersList();
         });
 
         socket.on('participant_joined', (data) => {
             console.log('👤 Player joined:', data.username);
             showNotification(`${data.username} joined the tournament! 🎉`);
+            updatePlayersList();
+        });
+
+        socket.on('participant_removed', (data) => {
+            if (Number(data.user_id) === Number(currentUserId)) {
+                showNotification('The tournament host removed you from this tournament.');
+                setTimeout(() => { window.location.href = '/tournaments'; }, 900);
+                return;
+            }
             updatePlayersList();
         });
 
@@ -695,6 +770,11 @@
         });
 
         socket.on('tournament_error', (data) => {
+            if (String(data.message || '').toLowerCase().includes('authentication required')) {
+                const next = window.location.pathname + window.location.search;
+                window.location.href = '/login?next=' + encodeURIComponent(next);
+                return;
+            }
             showNotification(data.message || 'Tournament action failed');
         });
 
@@ -712,6 +792,7 @@
         });
 
         function updateUI(data) {
+            tournamentStatus = data.status || tournamentStatus;
             document.getElementById('tournament-name').textContent = data.tournament_name || 'Tournament';
             document.getElementById('tournament-type').textContent = (data.tournament_type || 'STANDARD').toUpperCase();
             document.getElementById('current-players').textContent = data.current_players || 1;
@@ -792,7 +873,29 @@
 
         socket.on('tournament_participants', (data) => {
             const list = document.getElementById('players-list');
-            list.innerHTML = data.participants.map((player, index) => `
+            const participants = data.participants || [];
+            const currentParticipant = participants.find(player => Number(player.user_id) === Number(currentUserId));
+            const leaveButton = document.getElementById('leave-tournament-btn');
+            const feeNotice = document.getElementById('leave-fee-notice');
+            leaveFeeNotice = '';
+            if (leaveButton) {
+                leaveButton.style.display = tournamentStatus === 'open' && currentParticipant && !currentParticipant.is_creator ? 'block' : 'none';
+            }
+            if (feeNotice && tournamentStatus === 'open' && currentParticipant && !currentParticipant.is_creator) {
+                const fee = Number(currentPayment?.paid_amount ?? currentParticipant.paid_amount ?? 0).toFixed(2);
+                if (currentPayment?.payment_method === 'promotional_credit' || pilotMode) {
+                    leaveFeeNotice = `Leaving returns E${fee} to your promotional credit balance. The credit keeps its original expiry date.`;
+                } else if (paymentMockMode) {
+                    leaveFeeNotice = `Leaving returns E${fee} to your in-app wallet (mock payment mode).`;
+                } else {
+                    leaveFeeNotice = 'Live payment mode: a completed paid entry cannot be refunded from this waiting room, so the app will decline the leave request. Contact an administrator for help.';
+                }
+                feeNotice.textContent = `ⓘ ${leaveFeeNotice}`;
+                feeNotice.style.display = 'block';
+            } else if (feeNotice) {
+                feeNotice.style.display = 'none';
+            }
+            list.innerHTML = participants.map((player, index) => `
                 <div class="player-item" style="animation-delay: ${index * 0.05}s;">
                     <div class="player-info">
                         <div class="player-avatar">${player.username.charAt(0).toUpperCase()}</div>
@@ -806,8 +909,65 @@
                     <div class="payment-status payment-${player.payment_status}">
                         ${getPaymentStatusLabel(player.payment_status)}
                     </div>
+                    ${isAdmin && tournamentStatus === 'open' && !player.is_creator && Number(player.user_id) !== Number(currentUserId) ? `<button class="btn-large btn-leave" type="button" data-remove-player="${Number(player.user_id)}">Remove</button>` : ''}
                 </div>
             `).join('');
+        });
+
+        document.getElementById('players-list').addEventListener('click', (event) => {
+            const button = event.target.closest('[data-remove-player]');
+            if (!button) return;
+            const userId = Number(button.dataset.removePlayer);
+            const username = button.closest('.player-item')?.querySelector('.player-name')?.textContent || 'this player';
+            pendingRemoval = { userId, username, button };
+            document.getElementById('remove-confirm-message').textContent =
+                `${username} will be removed from this open tournament and their seat released. Any refund follows the current payment rules; removal will be declined if the fee cannot be refunded here. You cannot reverse this action from the waiting room.`;
+            document.getElementById('remove-confirm-status').textContent = '';
+            document.getElementById('confirm-remove-player').disabled = false;
+            document.getElementById('cancel-remove-player').disabled = false;
+            document.getElementById('confirm-remove-player').textContent = 'Remove player';
+            document.getElementById('remove-confirm-overlay').classList.add('is-open');
+            document.getElementById('confirm-remove-player').focus();
+        });
+
+        function closeRemoveParticipantModal() {
+            document.getElementById('remove-confirm-overlay').classList.remove('is-open');
+            const trigger = pendingRemoval?.button;
+            pendingRemoval = null;
+            if (trigger?.isConnected) trigger.focus();
+        }
+
+        document.getElementById('cancel-remove-player').addEventListener('click', closeRemoveParticipantModal);
+        document.getElementById('remove-confirm-overlay').addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !document.getElementById('confirm-remove-player').disabled) {
+                closeRemoveParticipantModal();
+            }
+        });
+        document.getElementById('confirm-remove-player').addEventListener('click', () => {
+            if (!pendingRemoval) return;
+            const { userId, button } = pendingRemoval;
+            const confirmButton = document.getElementById('confirm-remove-player');
+            const cancelButton = document.getElementById('cancel-remove-player');
+            const status = document.getElementById('remove-confirm-status');
+            confirmButton.disabled = true;
+            cancelButton.disabled = true;
+            confirmButton.textContent = 'Removing…';
+            socket.emit('remove_tournament_participant', {
+                tournament_code: tournamentCode,
+                user_id: userId,
+            }, (response) => {
+                if (!response || !response.ok) {
+                    status.textContent = response?.error || 'Could not remove player';
+                    confirmButton.disabled = false;
+                    cancelButton.disabled = false;
+                    confirmButton.textContent = 'Remove player';
+                    return;
+                }
+                if (button) button.disabled = true;
+                closeRemoveParticipantModal();
+                showNotification('Player removed from tournament.');
+                updatePlayersList();
+            });
         });
 
         function getPaymentStatusLabel(status) {
@@ -927,10 +1087,18 @@
         }
 
         function leaveTournament() {
-            if (confirm('Are you sure you want to leave this tournament?')) {
-                socket.emit('leave_tournament', { tournament_code: tournamentCode });
+            const tournamentName = document.getElementById('tournament-name')?.textContent || 'this tournament';
+            if (!confirm(`You are about to leave "${tournamentName}". Your seat will be released and you will be removed from its player list.\n\n${leaveFeeNotice}\n\nDo you want to continue?`)) return;
+            const button = document.getElementById('leave-tournament-btn');
+            if (button) button.disabled = true;
+            socket.emit('leave_tournament', { tournament_code: tournamentCode }, (response) => {
+                if (!response || !response.ok) {
+                    showNotification(response?.error || 'Could not leave tournament');
+                    if (button) button.disabled = false;
+                    return;
+                }
                 window.location.href = '/tournaments';
-            }
+            });
         }
 
         function showNotification(message) {
