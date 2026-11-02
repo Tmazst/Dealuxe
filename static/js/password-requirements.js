@@ -7,6 +7,7 @@
             length: password.length >= 8,
             lower: /[a-z]/.test(password),
             upper: /[A-Z]/.test(password),
+            number: /[0-9]/.test(password),
             special: /[^A-Za-z0-9\s]/.test(password)
         };
     }

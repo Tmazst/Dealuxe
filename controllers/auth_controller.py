@@ -37,7 +37,7 @@ auth_bp = Blueprint('auth', __name__)
 
 PASSWORD_REQUIREMENTS_MESSAGE = (
     'Password must be at least 8 characters and include a lowercase letter, '
-    'an uppercase letter, and a special character.'
+    'an uppercase letter, a number, and a special character.'
 )
 
 
@@ -48,6 +48,7 @@ def _password_requirements_error(password):
         len(value) < 8
         or not any(character.islower() for character in value)
         or not any(character.isupper() for character in value)
+        or not any(character.isdigit() for character in value)
         or not any(not character.isalnum() and not character.isspace() for character in value)
     ):
         return PASSWORD_REQUIREMENTS_MESSAGE
