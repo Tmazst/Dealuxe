@@ -97,15 +97,32 @@ class CardGameEngine:
     # TURN CONTROL
     # ---------------------
 
-    def start_turn(self):
-        self._log(f"[ENGINE] Player {self.state.attacker}'s turn begins")
+    def reconcile_rule_8(self):
+        """Enter Rule #8 whenever an attacker has an eligible trail hand.
 
+        This is intentionally server-side and only applies between rounds:
+        the engine must be in ATTACK with no unresolved attack card.  It is
+        safe to call after a state restore as well as after a normal turn
+        transition, which repairs legacy stuck games without altering cards.
+        """
+        if (
+            self.state.game_over
+            or self.state.phase != "ATTACK"
+            or self.state.attack_card is not None
+        ):
+            return False
         attacker = self.players[self.state.attacker]
-
-        # Rule 8 auto-entry
         if not has_attack_card(attacker) and is_low_only(attacker) and len(attacker.hand) > 3:
             self.state.phase = "RULE_8"
+            self.state.trail_value = None
             safe_print("[ENGINE] Rule 8 triggered automatically")
+            self._log("[ENGINE] Rule 8 trail begins")
+            return True
+        return False
+
+    def start_turn(self):
+        self._log(f"[ENGINE] Player {self.state.attacker}'s turn begins")
+        self.reconcile_rule_8()
 
         # self._check_winner()
 
@@ -229,6 +246,7 @@ class CardGameEngine:
         self.state.phase = "ATTACK"
         safe_print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (roles swapped, new attacker: {self.state.attacker})")
         self.state.defence_cards = [str(card) for card in cards_to_play]
+        self.reconcile_rule_8()
 
         return {
             "ok": True,
@@ -306,6 +324,7 @@ class CardGameEngine:
         safe_print(f"[ENGINE] Phase transition: DEFENSE -> ATTACK (defense failed, attacker {self.state.attacker} keeps turn)")
 
         self.state.defender_drawn_card = str(card) if card else None
+        self.reconcile_rule_8()
 
         self._log("[ENGINE] ❌Defense failed. Attacker gets another turn.")
         

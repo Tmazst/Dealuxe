@@ -169,11 +169,25 @@ class GameManager:
 
     def get_game(self, game_id):
         if self.use_redis:
-            return self._read_redis_session(game_id)['engine']
+            session_data = self._read_redis_session(game_id)
+            engine = session_data['engine']
+            # Older live sessions may have reached ATTACK with a trail-eligible
+            # hand before Rule #8 was checked on every server transition.
+            # Reconcile only that exact state and persist it without touching
+            # either player's cards, deck, attacker, or defender.
+            if engine.reconcile_rule_8():
+                session_data['engine'] = engine
+                session_data['players'] = engine.players
+                self.redis_client.setex(
+                    self._key(game_id), self.ttl_seconds, self._encode(session_data)
+                )
+            return engine
         session = self.games.get(self._game_id(game_id))
         if not session:
             raise KeyError('Game not found')
-        return session['engine']
+        engine = session['engine']
+        engine.reconcile_rule_8()
+        return engine
 
     def update_game(self, game_id, engine):
         if not isinstance(engine, CardGameEngine):
