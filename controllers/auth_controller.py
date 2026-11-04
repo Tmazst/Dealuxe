@@ -84,7 +84,7 @@ def _grant_registration_promotional_credits(player):
     balance_before = float(player.promotional_credit_balance or 0.0)
     amount = GameConfig.get_registration_promotional_credit()
     player.grant_registration_promotional_credits(commit=False)
-    log_transaction(
+    transaction = log_transaction(
         player_id=player.id,
         transaction_type=TX_PROMOTIONAL_CREDIT,
         amount=amount,
@@ -94,6 +94,8 @@ def _grant_registration_promotional_credits(player):
         description='Version 3 registration promotional credit',
         commit=False,
     )
+    from services.wallet_notification_service import queue_registration_credit
+    queue_registration_credit(player.user_id, transaction.id, amount)
 
 
 def _validate_optional_referral_code(value):

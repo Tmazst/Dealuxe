@@ -210,6 +210,10 @@ def build_openwa_scaffold_config(environ=None):
         'OPENWA_WALLET_NOTIFICATIONS_ENABLED': wallet_notifications,
         'OPENWA_BROADCAST_GROUP_ID': environ.get('OPENWA_BROADCAST_GROUP_ID', ''),
         'PUBLIC_APP_URL': environ.get('PUBLIC_APP_URL', '').rstrip('/'),
+        'UMSHOVA_MEMBERSHIP_FORM_URL': str(environ.get(
+            'UMSHOVA_MEMBERSHIP_FORM_URL',
+            'https://forms.gle/yuxQBCETYpkawwUKA',
+        )).strip(),
         'OPENWA_API_URL': environ.get('OPENWA_API_URL', ''),
         'OPENWA_API_KEY': environ.get('OPENWA_API_KEY', ''),
         'OPENWA_API_MODE': environ.get('OPENWA_API_MODE', 'multi_session'),

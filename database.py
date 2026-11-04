@@ -1537,7 +1537,10 @@ class WalletNotification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     wallet_adjustment_id = db.Column(
-        db.Integer, db.ForeignKey('wallet_adjustments.id'), nullable=False, unique=True
+        db.Integer, db.ForeignKey('wallet_adjustments.id'), nullable=True, unique=True
+    )
+    transaction_id = db.Column(
+        db.Integer, db.ForeignKey('transactions.id'), nullable=True, unique=True
     )
     event_type = db.Column(db.String(40), nullable=False)
     event_key = db.Column(db.String(160), nullable=False)
@@ -1553,6 +1556,7 @@ class WalletNotification(db.Model):
 
     user = db.relationship('User', foreign_keys=[user_id])
     wallet_adjustment = db.relationship('WalletAdjustment')
+    transaction = db.relationship('Transaction')
 
 
 class WithdrawalRequest(db.Model):

@@ -23,11 +23,25 @@ def _public_tournaments_url():
     return f'{base}/#tournaments' if base else '/tournaments'
 
 
+def _membership_invitation():
+    form_url = str(current_app.config.get('UMSHOVA_MEMBERSHIP_FORM_URL') or '').strip()
+    if not form_url:
+        return ''
+    return (
+        '\n\nAre you interested in becoming a uMshova member?\n'
+        'Register for uMshova membership here:\n'
+        f'{form_url}'
+    )
+
+
 def _format_credits(amount):
     return f'{float(amount):.2f}'.rstrip('0').rstrip('.')
 
 
-def queue_admin_credit_award(user_id, wallet_adjustment_id, amount):
+def _queue_credit_notification(
+    user_id, event_type, event_key, amount, *, wallet_adjustment_id=None,
+    transaction_id=None, welcome=False,
+):
     """Add one notification to the current transaction, if delivery is enabled.
 
     Missing or invalid phones never prevent an administrator from awarding the
@@ -50,21 +64,26 @@ def queue_admin_credit_award(user_id, wallet_adjustment_id, amount):
         )
         return None
 
-    event_key = f'wallet-credit-award:{int(wallet_adjustment_id)}'
     existing = WalletNotification.query.filter_by(event_key=event_key).first()
     if existing is not None:
         return existing
     credit_amount = _format_credits(amount)
+    opening = (
+        f'🎉 Welcome to uMshova! You have received {credit_amount} credits!'
+        if welcome else f'🎉 You have been awarded {credit_amount} uMshova credits!'
+    )
     message = (
-        f'🎉 You have been awarded {credit_amount} uMshova credits!\n\n'
+        f'{opening}\n\n'
         'Your credits are ready to use in a tournament. Create or join a bracket here:\n'
         f'{_public_tournaments_url()}\n\n'
         'Good luck and enjoy the game!'
+        f'{"" if welcome else _membership_invitation()}'
     )
     row = WalletNotification(
         user_id=user.id,
-        wallet_adjustment_id=int(wallet_adjustment_id),
-        event_type='admin_credit_award',
+        wallet_adjustment_id=wallet_adjustment_id,
+        transaction_id=transaction_id,
+        event_type=event_type,
         event_key=event_key,
         recipient_chat_id=chat_id,
         message_body=message,
@@ -73,6 +92,29 @@ def queue_admin_credit_award(user_id, wallet_adjustment_id, amount):
     )
     db.session.add(row)
     return row
+
+
+def queue_admin_credit_award(user_id, wallet_adjustment_id, amount):
+    """Queue a notification for one positive admin credit award."""
+    return _queue_credit_notification(
+        user_id,
+        'admin_credit_award',
+        f'wallet-credit-award:{int(wallet_adjustment_id)}',
+        amount,
+        wallet_adjustment_id=int(wallet_adjustment_id),
+    )
+
+
+def queue_registration_credit(user_id, transaction_id, amount):
+    """Queue the one-time welcome credit message after verified registration."""
+    return _queue_credit_notification(
+        user_id,
+        'registration_credit',
+        f'registration-credit:{int(transaction_id)}',
+        amount,
+        transaction_id=int(transaction_id),
+        welcome=True,
+    )
 
 
 def _deliver(row):
