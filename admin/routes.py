@@ -41,6 +41,9 @@ from admin.service import (
     revoke_cup_qualification,
     update_cup_event_details,
     assign_manual_cup_seat,
+    assign_existing_qualifier_cup_seat,
+    remove_open_cup_seat,
+    sync_existing_qualifiers_to_cup,
     start_allocated_cup,
     update_cup_allocations,
 )
@@ -336,6 +339,47 @@ def assign_manual_cup_seat_route(tournament_id):
     except (TypeError, ValueError) as exc:
         return jsonify({'error': str(exc)}), 400
     return jsonify({'message': 'Cup seat assigned', **result}), 201
+
+
+@admin_bp.route(
+    '/cup-tournaments/<int:tournament_id>/qualifier-seats/<int:qualification_id>',
+    methods=['POST'],
+)
+@admin_required
+def assign_existing_qualifier_cup_seat_route(tournament_id, qualification_id):
+    try:
+        result = assign_existing_qualifier_cup_seat(
+            tournament_id, qualification_id, session['user_id']
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Qualified player seated in Cup', **result})
+
+
+@admin_bp.route(
+    '/cup-tournaments/<int:tournament_id>/seats/<int:qualification_id>',
+    methods=['DELETE'],
+)
+@admin_required
+def remove_open_cup_seat_route(tournament_id, qualification_id):
+    data = request.get_json(silent=True) or {}
+    try:
+        result = remove_open_cup_seat(
+            tournament_id, qualification_id, session['user_id'], data.get('reason')
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Cup seat removed', **result})
+
+
+@admin_bp.route('/cup-tournaments/<int:tournament_id>/sync-qualifiers', methods=['POST'])
+@admin_required
+def sync_existing_qualifiers_to_cup_route(tournament_id):
+    try:
+        result = sync_existing_qualifiers_to_cup(tournament_id, session['user_id'])
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify({'message': 'Existing qualifiers synchronised', **result})
 
 
 @admin_bp.route('/cup-tournaments/<int:tournament_id>/start', methods=['POST'])

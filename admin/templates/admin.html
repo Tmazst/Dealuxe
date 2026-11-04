@@ -132,7 +132,7 @@
             <a href="#cupEventDetailsPanel">Cup event details</a>
             <button id="createCupTournament" data-action="createCupTournament" disabled>Create and start Cup</button>
         </div>
-        <p class="status">Empty Cups can mix automatic qualifiers from eligible Standard (4-player), Premium (8-player), and Deluxe (16-player) tournament winners with seats assigned manually by admins.</p>
+        <p class="status">Empty Cups can mix automatic qualifiers from eligible Standard (4-player), Premium (8-player), and Deluxe (16-player) tournament winners with seats assigned manually by admins. When an empty Cup is created, existing checked-in winners are seated first, followed by other qualified winners, up to the winner allocation.</p>
         <div class="controls" style="margin-top:12px;">
             <label>
                 Creation option:
@@ -158,6 +158,7 @@
                     <th>Season / Event</th>
                     <th>Source Tournament</th>
                     <th>Status</th>
+                    <th>Cup seat</th>
                     <th>Qualified</th>
                     <th>Notes</th>
                     <th>Actions</th>
@@ -168,10 +169,17 @@
     </div>
 
     <div class="panel" id="cupAllocatedSeatPanel">
-        <h2>Empty Cup Seat Management</h2>
-        <p class="status">Assign registered users only within the predefined administrator-invite, sponsor or testing allocations. Bracket winners fill their allocation automatically.</p>
+        <h2>Cup Seat Management</h2>
+        <p class="status">Use this before locking the Cup. Qualified winners can be seated from the roster above; manual seats are for administrator invites, sponsors and testing participants. Every change is recorded with a reason.</p>
         <div class="controls">
             <label>Cup ID <input id="allocatedCupId" type="number" min="1" style="width:90px;"></label>
+            <label>Find registered player <input id="allocatedCupPlayerSearch" type="search" maxlength="120" placeholder="Name or email"></label>
+            <button data-action="findAllocatedCupPlayer">Find player</button>
+            <label>Choose player
+                <select id="allocatedCupPlayerMatches" style="min-width:210px;">
+                    <option value="">Search for a player first</option>
+                </select>
+            </label>
             <label>User ID <input id="allocatedCupUserId" type="number" min="1" style="width:100px;"></label>
             <label>Seat source
                 <select id="allocatedCupSeatSource">
@@ -182,6 +190,7 @@
             </label>
             <label>Reference <input id="allocatedCupReference" type="text" maxlength="120" placeholder="Sponsor or invitation reference"></label>
             <label>Reason <input id="allocatedCupReason" type="text" maxlength="500" placeholder="Required audited reason"></label>
+            <button data-action="syncCupQualifiers">Sync qualified winners</button>
             <button data-action="assignAllocatedCupSeat">Assign seat</button>
             <button data-action="startAllocatedCup">Lock and start Cup</button>
         </div>
@@ -767,7 +776,8 @@
                     `Qualifiers ${filled.bracket_winner || 0}/${allocations.bracket_winner || 0}, ` +
                     `Invites ${filled.admin_invite || 0}/${allocations.admin_invite || 0}, ` +
                     `Sponsors ${filled.sponsor || 0}/${allocations.sponsor || 0}, ` +
-                    `Testing ${filled.testing || 0}/${allocations.testing || 0}.`;
+                    `Testing ${filled.testing || 0}/${allocations.testing || 0}. ` +
+                    `${cup.unseated_bracket_winners || 0} qualified winner(s) are waiting for a Cup seat.`;
             }
             const creationMode = document.getElementById('cupCreationMode').value;
             const seatAllocations = {
@@ -813,7 +823,17 @@
             (data.qualifications || []).forEach(q => {
                 const active = q.status === 'qualified' || q.status === 'checked_in';
                 const reserve = q.status === 'reserve';
+                const cup = data.target_cup;
+                const canManageOpenCup = cup && cup.creation_mode === 'empty' && cup.status === 'open';
+                const seatedHere = Boolean(q.is_seated_in_target_cup) &&
+                    Number(q.target_cup_tournament_id) === Number(cup && cup.id);
                 const actions = [];
+                if (canManageOpenCup && active && q.seat_source === 'bracket_winner' && !seatedHere) {
+                    actions.push(`<button data-action="seatQualifiedCupPlayer" data-id="${q.id}" data-cup-id="${cup.id}">Seat in Cup</button>`);
+                }
+                if (canManageOpenCup && active && seatedHere) {
+                    actions.push(`<button data-action="removeCupSeat" data-id="${q.id}" data-cup-id="${cup.id}">Remove from Cup</button>`);
+                }
                 if (q.status === 'qualified') actions.push(`<button data-action="cupCheckIn" data-id="${q.id}">Check in</button>`);
                 if (active) actions.push(`<button data-action="cupReserve" data-id="${q.id}">Reserve</button>`);
                 if (active) actions.push(`<button data-action="cupAbsent" data-id="${q.id}">Replace absent player</button>`);
@@ -826,6 +846,7 @@
                     <td>${escapeHtml(q.season)} / ${escapeHtml(q.event_key)}</td>
                     <td>#${q.source_tournament_id} ${escapeHtml(q.source_tournament_name || '')}</td>
                     <td><span class="pill">${escapeHtml(q.status.replace('_', ' '))}</span></td>
+                    <td>${seatedHere ? '<span class="pill">Seated</span>' : (active ? 'Waiting' : '—')}</td>
                     <td>${escapeHtml(q.qualified_at || '')}</td>
                     <td>${escapeHtml([
                         q.notes || '',
@@ -836,6 +857,26 @@
                 `;
                 cupRosterTableBody.appendChild(row);
             });
+        }
+
+        async function findAllocatedCupPlayer() {
+            const search = document.getElementById('allocatedCupPlayerSearch').value.trim();
+            if (!search) throw new Error('Enter a player name or email to search');
+            const response = await fetch(`/api/admin/users?search=${encodeURIComponent(search)}`, {
+                credentials: 'same-origin',
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Could not search players');
+            const matches = document.getElementById('allocatedCupPlayerMatches');
+            matches.innerHTML = '<option value="">Choose a player</option>' + (data.users || []).map(user =>
+                `<option value="${user.id}">${escapeHtml(user.username || user.email)} · ${escapeHtml(user.email || '')}</option>`
+            ).join('');
+            if ((data.users || []).length === 1) {
+                matches.value = String(data.users[0].id);
+                document.getElementById('allocatedCupUserId').value = data.users[0].id;
+            }
+            document.getElementById('allocatedCupStatus').textContent =
+                `${(data.users || []).length} player(s) found. Select the intended account.`;
         }
 
         function escapeHtml(value) {
@@ -1703,8 +1744,37 @@
                     document.getElementById('cupPlacementTournamentId').value = created.cup.tournament_id;
                     document.getElementById('cupEventTournamentId').value = created.cup.tournament_id;
                     document.getElementById('cupEventDetailsStatus').textContent =
-                        `Created ${name} (#${created.cup.tournament_id}) with its public event details.`;
+                        `Created ${name} (#${created.cup.tournament_id}) with its public event details. ` +
+                        `${created.cup.automatically_seated_qualifiers || 0} existing qualifier(s) were seated automatically.`;
                     if (creationMode === 'roster') await fetchCupPlacements();
+                    await fetchCupRoster();
+                }
+                if (action === 'findAllocatedCupPlayer') {
+                    await findAllocatedCupPlayer();
+                }
+                if (action === 'seatQualifiedCupPlayer') {
+                    if (!confirm('Seat this qualified winner in the selected Cup?')) return;
+                    await sendJson(
+                        `/api/admin/cup-tournaments/${button.dataset.cupId}/qualifier-seats/${button.dataset.id}`
+                    );
+                    await fetchCupRoster();
+                }
+                if (action === 'removeCupSeat') {
+                    const reason = prompt('Reason for removing this player from the Cup:');
+                    if (reason === null) return;
+                    await sendJson(
+                        `/api/admin/cup-tournaments/${button.dataset.cupId}/seats/${button.dataset.id}`,
+                        { method: 'DELETE', body: { reason: reason.trim() } }
+                    );
+                    await fetchCupRoster();
+                }
+                if (action === 'syncCupQualifiers') {
+                    const tournamentId = Number(document.getElementById('allocatedCupId').value);
+                    if (!tournamentId) throw new Error('Load an open Cup first');
+                    if (!confirm('Seat all eligible existing winners, up to the remaining winner allocation? Checked-in players are prioritised.')) return;
+                    const synced = await sendJson(`/api/admin/cup-tournaments/${tournamentId}/sync-qualifiers`);
+                    document.getElementById('allocatedCupStatus').textContent =
+                        `${synced.seated_qualifiers} existing qualifier(s) were seated.`;
                     await fetchCupRoster();
                 }
                 if (action === 'assignAllocatedCupSeat') {
@@ -1805,6 +1875,11 @@
             fetchCupRoster();
         });
         document.getElementById('reloadCupRoster').addEventListener('click', fetchCupRoster);
+        document.getElementById('allocatedCupPlayerMatches').addEventListener('change', event => {
+            if (event.target.value) {
+                document.getElementById('allocatedCupUserId').value = event.target.value;
+            }
+        });
         document.getElementById('reloadHybridProfiles').addEventListener('click', fetchHybridProfiles);
         document.getElementById('reloadHybridCaptions').addEventListener('click', fetchHybridCaptions);
         document.getElementById('createHybridCaption').addEventListener('click', async () => {

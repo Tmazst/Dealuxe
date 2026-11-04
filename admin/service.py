@@ -679,6 +679,100 @@ def _allocation_counts(tournament):
     }
 
 
+def _cup_event_key(tournament):
+    """Read the stable event key stored with a Cup without trusting free text."""
+    try:
+        event = json.loads(tournament.notes or '{}')
+    except (TypeError, ValueError):
+        event = {}
+    return str(event.get('event_key') or '').strip()
+
+
+def _sync_existing_qualifiers_to_cup(tournament):
+    """Attach already-earned winner seats to a newly created open Cup.
+
+    Qualifications can be earned before an administrator creates the Cup.  New
+    qualifications are attached by ``award_cup_qualification``; this backfill
+    closes the historical gap without changing their qualification status.
+    Checked-in players are intentionally prioritised, then the original
+    qualification order is preserved.  No more than the configured
+    bracket-winner allocation can be attached.
+    """
+    if tournament.tournament_type != 'cup' or tournament.cup_creation_mode != 'empty':
+        return []
+
+    event_key = _cup_event_key(tournament)
+    if not event_key:
+        return []
+    allocation = int(tournament.cup_qualifier_seats or 0)
+    occupied = _allocation_counts(tournament)['bracket_winner']
+    available = max(allocation - occupied, 0)
+    if not available:
+        return []
+
+    candidates = CupQualification.query.filter(
+        CupQualification.event_key == event_key,
+        CupQualification.seat_source == 'bracket_winner',
+        CupQualification.target_cup_tournament_id.is_(None),
+        CupQualification.status.in_(ACTIVE_QUALIFICATION_STATUSES),
+        CupQualification.seat_key.isnot(None),
+    ).all()
+    candidates.sort(key=lambda item: (
+        item.status != 'checked_in', item.qualified_at, item.id,
+    ))
+
+    seated = []
+    for qualification in candidates[:available]:
+        qualification.target_cup_tournament_id = tournament.id
+        existing = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id, user_id=qualification.user_id
+        ).first()
+        if existing is None:
+            participant = add_tournament_participant(
+                tournament.id,
+                qualification.user_id,
+                payment_status='completed',
+                paid_amount=0.0,
+                payment_method='cup_qualification',
+            )
+            participant.payment_completed_at = datetime.utcnow()
+            participant.notes = f'Cup qualification #{qualification.id}'
+        seated.append(qualification)
+
+    if seated:
+        tournament.current_player_count = TournamentParticipant.query.filter_by(
+            tournament_id=tournament.id
+        ).count()
+    return seated
+
+
+def _remove_open_cup_seat(qualification, tournament, admin_user_id, reason):
+    """Safely return a pre-start Cup player to reserve and free their slot."""
+    if tournament.status != 'open':
+        raise ValueError('Cup seats are locked after bracket generation')
+    if qualification.target_cup_tournament_id != tournament.id:
+        raise ValueError('This qualification is not seated in the selected Cup')
+    if qualification.status not in ACTIVE_QUALIFICATION_STATUSES:
+        raise ValueError('Only an active Cup seat can be removed')
+
+    participant = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, user_id=qualification.user_id
+    ).first()
+    if participant is not None:
+        db.session.delete(participant)
+        db.session.flush()
+
+    qualification.status = 'reserve'
+    qualification.seat_key = None
+    qualification.checked_in_at = None
+    qualification.status_updated_at = datetime.utcnow()
+    qualification.status_updated_by = admin_user_id
+    qualification.notes = reason
+    tournament.current_player_count = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id
+    ).count()
+
+
 def _set_cup_allocations(tournament, capacity, values):
     reserved = {}
     for source in ('admin_invite', 'sponsor', 'testing'):
@@ -730,6 +824,10 @@ def _serialize_cup_qualification(qualification, seat_number=None):
         'notes': qualification.notes,
         'original_username': _username(qualification.original_user_id),
         'seat_source_label': (qualification.seat_source or 'bracket_winner').replace('_', ' '),
+        'is_seated_in_target_cup': bool(
+            qualification.target_cup_tournament_id
+            and qualification.status in ACTIVE_QUALIFICATION_STATUSES
+        ),
     })
     return payload
 
@@ -814,7 +912,10 @@ def list_cup_qualifications(event_key=None, status='', capacity=None):
         ),
         'counts': counts,
         'qualifications': [
-            _serialize_cup_qualification(record, active_ids.get(record.id))
+            _serialize_cup_qualification(
+                record,
+                active_ids.get(record.id),
+            )
             for record in records
         ],
         'target_cup': ({
@@ -826,6 +927,12 @@ def list_cup_qualifications(event_key=None, status='', capacity=None):
             'capacity': target_cup.max_players,
             'allocations': _cup_allocations(target_cup),
             'allocation_counts': _allocation_counts(target_cup),
+            'unseated_bracket_winners': sum(
+                record.status in ACTIVE_QUALIFICATION_STATUSES
+                and record.seat_source == 'bracket_winner'
+                and record.target_cup_tournament_id is None
+                for record in active_records
+            ),
         } if target_cup else None),
     }
 
@@ -895,11 +1002,18 @@ def create_cup_tournament(
             'cash_payouts_enabled': False,
         })
         apply_cup_event_details(tournament, event_details or {})
+        db.session.flush()
+        automatically_seated = _sync_existing_qualifiers_to_cup(tournament)
         log_admin_action(
             admin_user_id, 'cup_tournament.create_empty',
             entity_type='tournament', entity_id=tournament.id,
             summary=f'Created empty {capacity}-player Cup for {event_key}',
-            details=json.dumps({'allocations': allocations}),
+            details=json.dumps({
+                'allocations': allocations,
+                'automatically_seated_qualification_ids': [
+                    qualification.id for qualification in automatically_seated
+                ],
+            }),
         )
         db.session.commit()
         return {
@@ -907,11 +1021,12 @@ def create_cup_tournament(
             'tournament_code': tournament.tournament_code,
             'event_key': event_key,
             'status': tournament.status,
-            'players': 0,
+            'players': tournament.current_player_count,
             'capacity': capacity,
             'bracket_slots': 0,
             'allocations': allocations,
             'allocation_counts': _allocation_counts(tournament),
+            'automatically_seated_qualifiers': len(automatically_seated),
             'cash_prizes_enabled': False,
             'event': serialize_cup_event_details(tournament),
         }
@@ -1080,6 +1195,119 @@ def assign_manual_cup_seat(
     return {
         'qualification': _serialize_cup_qualification(qualification),
         'allocations': allocations,
+        'allocation_counts': _allocation_counts(tournament),
+        'players': tournament.current_player_count,
+        'capacity': tournament.max_players,
+    }
+
+
+def assign_existing_qualifier_cup_seat(
+    tournament_id, qualification_id, admin_user_id,
+):
+    """Seat an already-qualified winner in an open allocated Cup."""
+    tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type != 'cup' or tournament.cup_creation_mode != 'empty':
+        raise ValueError('Qualifier seating requires an empty-allocation Cup')
+    if tournament.status != 'open':
+        raise ValueError('Cup seats are locked after bracket generation')
+    qualification = CupQualification.query.get_or_404(qualification_id)
+    if qualification.status not in ACTIVE_QUALIFICATION_STATUSES or not qualification.seat_key:
+        raise ValueError('Only an active qualified player can be seated')
+    if qualification.seat_source != 'bracket_winner':
+        raise ValueError('Only ordinary-tournament winners use qualifier seats')
+    if qualification.event_key != _cup_event_key(tournament):
+        raise ValueError('The qualification belongs to a different Cup event')
+    if qualification.target_cup_tournament_id == tournament.id:
+        return {
+            'qualification': _serialize_cup_qualification(qualification),
+            'already_seated': True,
+            'allocations': _cup_allocations(tournament),
+            'allocation_counts': _allocation_counts(tournament),
+        }
+    if qualification.target_cup_tournament_id is not None:
+        raise ValueError('This player is already seated in another Cup')
+    allocations = _cup_allocations(tournament)
+    counts = _allocation_counts(tournament)
+    if counts['bracket_winner'] >= allocations['bracket_winner']:
+        raise ValueError('The ordinary-tournament winner allocation is full')
+    if TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, user_id=qualification.user_id
+    ).first() is not None:
+        raise ValueError('This player already holds a seat in the Cup')
+
+    qualification.target_cup_tournament_id = tournament.id
+    participant = add_tournament_participant(
+        tournament.id,
+        qualification.user_id,
+        payment_status='completed',
+        paid_amount=0.0,
+        payment_method='cup_qualification',
+    )
+    participant.payment_completed_at = datetime.utcnow()
+    participant.notes = f'Cup qualification #{qualification.id}'
+    tournament.current_player_count = int(tournament.current_player_count or 0) + 1
+    log_admin_action(
+        admin_user_id, 'cup_seat.assign_qualifier',
+        entity_type='cup_qualification', entity_id=qualification.id,
+        summary=f'Seated {_username(qualification.user_id)} in Cup #{tournament.id}',
+    )
+    db.session.commit()
+    return {
+        'qualification': _serialize_cup_qualification(qualification),
+        'allocations': allocations,
+        'allocation_counts': _allocation_counts(tournament),
+        'players': tournament.current_player_count,
+        'capacity': tournament.max_players,
+    }
+
+
+def remove_open_cup_seat(tournament_id, qualification_id, admin_user_id, reason):
+    """Remove a player only before the Cup is locked, retaining an audit trail."""
+    reason = str(reason or '').strip()
+    if not reason:
+        raise ValueError('A reason is required to remove a Cup seat')
+    tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type != 'cup' or tournament.cup_creation_mode != 'empty':
+        raise ValueError('Seat removal requires an empty-allocation Cup')
+    qualification = CupQualification.query.get_or_404(qualification_id)
+    user_id = qualification.user_id
+    _remove_open_cup_seat(qualification, tournament, admin_user_id, reason)
+    log_admin_action(
+        admin_user_id, 'cup_seat.remove',
+        entity_type='cup_qualification', entity_id=qualification.id,
+        summary=f'Removed {_username(user_id)} from Cup #{tournament.id}',
+        details=reason,
+    )
+    db.session.commit()
+    return {
+        'qualification': _serialize_cup_qualification(qualification),
+        'allocations': _cup_allocations(tournament),
+        'allocation_counts': _allocation_counts(tournament),
+        'players': tournament.current_player_count,
+        'capacity': tournament.max_players,
+    }
+
+
+def sync_existing_qualifiers_to_cup(tournament_id, admin_user_id):
+    """Backfill the winner allocation of an existing, still-open Cup."""
+    tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.tournament_type != 'cup' or tournament.cup_creation_mode != 'empty':
+        raise ValueError('Qualifier syncing requires an empty-allocation Cup')
+    if tournament.status != 'open':
+        raise ValueError('Cup seats are locked after bracket generation')
+    seated = _sync_existing_qualifiers_to_cup(tournament)
+    log_admin_action(
+        admin_user_id, 'cup_seat.sync_qualifiers',
+        entity_type='tournament', entity_id=tournament.id,
+        summary=f'Synchronised {len(seated)} existing qualifiers into Cup #{tournament.id}',
+        details=json.dumps({
+            'qualification_ids': [qualification.id for qualification in seated],
+        }),
+    )
+    db.session.commit()
+    return {
+        'seated_qualifiers': len(seated),
+        'allocations': _cup_allocations(tournament),
         'allocation_counts': _allocation_counts(tournament),
         'players': tournament.current_player_count,
         'capacity': tournament.max_players,
@@ -1697,6 +1925,20 @@ def move_cup_qualification_to_reserve(qualification_id, admin_user_id, reason):
         raise ValueError('Only an active Cup seat can be moved to reserve')
     if _active_cup_participant_for_user(qualification.user_id) is not None:
         raise ValueError('Use the live Cup absent-player replacement control')
+    target_cup = (
+        Tournament.query.get(qualification.target_cup_tournament_id)
+        if qualification.target_cup_tournament_id else None
+    )
+    if target_cup is not None and target_cup.status == 'open':
+        _remove_open_cup_seat(qualification, target_cup, admin_user_id, reason)
+        log_admin_action(
+            admin_user_id, 'cup_qualification.reserve',
+            entity_type='cup_qualification', entity_id=qualification.id,
+            summary=f'Moved {_username(qualification.user_id)} to Cup reserve',
+            details=reason,
+        )
+        db.session.commit()
+        return _serialize_cup_qualification(qualification)
     qualification.status = 'reserve'
     qualification.seat_key = None
     qualification.checked_in_at = None
@@ -1722,6 +1964,21 @@ def revoke_cup_qualification(qualification_id, admin_user_id, reason):
         raise ValueError('This qualification is no longer active')
     if _active_cup_participant_for_user(qualification.user_id) is not None:
         raise ValueError('Use the live Cup absent-player replacement control')
+    target_cup = (
+        Tournament.query.get(qualification.target_cup_tournament_id)
+        if qualification.target_cup_tournament_id else None
+    )
+    if target_cup is not None and target_cup.status == 'open':
+        _remove_open_cup_seat(qualification, target_cup, admin_user_id, reason)
+        qualification.status = 'revoked'
+        log_admin_action(
+            admin_user_id, 'cup_qualification.revoke',
+            entity_type='cup_qualification', entity_id=qualification.id,
+            summary=f'Revoked Cup qualification for {_username(qualification.user_id)}',
+            details=reason,
+        )
+        db.session.commit()
+        return _serialize_cup_qualification(qualification)
     qualification.status = 'revoked'
     qualification.seat_key = None
     qualification.checked_in_at = None
