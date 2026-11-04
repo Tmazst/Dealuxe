@@ -113,6 +113,7 @@
         .cup-card .card-actions { max-width: 480px; }
         .card-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 20px; }.type-badge, .status { font-size: .67rem; padding: 6px 8px; border-radius: 6px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }.type-badge.standard { color: #d6c5ff; background: rgba(139,92,246,.18); }.type-badge.premium { color: var(--gold); background: rgba(255,228,107,.13); }.type-badge.deluxe { color: var(--success); background: rgba(62,230,181,.12); }.status { color: var(--success); background: rgba(62,230,181,.11); }.status.locked { color: var(--gold); background: rgba(255,228,107,.13); }.status.in_progress { color: #d6c5ff; background: rgba(139,92,246,.2); }.status.completed { color: var(--muted); background: rgba(255,255,255,.08); }
         .tournament-card h3 { font-size: 1.3rem; margin: 0 0 8px; color: white; }.creator { color: var(--muted); font-size: .83rem; margin: 0; }.creator i { color: var(--accent-1); margin-right: 6px; }.card-prize { display: flex; align-items: baseline; justify-content: space-between; margin: 23px 0 16px; }.card-prize span { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }.card-prize strong { font-size: 1.75rem; color: var(--gold); letter-spacing: -.04em; }
+        .card-created-at { display: inline-flex; align-items: center; gap: 6px; margin: 8px 0 0; color: var(--muted); font-size: .73rem; font-weight: 700; }.card-created-at i { color: var(--gold); font-size: .7rem; }
         .slots { display: flex; justify-content: space-between; color: var(--muted); font-size: .83rem; margin-bottom: 8px; }.slots strong { color: white; }.progress { height: 7px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,.09); }.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-1), var(--success)); border-radius: inherit; }.card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }.card-actions .button { min-height: 42px; padding-inline: 10px; font-size: .77rem; }.button-join { background: var(--success); color: #08251d; }.button-detail { background: rgba(255,255,255,.045); color: white; border-color: var(--line); }
         .empty-state { border: 1px dashed rgba(255,255,255,.2); border-radius: 15px; padding: 68px 20px; text-align: center; color: var(--muted); grid-column: 1 / -1; }.empty-state i { color: var(--accent-1); font-size: 2.5rem; margin-bottom: 14px; }.empty-state h3 { color: white; margin: 0 0 7px; }
         .referral-share-button { position: fixed; right: 22px; bottom: 24px; z-index: 45; width: 54px; height: 54px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,228,107,.6); border-radius: 50%; background: linear-gradient(135deg, var(--gold), #f59e0b); color: #201606; box-shadow: 0 14px 32px rgba(0,0,0,.34); cursor: pointer; font-size: 1.18rem; transition: transform .2s, box-shadow .2s; }
@@ -432,6 +433,31 @@
             }).format(parsed);
         }
 
+        function formatTournamentCreatedAt(value) {
+            if (!value) return 'Recently created';
+            // Database timestamps are UTC but older API records have no UTC
+            // suffix. Add it before parsing so every browser shows local time.
+            const source = /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? value : `${value}Z`;
+            const created = new Date(source);
+            if (Number.isNaN(created.getTime())) return 'Recently created';
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const createdDay = new Date(created.getFullYear(), created.getMonth(), created.getDate());
+            const daysAgo = Math.floor((today - createdDay) / 86400000);
+            if (daysAgo === 0) {
+                const time = new Intl.DateTimeFormat(undefined, {
+                    hour: 'numeric', minute: '2-digit', hour12: true,
+                }).format(created);
+                return `Today ${time}`;
+            }
+            if (daysAgo === 1) return 'Yesterday';
+            if (daysAgo > 1 && daysAgo <= 6) return `${daysAgo} days ago`;
+            const day = String(created.getDate()).padStart(2, '0');
+            const month = new Intl.DateTimeFormat('en', { month: 'short' }).format(created);
+            const year = String(created.getFullYear()).slice(-2);
+            return `${day}-${month}-${year}`;
+        }
+
         function renderCupTournaments() {
             const cups = tournamentsData.filter((tournament) => tournament.type === 'cup');
             if (!cups.length) {
@@ -479,6 +505,7 @@
                 const progress = Math.min((current / maximum) * 100, 100);
                 const canJoin = tournament.status === 'open';
                 const isComplete = tournament.status === 'completed';
+                const createdAtLabel = formatTournamentCreatedAt(tournament.created_at);
                 // Final placement list (1st/2nd/3rd + prize amounts) once the bracket is over.
                 const podium = isComplete && Array.isArray(tournament.podium) ? tournament.podium : null;
                 const podiumHtml = podium && podium.length ? `<div class="card-podium">${[1, 2, 3].map((p) => {
@@ -510,7 +537,7 @@
                     <img class="tournament_badge" src="/static/images/${badge}.png" alt="badge">
                 
                     <div class="card-meta"><span class="type-badge ${escapeHtml(tournament.type)}">${escapeHtml(labelForType(tournament.type))}</span><span class="status ${escapeHtml(tournament.status)}">${escapeHtml(labelForStatus(tournament.status))}</span></div>
-                    <h3>${escapeHtml(tournament.name)}</h3><p class="creator"><i class="fa-solid fa-user"></i>Hosted by ${escapeHtml(tournament.creator || 'uMshova')}</p>
+                    <h3>${escapeHtml(tournament.name)}</h3><p class="creator"><i class="fa-solid fa-user"></i>Hosted by ${escapeHtml(tournament.creator || 'uMshova')}</p><p class="card-created-at"><i class="fa-regular fa-clock"></i>${escapeHtml(createdAtLabel)}</p>
                     ${resultBody}
                     <div class="card-actions">
                             ${canJoin

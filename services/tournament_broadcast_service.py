@@ -1,5 +1,6 @@
 """Reliable OpenWA group broadcasts for ordinary tournament milestones."""
 import json
+import socket
 from datetime import datetime, timedelta
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
@@ -107,8 +108,25 @@ def _deliver(row):
         headers={'Content-Type': 'application/json', 'X-API-Key': key}, method='POST',
     )
     with urlopen(request, timeout=float(current_app.config.get('OPENWA_TIMEOUT', 10))) as response:
-        body = json.loads(response.read().decode() or '{}')
-    return body.get('messageId')
+        # A 2xx HTTP status means OpenWA accepted the message. Some OpenWA
+        # releases return an empty/non-JSON body or use a different message-id
+        # field, neither of which must cause a successful broadcast to repeat.
+        raw_body = response.read().decode(errors='replace')
+    try:
+        body = json.loads(raw_body or '{}')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    message_id = body.get('messageId') if isinstance(body, dict) else None
+    return str(message_id) if message_id is not None else None
+
+
+def _is_delivery_timeout(exc):
+    """A timeout may occur after OpenWA has already accepted the message."""
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    return isinstance(exc, URLError) and isinstance(
+        getattr(exc, 'reason', None), (TimeoutError, socket.timeout)
+    )
 
 
 def process_tournament_broadcasts(limit=10):
@@ -118,11 +136,12 @@ def process_tournament_broadcasts(limit=10):
     now = datetime.utcnow()
     sent = 0
     for _ in range(limit):
-        # Claim one message before contacting OpenWA. The lease protects against
-        # duplicate sends when two application workers overlap during deploys or
-        # restarts; an expired lease is recoverable after a worker crash.
+        # Claim one message before contacting OpenWA. A worker crash after the
+        # provider accepts the request is delivery-ambiguous: resending would
+        # spam the group. Therefore only explicit pending/retry events are sent
+        # automatically; a stranded ``sending`` row is visible for review.
         row = TournamentBroadcast.query.filter(
-            TournamentBroadcast.status.in_(('pending', 'retry', 'sending')),
+            TournamentBroadcast.status.in_(('pending', 'retry')),
             (TournamentBroadcast.next_attempt_at.is_(None)) | (TournamentBroadcast.next_attempt_at <= now),
         ).order_by(TournamentBroadcast.created_at).with_for_update(skip_locked=True).first()
         if row is None:
@@ -140,7 +159,12 @@ def process_tournament_broadcasts(limit=10):
             sent += 1
         except (HTTPError, URLError, ValueError, OSError, RuntimeError) as exc:
             row.last_error = type(exc).__name__
-            if row.attempt_count >= MAX_ATTEMPTS:
+            if _is_delivery_timeout(exc):
+                # Do not risk posting the same announcement again. This row is
+                # retained for an operator to review, rather than retried.
+                row.status = 'delivery_unknown'
+                row.next_attempt_at = None
+            elif row.attempt_count >= MAX_ATTEMPTS:
                 row.status = 'failed'
                 row.next_attempt_at = None
             else:

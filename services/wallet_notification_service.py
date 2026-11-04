@@ -1,5 +1,6 @@
 """Durable WhatsApp delivery for direct wallet-credit notifications."""
 import json
+import socket
 from datetime import datetime, timedelta
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlsplit
@@ -132,8 +133,21 @@ def _deliver(row):
         method='POST',
     )
     with urlopen(request, timeout=float(current_app.config.get('OPENWA_TIMEOUT', 10))) as response:
-        body = json.loads(response.read().decode() or '{}')
-    return body.get('messageId')
+        raw_body = response.read().decode(errors='replace')
+    try:
+        body = json.loads(raw_body or '{}')
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    message_id = body.get('messageId') if isinstance(body, dict) else None
+    return str(message_id) if message_id is not None else None
+
+
+def _is_delivery_timeout(exc):
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    return isinstance(exc, URLError) and isinstance(
+        getattr(exc, 'reason', None), (TimeoutError, socket.timeout)
+    )
 
 
 def process_wallet_notifications(limit=10):
@@ -144,7 +158,7 @@ def process_wallet_notifications(limit=10):
     sent = 0
     for _ in range(limit):
         row = WalletNotification.query.filter(
-            WalletNotification.status.in_(('pending', 'retry', 'sending')),
+            WalletNotification.status.in_(('pending', 'retry')),
             (WalletNotification.next_attempt_at.is_(None))
             | (WalletNotification.next_attempt_at <= now),
         ).order_by(WalletNotification.created_at).with_for_update(skip_locked=True).first()
@@ -163,7 +177,10 @@ def process_wallet_notifications(limit=10):
             sent += 1
         except (HTTPError, URLError, ValueError, OSError, RuntimeError) as exc:
             row.last_error = type(exc).__name__
-            if row.attempt_count >= MAX_ATTEMPTS:
+            if _is_delivery_timeout(exc):
+                row.status = 'delivery_unknown'
+                row.next_attempt_at = None
+            elif row.attempt_count >= MAX_ATTEMPTS:
                 row.status = 'failed'
                 row.next_attempt_at = None
             else:
