@@ -1409,6 +1409,7 @@ def update_cup_event_details(tournament_id, data, admin_user_id):
             'has_venue': bool(event['venue_name']),
             'has_address': bool(event['venue_address']),
             'has_public_notes': bool(event['public_notes']),
+            'has_prize': bool(event['prize_description']),
         }, sort_keys=True),
     )
     db.session.commit()

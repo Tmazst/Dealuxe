@@ -479,6 +479,7 @@
                     <div class="cup-event-grid">
                         <div class="cup-event"><i class="fa-regular fa-calendar"></i><div><small>Date and time</small><strong>${escapeHtml(formatCupDate(event.start_at))}</strong></div></div>
                         <div class="cup-event"><i class="fa-solid fa-location-dot"></i><div><small>Physical location</small><strong>${escapeHtml(event.venue_name || 'Venue to be announced')}</strong></div></div>
+                        <div class="cup-event"><i class="fa-solid fa-trophy"></i><div><small>Prize to play for</small><strong>${escapeHtml(event.prize_description || 'To be announced')}</strong></div></div>
                     </div>
                     <div class="card-actions">
                         <button class="button button-primary" type="button" onclick="viewCup(${Number(tournament.id)})"><i class="fa-solid fa-circle-info"></i> Cup details</button>

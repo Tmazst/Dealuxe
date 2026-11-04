@@ -323,6 +323,7 @@ def ensure_cup_event_details_schema():
         ('event_venue_name', 'VARCHAR(160)'),
         ('event_venue_address', 'VARCHAR(255)'),
         ('event_public_notes', 'TEXT'),
+        ('event_prize_description', 'VARCHAR(160)'),
         ('cup_creation_mode', 'VARCHAR(30)'),
         ('cup_qualifier_seats', 'INTEGER'),
         ('cup_admin_invite_seats', 'INTEGER'),
@@ -1077,6 +1078,9 @@ class Tournament(db.Model):
     event_venue_name = db.Column(db.String(160), nullable=True)
     event_venue_address = db.Column(db.String(255), nullable=True)
     event_public_notes = db.Column(db.Text, nullable=True)
+    # A public, display-only description of the Cup prize. It deliberately
+    # does not drive the payout ledger or pilot-credit calculations.
+    event_prize_description = db.Column(db.String(160), nullable=True)
     cup_creation_mode = db.Column(db.String(30), nullable=True)
     cup_qualifier_seats = db.Column(db.Integer, nullable=True)
     cup_admin_invite_seats = db.Column(db.Integer, nullable=True)
@@ -1111,6 +1115,7 @@ class Tournament(db.Model):
             'event_venue_name': self.event_venue_name,
             'event_venue_address': self.event_venue_address,
             'event_public_notes': self.event_public_notes,
+            'event_prize_description': self.event_prize_description,
             'cup_creation_mode': self.cup_creation_mode,
             'cup_qualifier_seats': self.cup_qualifier_seats,
             'cup_admin_invite_seats': self.cup_admin_invite_seats,

@@ -538,6 +538,10 @@
                 Physical venue address
                 <input id="cupEventVenueAddress" type="text" maxlength="255" placeholder="Building, campus or street details">
             </label>
+            <label>
+                Prize players are competing for
+                <input id="cupEventPrizeDescription" type="text" maxlength="160" placeholder="e.g. E1000">
+            </label>
             <label class="full-width">
                 Public event notes
                 <textarea id="cupEventPublicNotes" maxlength="1000" rows="3" placeholder="Arrival instructions, what players should bring, accessibility or programme notes"></textarea>
@@ -656,6 +660,7 @@
             document.getElementById('cupEventCheckInAt').value = datetimeLocalValue(event.check_in_at);
             document.getElementById('cupEventVenueName').value = event.venue_name || '';
             document.getElementById('cupEventVenueAddress').value = event.venue_address || '';
+            document.getElementById('cupEventPrizeDescription').value = event.prize_description || '';
             document.getElementById('cupEventPublicNotes').value = event.public_notes || '';
         }
 
@@ -666,6 +671,7 @@
                 event_check_in_at: document.getElementById('cupEventCheckInAt').value || null,
                 event_venue_name: document.getElementById('cupEventVenueName').value.trim(),
                 event_venue_address: document.getElementById('cupEventVenueAddress').value.trim(),
+                event_prize_description: document.getElementById('cupEventPrizeDescription').value.trim(),
                 event_public_notes: document.getElementById('cupEventPublicNotes').value.trim(),
             };
         }

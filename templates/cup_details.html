@@ -190,6 +190,14 @@
                             <span>{{ event.venue_address or 'The venue address has not been published yet.' }}</span>
                         </div>
                     </div>
+                    <div class="event-row">
+                        <i class="fa-solid fa-trophy"></i>
+                        <div>
+                            <small>Prize to play for</small>
+                            <strong>{{ event.prize_description or 'To be announced' }}</strong>
+                            {% if event.prize_description %}<span>The published prize for this Cup event.</span>{% endif %}
+                        </div>
+                    </div>
                 </div>
                 {% if event.public_notes %}<div class="event-notice">{{ event.public_notes }}</div>{% endif %}
             </article>

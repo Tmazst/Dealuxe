@@ -56,6 +56,9 @@ def apply_cup_event_details(tournament, data):
     tournament.event_public_notes = _clean_text(
         data.get('event_public_notes'), 'Public event notes', 1000
     )
+    tournament.event_prize_description = _clean_text(
+        data.get('event_prize_description'), 'Cup prize', 160
+    )
     return serialize_cup_event_details(tournament)
 
 
@@ -82,6 +85,7 @@ def serialize_cup_event_details(tournament):
         'venue_name': tournament.event_venue_name,
         'venue_address': tournament.event_venue_address,
         'public_notes': tournament.event_public_notes,
+        'prize_description': tournament.event_prize_description,
         'details_complete': bool(
             tournament.event_start_at and tournament.event_venue_name
         ),

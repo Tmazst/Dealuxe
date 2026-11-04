@@ -103,6 +103,7 @@ class CupPublicExperienceTests(unittest.TestCase):
         self.cup.event_check_in_at = datetime(2026, 11, 14, 9, 0)
         self.cup.event_venue_name = 'Botho University Hall'
         self.cup.event_venue_address = 'Main Campus, Manzini'
+        self.cup.event_prize_description = 'E1000'
         self.cup.event_public_notes = 'Bring a charged phone and arrive early.'
         db.session.add(TournamentParticipant(
             tournament_id=self.cup.id,
@@ -152,6 +153,7 @@ class CupPublicExperienceTests(unittest.TestCase):
         self.assertIn('uMshova Pilot Cup', body)
         self.assertIn('Botho University Hall', body)
         self.assertIn('Main Campus, Manzini', body)
+        self.assertIn('E1000', body)
         self.assertIn('Opera', body)
         self.assertIn('View Cup bracket', body)
         self.assertNotIn(self.player.email, body)
@@ -225,6 +227,7 @@ class CupPublicExperienceTests(unittest.TestCase):
         payload = _serialize_tournament(self.cup)
         self.assertEqual(payload['type'], 'cup')
         self.assertEqual(payload['event']['venue_name'], 'Botho University Hall')
+        self.assertEqual(payload['event']['prize_description'], 'E1000')
         serialized = json.dumps(payload)
         self.assertNotIn(self.player.email, serialized)
         self.assertNotIn(self.player.phone, serialized)
@@ -264,6 +267,7 @@ class CupPublicExperienceTests(unittest.TestCase):
                 'event_check_in_at': '2026-12-05T09:30',
                 'event_venue_name': 'Manzini Library Hall',
                 'event_venue_address': 'Manzini Library',
+                'event_prize_description': 'E1000',
                 'event_public_notes': 'Registration closes at 09:45.',
             },
         )
@@ -271,6 +275,7 @@ class CupPublicExperienceTests(unittest.TestCase):
         db.session.refresh(self.cup)
         self.assertEqual(self.cup.tournament_name, 'uMshova Cup Manzini')
         self.assertEqual(self.cup.event_venue_name, 'Manzini Library Hall')
+        self.assertEqual(self.cup.event_prize_description, 'E1000')
 
         invalid = self.client.patch(
             '/api/admin/cup-tournaments/{0}/event-details'.format(self.cup.id),
