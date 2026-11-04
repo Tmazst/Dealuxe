@@ -538,7 +538,10 @@ def clear_backend_logs():
 # WALLET CONTROLS
 # -----------------------------
 
-def adjust_wallet(admin_user_id, user_id, balance_type, delta, reason):
+def adjust_wallet(
+    admin_user_id, user_id, balance_type, delta, reason,
+    *, notify_credit_award=False,
+):
     """Adjust real money or promotional credits with an audit reason."""
     if balance_type == 'fake':
         balance_type = 'promotional'
@@ -574,13 +577,21 @@ def adjust_wallet(admin_user_id, user_id, balance_type, delta, reason):
                 datetime.utcnow() + GameConfig.get_promotional_credit_expiry()
             )
 
-    db.session.add(WalletAdjustment(
+    adjustment = WalletAdjustment(
         user_id=user_id,
         balance_type=balance_type,
         delta=round(delta, 2),
         reason=reason,
         admin_user_id=admin_user_id,
-    ))
+    )
+    db.session.add(adjustment)
+    db.session.flush()
+    notification = None
+    if notify_credit_award and balance_type == 'promotional' and delta > 0:
+        # The outbox row is part of this same transaction. The dedicated worker
+        # sends later, so OpenWA latency cannot freeze the admin dashboard.
+        from services.wallet_notification_service import queue_admin_credit_award
+        notification = queue_admin_credit_award(user_id, adjustment.id, delta)
     log_admin_action(
         admin_user_id, 'wallet.adjust',
         entity_type='wallet', entity_id=user_id,
@@ -588,7 +599,12 @@ def adjust_wallet(admin_user_id, user_id, balance_type, delta, reason):
         details=reason,
     )
     db.session.commit()
-    return {'user_id': user_id, 'balance_type': balance_type, 'new_balance': new_balance}
+    return {
+        'user_id': user_id,
+        'balance_type': balance_type,
+        'new_balance': new_balance,
+        'wallet_notification_queued': bool(notification),
+    }
 
 
 def award_credits(admin_user_id, user_id, amount, balance_type='promotional', reason='Promotional credits awarded'):
@@ -598,6 +614,7 @@ def award_credits(admin_user_id, user_id, amount, balance_type='promotional', re
     return adjust_wallet(
         admin_user_id, user_id, balance_type, float(amount),
         reason or 'Promotional credits awarded',
+        notify_credit_award=True,
     )
 
 

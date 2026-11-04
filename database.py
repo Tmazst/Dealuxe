@@ -1525,6 +1525,36 @@ class TournamentBroadcast(db.Model):
     tournament = db.relationship('Tournament', backref='broadcasts')
 
 
+class WalletNotification(db.Model):
+    """Durable direct WhatsApp notifications for wallet activity."""
+    __tablename__ = 'wallet_notifications'
+    __table_args__ = (
+        db.UniqueConstraint('event_key', name='uq_wallet_notification_event_key'),
+        db.Index('idx_wallet_notifications_status_next', 'status', 'next_attempt_at'),
+        db.Index('idx_wallet_notifications_user_id', 'user_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    wallet_adjustment_id = db.Column(
+        db.Integer, db.ForeignKey('wallet_adjustments.id'), nullable=False, unique=True
+    )
+    event_type = db.Column(db.String(40), nullable=False)
+    event_key = db.Column(db.String(160), nullable=False)
+    recipient_chat_id = db.Column(db.String(64), nullable=False)
+    message_body = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='pending')
+    attempt_count = db.Column(db.Integer, nullable=False, default=0)
+    next_attempt_at = db.Column(PRECISE_DATETIME, nullable=True)
+    openwa_message_id = db.Column(db.String(255), nullable=True)
+    last_error = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(PRECISE_DATETIME, default=datetime.utcnow, nullable=False)
+    sent_at = db.Column(PRECISE_DATETIME, nullable=True)
+
+    user = db.relationship('User', foreign_keys=[user_id])
+    wallet_adjustment = db.relationship('WalletAdjustment')
+
+
 class WithdrawalRequest(db.Model):
     """Tracks withdrawal requests for tournament prizes."""
     __tablename__ = 'withdrawal_requests'

@@ -165,12 +165,16 @@ def build_openwa_scaffold_config(environ=None):
     turning the placeholder into a live WhatsApp channel.
     """
     environ = os.environ if environ is None else environ
-    # Registration OTP delivery is the only live OpenWA use authorized so far.
+    # Each enabled channel is independently opt-in. This prevents an unrelated
+    # WhatsApp feature from becoming live merely because verification is on.
     registration_codes = _env_bool(
         environ, 'OPENWA_REGISTRATION_CODES_ENABLED', default=False
     )
     tournament_broadcasts = _env_bool(
         environ, 'OPENWA_TOURNAMENT_BROADCASTS_ENABLED', default=False
+    )
+    wallet_notifications = _env_bool(
+        environ, 'OPENWA_WALLET_NOTIFICATIONS_ENABLED', default=False
     )
     master = _env_bool(environ, 'OPENWA_ENABLED', default=False)
     children = {
@@ -203,6 +207,7 @@ def build_openwa_scaffold_config(environ=None):
         'OPENWA_IMPLEMENTATION_STATUS': 'registration_codes_only' if registration_codes else 'scaffold_only',
         'OPENWA_REGISTRATION_CODES_ENABLED': registration_codes,
         'OPENWA_TOURNAMENT_BROADCASTS_ENABLED': tournament_broadcasts,
+        'OPENWA_WALLET_NOTIFICATIONS_ENABLED': wallet_notifications,
         'OPENWA_BROADCAST_GROUP_ID': environ.get('OPENWA_BROADCAST_GROUP_ID', ''),
         'PUBLIC_APP_URL': environ.get('PUBLIC_APP_URL', '').rstrip('/'),
         'OPENWA_API_URL': environ.get('OPENWA_API_URL', ''),
