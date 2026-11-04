@@ -214,6 +214,10 @@ def build_openwa_scaffold_config(environ=None):
             'UMSHOVA_MEMBERSHIP_FORM_URL',
             'https://forms.gle/yuxQBCETYpkawwUKA',
         )).strip(),
+        'UMSHOVA_WHATSAPP_GROUP_INVITE_URL': str(environ.get(
+            'UMSHOVA_WHATSAPP_GROUP_INVITE_URL',
+            'https://chat.whatsapp.com/KoRECiiWoSk2ERhTerg8fl',
+        )).strip(),
         'OPENWA_API_URL': environ.get('OPENWA_API_URL', ''),
         'OPENWA_API_KEY': environ.get('OPENWA_API_KEY', ''),
         'OPENWA_API_MODE': environ.get('OPENWA_API_MODE', 'multi_session'),

@@ -35,8 +35,37 @@ def _membership_invitation():
     )
 
 
+def _welcome_group_invitation():
+    """Return the optional community invite for first-time registrants only."""
+    invite_url = str(
+        current_app.config.get('UMSHOVA_WHATSAPP_GROUP_INVITE_URL') or ''
+    ).strip()
+    if not invite_url:
+        return ''
+    return (
+        '\n\nJoin the uMshova WhatsApp community for tournament updates and news:\n'
+        f'{invite_url}'
+    )
+
+
 def _format_credits(amount):
     return f'{float(amount):.2f}'.rstrip('0').rstrip('.')
+
+
+def _build_credit_message(amount, welcome=False):
+    """Build the two public wallet notification variants without delivery IO."""
+    credit_amount = _format_credits(amount)
+    opening = (
+        f'🎉 Welcome to uMshova! You have received {credit_amount} credits!'
+        if welcome else f'🎉 You have been awarded {credit_amount} uMshova credits!'
+    )
+    return (
+        f'{opening}\n\n'
+        'Your credits are ready to use in a tournament. Create or join a bracket here:\n'
+        f'{_public_tournaments_url()}\n\n'
+        'Good luck and enjoy the game!'
+        f'{_welcome_group_invitation() if welcome else _membership_invitation()}'
+    )
 
 
 def _queue_credit_notification(
@@ -68,18 +97,7 @@ def _queue_credit_notification(
     existing = WalletNotification.query.filter_by(event_key=event_key).first()
     if existing is not None:
         return existing
-    credit_amount = _format_credits(amount)
-    opening = (
-        f'🎉 Welcome to uMshova! You have received {credit_amount} credits!'
-        if welcome else f'🎉 You have been awarded {credit_amount} uMshova credits!'
-    )
-    message = (
-        f'{opening}\n\n'
-        'Your credits are ready to use in a tournament. Create or join a bracket here:\n'
-        f'{_public_tournaments_url()}\n\n'
-        'Good luck and enjoy the game!'
-        f'{"" if welcome else _membership_invitation()}'
-    )
+    message = _build_credit_message(amount, welcome=welcome)
     row = WalletNotification(
         user_id=user.id,
         wallet_adjustment_id=wallet_adjustment_id,
