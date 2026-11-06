@@ -63,7 +63,7 @@
             defense.hidden = outcome.hidden = explanation.hidden = true;
             const cards = payload.attack_card ? [payload.attack_card] : (payload.last_play || []);
             pileLabel.textContent = payload.attack_card ? 'PUBLIC TABLE' : cards.length ? 'LAST PUBLIC PLAY' : 'PUBLIC TABLE';
-            showCards(cards, attack, {animate});
+            showCards(cards, attack, {animate, emptyText:payload.status === 'completed' ? 'No public moves were recorded for this match' : 'Waiting for a public move'});
             return;
         }
         const attacker = payload.players[exchange.attacker_index]?.name || 'Attacker';
@@ -121,10 +121,15 @@
         });
         renderExchange(payload, animateLive && receivedInitial);
         receivedInitial = true;
+        document.getElementById('match-completed').hidden = payload.status !== 'completed';
+        if (payload.status === 'completed') {
+            setText(document.getElementById('finished-title'), payload.winner_index == null
+                ? 'Keep the action going' : `${payload.players[payload.winner_index].name} takes the win!`);
+        }
         const turn = document.getElementById('turn-status');
         if (payload.status === 'completed') {
             turn.textContent = payload.winner_index == null ? 'Match finished' : `${payload.players[payload.winner_index].name} wins`;
-            connection('Finished'); message('Match finished. Both hands remain hidden. Return to the bracket to follow the next round.');
+            connection('Finished'); message('Match finished. Both hands remain hidden.');
         } else if (!payload.available) {
             turn.textContent = 'Live state temporarily unavailable'; connection('Reconnecting…'); message('Waiting for the game service. Updates will resume automatically.');
         } else if (payload.status === 'paused') {

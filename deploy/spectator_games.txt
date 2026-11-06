@@ -51,3 +51,22 @@ do not replay card movement. Animations never block the game or its timer.
 
 The 8 versus 2 + 6 exchange was verified live in the browser, including phone
 layout and persisted display after reload. No additional database migration.
+
+Finished-match actions and tournament-start broadcasts
+The spectator screen shows Watch other games and a highlighted Create tournament
+action when a match completes. Watch other games returns to that tournament's
+bracket. Create tournament opens /tournaments?create=1; guests log in first and
+return directly to the existing creation form. No entry is submitted or charged
+until the user completes the normal creation process.
+
+A full ordinary, promotional or Cup bracket now queues one started announcement
+in the same transaction as bracket generation. The message includes the public
+bracket URL and explains that guests can watch while hands remain hidden.
+Partial manual starts are not described as full. Promotional events are labelled.
+
+The existing OpenWA worker delivers this started event with its existing retry
+and duplicate-protection rules. Existing creation/results message text is kept.
+Required existing settings: OPENWA_TOURNAMENT_BROADCASTS_ENABLED,
+OPENWA_BROADCAST_GROUP_ID, and a valid PUBLIC_APP_URL (the public site base URL).
+Restart the web application and broadcast worker after deploying these files.
+No new environment switch or database migration is required.

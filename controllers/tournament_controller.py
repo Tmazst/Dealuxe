@@ -36,7 +36,7 @@ from services.promotional_credit_service import (
 from services.cup_qualification_service import award_cup_qualification
 from services.cup_event_service import serialize_cup_event_details
 from services.tournament_broadcast_service import (
-    queue_tournament_created, queue_tournament_results,
+    queue_tournament_created, queue_tournament_started, queue_tournament_results,
 )
 
 
@@ -741,6 +741,7 @@ def _build_bracket(tournament):
 
     tournament.status = 'in_progress'
     tournament.started_at = datetime.utcnow()
+    queue_tournament_started(tournament)
     db.session.commit()
 
     _record_hybrid_live_audit(tournament, legacy_seed_order, live_decision)

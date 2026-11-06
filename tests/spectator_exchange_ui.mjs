@@ -28,7 +28,7 @@ export function run(source) {
 const ids = {};
 for (const id of ['spectator-game','connection-status','watch-notice','tournament-name','match-title','match-round',
     'public-cards','exchange-defense','defense-cards','exchange-outcome','exchange-explanation','pile-label',
-    'defense-label','turn-status','turn-timer','public-moves','player-0','player-1','hand-0','hand-1']) ids[id] = new Element();
+    'defense-label','turn-status','turn-timer','public-moves','match-completed','finished-title','player-0','player-1','hand-0','hand-1']) ids[id] = new Element();
 for (const index of [0,1]) ids[`player-${index}`].parts = Object.fromEntries(
     ['.player-name','.avatar','.card-count'].map(key => [key,new Element()]));
 ids['spectator-game'].dataset = {roomCode:'DEMO',transports:'["polling"]'};
@@ -91,5 +91,14 @@ assert.strictEqual(ids['public-cards'].children[0],lastCard,'Stale packets canno
 events.spectator_update(snapshot({...face,id:9,attacker_index:1,defender_index:0}));
 assert.ok(ids['public-cards'].children[0].classList.contains('card-enter-defense'), 'Bottom player attacks from below');
 assert.ok(ids['defense-cards'].children[0].classList.contains('card-enter-attack'), 'Top player defends from above');
-return {passed:true,checks:21};
+assert.equal(ids['match-completed'].hidden,true,'Finished actions remain hidden during play');
+events.spectator_update({...snapshot(defended),status:'completed',winner_index:1});
+assert.equal(ids['match-completed'].hidden,false,'Finished actions appear after completion');
+assert.equal(ids['finished-title'].textContent,'Sibusiso takes the win!');
+assert.ok(ids['public-cards'].textContent.includes('8♥'),'The final exchange stays visible alongside the actions');
+events.spectator_update({...snapshot(null),status:'completed',winner_index:null});
+assert.equal(ids['public-cards'].textContent,'No public moves were recorded for this match');
+events.spectator_update(snapshot(attack(10)));
+assert.equal(ids['match-completed'].hidden,true,'Live snapshots hide completed-match actions');
+return {passed:true,checks:27};
 }

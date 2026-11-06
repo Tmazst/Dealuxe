@@ -636,13 +636,23 @@
         function openCreateModal() { createModal.classList.add('visible'); createModal.setAttribute('aria-hidden', 'false'); }
         function closeCreateModal() { createModal.classList.remove('visible'); createModal.setAttribute('aria-hidden', 'true'); }
 
-        createTournamentBtn.addEventListener('click', async (event) => {
-            event.preventDefault();
+        async function beginCreateTournament() {
+            const createDestination = '/tournaments?create=1';
             try {
                 const res = await fetch('/api/auth/me', { headers: { 'Accept': 'application/json' } });
-                if (!res.ok) { window.location.href = '/login?next=' + encodeURIComponent('/tournaments'); return; }
-            } catch (err) { window.location.href = '/login?next=' + encodeURIComponent('/tournaments'); return; }
+                if (!res.ok) { window.location.href = '/login?next=' + encodeURIComponent(createDestination); return; }
+            } catch (err) { window.location.href = '/login?next=' + encodeURIComponent(createDestination); return; }
             openCreateModal();
+            document.getElementById('tournamentName').focus();
+            const currentUrl = new URL(window.location.href);
+            if (currentUrl.searchParams.has('create')) {
+                currentUrl.searchParams.delete('create');
+                window.history.replaceState(null, '', currentUrl.pathname + currentUrl.search + currentUrl.hash);
+            }
+        }
+        createTournamentBtn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            await beginCreateTournament();
         });
         document.getElementById('createModalClose').addEventListener('click', closeCreateModal);
         document.getElementById('createCancelBtn').addEventListener('click', closeCreateModal);
@@ -802,6 +812,8 @@
                 tournamentBtn.style.display="flex";
             }
         }
+
+        if (new URL(window.location.href).searchParams.get('create') === '1') beginCreateTournament();
 
         loadActiveTournaments();
         loadNextMatch();

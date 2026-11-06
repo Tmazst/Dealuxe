@@ -19,6 +19,17 @@
         <span id="connection-status" class="connection" role="status">Connecting…</span>
     </section>
     <p id="watch-notice" class="notice" role="status" hidden></p>
+    <section id="match-completed" class="match-completed" aria-labelledby="finished-title" hidden>
+        <div class="finished-copy">
+            <p class="eyebrow">MATCH FINISHED</p>
+            <h2 id="finished-title">Keep the action going</h2>
+            <p>Follow another match, or bring your own tournament to life.</p>
+        </div>
+        <div class="finished-actions">
+            <a class="finished-watch" href="{{ bracket_url }}">◉ Watch other games</a>
+            <a class="finished-create" href="/tournaments?create=1"><span aria-hidden="true">🏆</span> Create tournament <span aria-hidden="true">→</span></a>
+        </div>
+    </section>
     <div class="watch-layout">
         <section class="table-column" aria-label="Public game table">
             <div class="game-table">

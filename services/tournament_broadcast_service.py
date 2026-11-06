@@ -1,4 +1,4 @@
-"""Reliable OpenWA group broadcasts for ordinary tournament milestones."""
+"""Reliable OpenWA group broadcasts for tournament milestones."""
 import json
 import socket
 from datetime import datetime, timedelta
@@ -8,10 +8,11 @@ from urllib.request import Request, urlopen
 
 from flask import current_app
 
-from database import CupQualification, TournamentBroadcast, TournamentPrizePool, User, db
+from database import CupQualification, TournamentBroadcast, TournamentParticipant, TournamentPrizePool, User, db
 
 
 ORDINARY_TYPES = {'standard', 'premium', 'deluxe'}
+START_BROADCAST_TYPES = ORDINARY_TYPES | {'cup'}
 MAX_ATTEMPTS = 5
 
 
@@ -33,7 +34,8 @@ def _group_id():
 
 
 def _queue(tournament, event_type, message):
-    if not _enabled() or tournament.tournament_type not in ORDINARY_TYPES:
+    allowed_types = START_BROADCAST_TYPES if event_type == 'started' else ORDINARY_TYPES
+    if not _enabled() or tournament.tournament_type not in allowed_types:
         return None
     key = f'tournament:{tournament.id}:{event_type}'
     existing = TournamentBroadcast.query.filter_by(event_key=key).first()
@@ -72,6 +74,34 @@ def queue_tournament_created(tournament, creator_username):
     if pilot and current_app.config.get('CUP_QUALIFICATION_ENABLED'):
         lines.extend(['', 'Winner qualifies to contest in the upcoming uMshova Cup Tournament.'])
     return _queue(tournament, 'created', '\n'.join(lines))
+
+
+def queue_tournament_started(tournament):
+    """Queue one full-bracket start announcement in the bracket transaction."""
+    if (not _enabled() or tournament.tournament_type not in START_BROADCAST_TYPES
+            or tournament.status != 'in_progress' or not tournament.started_at):
+        return None
+    registered = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, status='registered',
+    ).count()
+    if registered < tournament.max_players:
+        return None
+    public_url = str(current_app.config.get('PUBLIC_APP_URL') or '').strip().rstrip('/')
+    parsed = urlsplit(public_url)
+    if parsed.scheme not in {'https', 'http'} or not parsed.hostname:
+        current_app.logger.warning('Tournament start broadcast needs a valid PUBLIC_APP_URL')
+        return None
+    label = 'PROMOTIONAL TOURNAMENT' if tournament.is_promotional else 'TOURNAMENT'
+    message = '\n'.join([
+        f'🏁 {label} STARTED: {tournament.tournament_name}',
+        '',
+        f'All {tournament.max_players} seats are filled. The tournament has started!',
+        'Follow and watch games live:',
+        f'{public_url}/tournaments/{tournament.id}/bracket',
+        '',
+        'Everyone can watch — no login required.',
+    ])
+    return _queue(tournament, 'started', message)
 
 
 def queue_tournament_results(tournament):
