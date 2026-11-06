@@ -73,6 +73,7 @@ def build_pilot_economy_config(environ=None):
         raise RuntimeError('CUP_CASH_PAYOUTS_ENABLED is not available in Version 3')
 
     return {
+        'PROMOTIONAL_TOURNAMENT_WALLET_PAYOUTS_ENABLED': _env_bool(environ, 'PROMOTIONAL_TOURNAMENT_WALLET_PAYOUTS_ENABLED', default=False),
         'PILOT_MODE': pilot_mode,
         'PAID_TOURNAMENT_ENTRY_ENABLED': paid_entry,
         'CASH_PRIZES_ENABLED': cash_prizes,

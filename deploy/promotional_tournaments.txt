@@ -1,0 +1,27 @@
+Promotional tournament rollout
+
+Apply the new schema migration before restarting production web and broadcast workers:
+    python -m alembic upgrade head
+
+Default: PROMOTIONAL_TOURNAMENT_WALLET_PAYOUTS_ENABLED=false
+This suppresses both cash and promotional-credit prize deposits for NEW
+promotional tournaments. Setting true restores normal prize deposits for new
+promotional tournaments. The choice is stored on each tournament at creation.
+Ordinary tournament payout rules are unchanged. Entry uses the usual credits.
+
+Create tonight's event from the regular Tournaments page while signed in as admin:
+1. Choose Create tournament, Deluxe (16 players).
+2. Select Promotional tournament.
+3. Choose Custom time, 20:00 (South Africa time / SAST).
+4. Leave Auto-lock early unchecked, so a full bracket cannot start before 20:00.
+5. Create the tournament. The admin is host only and cannot join this event.
+
+No qualification is needed to enter. At 20:00, the existing scheduler starts
+only a full bracket; otherwise it waits until all 16 seats fill.
+Promotional cards appear in the ordinary bracket list with a visible label.
+The existing OpenWA outbox sends the promotional announcement and results.
+
+Validation: four new promotional tests and sixteen schedule/auto-start tests pass.
+Rendered tournament scripts also passed JavaScript syntax checks.
+The existing pilot economy suite has five failures with the original controller
+and templates too; those predate this change.

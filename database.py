@@ -318,6 +318,8 @@ def ensure_cup_event_details_schema():
     if not inspect(db.engine).has_table('tournaments'):
         return
     columns = [
+        ('is_promotional', 'BOOLEAN NOT NULL DEFAULT 0'),
+        ('promotional_wallet_payouts', 'BOOLEAN NOT NULL DEFAULT 0'),
         ('event_start_at', 'DATETIME'),
         ('event_check_in_at', 'DATETIME'),
         ('event_venue_name', 'VARCHAR(160)'),
@@ -1053,6 +1055,8 @@ class Tournament(db.Model):
     tournament_name = db.Column(db.String(255), nullable=False)
     tournament_type = db.Column(db.String(20), nullable=False)  # standard, premium, deluxe, cup
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    is_promotional = db.Column(db.Boolean, nullable=False, default=False, server_default='0')
+    promotional_wallet_payouts = db.Column(db.Boolean, nullable=False, default=False, server_default='0')
     entry_fee = db.Column(db.Float, nullable=False, default=10.0)
     prize_pool_amount = db.Column(db.Float, nullable=False, default=0.0)
     max_players = db.Column(db.Integer, nullable=False)
@@ -1096,6 +1100,8 @@ class Tournament(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'is_promotional': bool(self.is_promotional),
+            'wallet_payouts_enabled': not self.is_promotional or bool(self.promotional_wallet_payouts),
             'tournament_code': self.tournament_code,
             'tournament_name': self.tournament_name,
             'tournament_type': self.tournament_type,

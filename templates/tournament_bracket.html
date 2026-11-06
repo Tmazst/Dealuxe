@@ -953,7 +953,7 @@
             };
             const wrapper = document.getElementById('bracket-wrapper');
 
-            document.getElementById('tournament-name').textContent = tournament.tournament_name || 'Tournament';
+            document.getElementById('tournament-name').textContent = (tournament.is_promotional ? 'PROMOTIONAL — ' : '') + (tournament.tournament_name || 'Tournament');
             const live = matches.filter((match) => match.status === 'in_progress').length;
             const complete = matches.filter((match) => match.status === 'completed').length;
             const nextRound = rounds.find((round) => round.matches.some((slot) => slot.status === 'scheduled' || slot.status === 'in_progress'));
@@ -1072,7 +1072,7 @@
                     const qualifierLabel = entry.qualification_status === 'duplicate_win'
                         ? 'Already qualified'
                         : 'Cup qualifier';
-                    prizeEl.textContent = (pilotMode || t.cash_prizes_enabled === false)
+                    prizeEl.textContent = t.is_promotional && !t.wallet_payouts_enabled ? 'Placement recorded' : (pilotMode || t.cash_prizes_enabled === false)
                         ? (placement === 1 ? qualifierLabel : 'Placement recorded')
                         : `E${Number(entry.amount || 0).toFixed(2)}`;
                 }

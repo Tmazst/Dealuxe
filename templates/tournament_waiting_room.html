@@ -793,11 +793,14 @@
 
         function updateUI(data) {
             tournamentStatus = data.status || tournamentStatus;
-            document.getElementById('tournament-name').textContent = data.tournament_name || 'Tournament';
+            document.getElementById('tournament-name').textContent = (data.is_promotional ? 'PROMOTIONAL — ' : '') + (data.tournament_name || 'Tournament');
             document.getElementById('tournament-type').textContent = (data.tournament_type || 'STANDARD').toUpperCase();
-            document.getElementById('current-players').textContent = data.current_players || 1;
+            document.getElementById('current-players').textContent = data.current_players ?? 0;
             document.getElementById('max-players-count').textContent = data.max_players || 4;
-            if (pilotMode || data.cash_prizes_enabled === false) {
+            if (data.is_promotional && !data.wallet_payouts_enabled) {
+                document.getElementById('prize-pool').textContent = 'No prize deposits';
+                ['prize-1st', 'prize-2nd', 'prize-3rd'].forEach(id => document.getElementById(id).textContent = 'Placement recorded');
+            } else if (pilotMode || data.cash_prizes_enabled === false) {
                 document.getElementById('prize-pool').textContent = 'QUALIFY';
                 document.getElementById('prize-1st').textContent = 'Cup qualifier';
                 document.getElementById('prize-2nd').textContent = 'Placement recorded';

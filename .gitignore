@@ -6,6 +6,8 @@ instance/*.sqlite3
 !project_upgrade_document/V3_0908_OPERATIONS_RUNBOOK.md
 .env
 .venv
+tests/__pycache__/*
+test_*
 *.zip
 *.pyc
 controllers/__pycache__/*cpython-311.cyc
@@ -169,3 +171,7 @@ uMshova Dealuxe.rar
 project_upgrade_document/Version 03/uMshova_Dealuxe_ENV_Modes_and_Switches_Guide.pdf
 project_upgrade_document/Version 03/build_env_switches_guide.py
 tests/test_cup_seat_management.py
+
+!test_promotional_tournaments.py
+test_promotional_tournaments.py
+.env.example

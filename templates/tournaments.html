@@ -113,6 +113,9 @@
         .cup-card .card-actions { max-width: 480px; }
         .card-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 20px; }.type-badge, .status { font-size: .67rem; padding: 6px 8px; border-radius: 6px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }.type-badge.standard { color: #d6c5ff; background: rgba(139,92,246,.18); }.type-badge.premium { color: var(--gold); background: rgba(255,228,107,.13); }.type-badge.deluxe { color: var(--success); background: rgba(62,230,181,.12); }.status { color: var(--success); background: rgba(62,230,181,.11); }.status.locked { color: var(--gold); background: rgba(255,228,107,.13); }.status.in_progress { color: #d6c5ff; background: rgba(139,92,246,.2); }.status.completed { color: var(--muted); background: rgba(255,255,255,.08); }
         .tournament-card h3 { font-size: 1.3rem; margin: 0 0 8px; color: white; }.creator { color: var(--muted); font-size: .83rem; margin: 0; }.creator i { color: var(--accent-1); margin-right: 6px; }.card-prize { display: flex; align-items: baseline; justify-content: space-between; margin: 23px 0 16px; }.card-prize span { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }.card-prize strong { font-size: 1.75rem; color: var(--gold); letter-spacing: -.04em; }
+        .card-promotion { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+        .card-promotion-label { margin: 0; padding: 10px; border-radius: 8px; background: #fbbf24; color: #111827; font-weight: 700; }
+        .card-promotion-schedule { margin: 0; line-height: 1.5; }
         .card-created-at { display: inline-flex; align-items: center; gap: 6px; margin: 8px 0 0; color: var(--muted); font-size: .73rem; font-weight: 700; }.card-created-at i { color: var(--gold); font-size: .7rem; }
         .slots { display: flex; justify-content: space-between; color: var(--muted); font-size: .83rem; margin-bottom: 8px; }.slots strong { color: white; }.progress { height: 7px; border-radius: 99px; overflow: hidden; background: rgba(255,255,255,.09); }.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-1), var(--success)); border-radius: inherit; }.card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }.card-actions .button { min-height: 42px; padding-inline: 10px; font-size: .77rem; }.button-join { background: var(--success); color: #08251d; }.button-detail { background: rgba(255,255,255,.045); color: white; border-color: var(--line); }
         .empty-state { border: 1px dashed rgba(255,255,255,.2); border-radius: 15px; padding: 68px 20px; text-align: center; color: var(--muted); grid-column: 1 / -1; }.empty-state i { color: var(--accent-1); font-size: 2.5rem; margin-bottom: 14px; }.empty-state h3 { color: white; margin: 0 0 7px; }
@@ -286,6 +289,12 @@
                     <label for="tournamentName">Tournament name <span style="text-transform:none; font-weight:400;">(optional)</span></label>
                     <input type="text" id="tournamentName" placeholder="e.g. Friday Night Showdown" maxlength="80">
                 </div>
+                {% if is_admin %}
+                <label class="checkbox-field" for="promotionalTournament">
+                    <input type="checkbox" id="promotionalTournament">
+                    <span>Promotional tournament — host does not play. Open to everyone. Custom time uses South Africa time (SAST). {% if config.PROMOTIONAL_TOURNAMENT_WALLET_PAYOUTS_ENABLED %}Prize deposits enabled.{% else %}Results only; no prize deposits.{% endif %}</span>
+                </label>
+                {% endif %}
                 <label class="checkbox-field" for="autoLock" >
                     <input type="checkbox" id="autoLock" checked>
                     <span>Auto-lock early if the table fills before a scheduled start(leave it checked)</span>
@@ -297,15 +306,15 @@
                             <input type="radio" name="start_option" value="seats_filled" checked>
                             <span>When seats are filled</span>
                         </label>
-                        <label class="schedule-option">
+                        <label class="schedule-option" style="display: none;">
                             <input type="radio" name="start_option" value="in_5min">
                             <span>In 5 minutes</span>
                         </label>
-                        <label class="schedule-option">
+                        <label class="schedule-option" style="display: none;">
                             <input type="radio" name="start_option" value="in_10min">
                             <span>In 10 minutes</span>
                         </label>
-                        <label class="schedule-option">
+                        <label class="schedule-option" style="display: none;">
                             <input type="radio" name="start_option" value="in_20min">
                             <span>In 20 minutes</span>
                         </label>
@@ -515,7 +524,7 @@
                     const qualifierLabel = entry.qualification_status === 'duplicate_win'
                         ? 'Already qualified'
                         : 'Cup qualifier';
-                    const resultLabel = cashPrizesEnabled ? `E${amount(entry.amount).toFixed(2)}` : (p === 1 ? qualifierLabel : `Position ${p}`);
+                    const resultLabel = tournament.is_promotional && !tournament.wallet_payouts_enabled ? `Position ${p}` : cashPrizesEnabled ? `E${amount(entry.amount).toFixed(2)}` : (p === 1 ? qualifierLabel : `Position ${p}`);
                     return `<div class="podium-row podium-${p}"><span class="podium-medal">${medal}</span><span class="podium-name">${escapeHtml(entry.username || '—')}</span><strong class="podium-prize">${resultLabel}</strong></div>`;
                 }).join('')}</div>` : null;
                 const badge = tournament.type === "standard"
@@ -530,7 +539,9 @@
                         + '<div class="slots completed-note"><span>🔒 No new joinings — bracket closed</span></div>'
                     : (cashPrizesEnabled
                         ? `<div class="card-prize"><span>Win</span><strong>E${prizePool.toFixed(2)}</strong></div>`
-                        : '<div class="card-prize"><span>Pilot goal</span><strong>QUALIFY</strong></div>')
+                        : tournament.is_promotional && !tournament.wallet_payouts_enabled
+                            ? '<div class="card-prize"><small>No credits prizes game</small></div>'
+                            : '<div class="card-prize"><span>Pilot goal</span><strong>QUALIFY</strong></div>')
                         + `<div class="slots"><span><i class="fa-solid fa-users"></i> <strong>${current}</strong> Currently joined</span><span>${Math.max(maximum - current, 0)} left</span></div>`
                         + `<div class="progress"><span style="width:${progress}%"></span></div>`;
                 return `<article class="tournament-card">
@@ -539,6 +550,7 @@
                 
                     <div class="card-meta"><span class="type-badge ${escapeHtml(tournament.type)}">${escapeHtml(labelForType(tournament.type))}</span><span class="status ${escapeHtml(tournament.status)}">${escapeHtml(labelForStatus(tournament.status))}</span></div>
                     <h3>${escapeHtml(tournament.name)}</h3><p class="creator"><i class="fa-solid fa-user"></i>Hosted by ${escapeHtml(tournament.creator || 'uMshova')}</p><p class="card-created-at"><i class="fa-regular fa-clock"></i>${escapeHtml(createdAtLabel)}</p>
+                    ${tournament.is_promotional ? '<div class="card-promotion"><p class="card-promotion-label">Promotional Tournament · Open to everyone</p><p class="card-promotion-schedule">' + escapeHtml((tournament.schedule_message || '').replace('If seats are not filled by then, it will start as soon as they are.', '').trim()) + '</p></div>' : ''}
                     ${resultBody}
                     <div class="card-actions">
                             ${canJoin
@@ -652,6 +664,11 @@
             });
         });
 
+        document.getElementById('promotionalTournament')?.addEventListener('change', (event) => {
+            document.getElementById('createSubmitBtn').textContent = event.target.checked ? 'Create promotional tournament (host only)' : {% if config.PILOT_MODE %}'Create with 10 credits'{% else %}'Create & pay E10.00'{% endif %};
+            if (event.target.checked) document.getElementById('autoLock').checked = false;
+        });
+
         document.getElementById('createSubmitBtn').addEventListener('click', async (event) => {
             const btn = event.currentTarget;
             btn.disabled = true;
@@ -667,6 +684,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
+                        is_promotional: document.getElementById('promotionalTournament')?.checked || false,
                         tournament_type: selectedType,
                         tournament_name: name || undefined,
                         is_auto_lock: autoLock,
@@ -721,7 +739,7 @@
                 const res = await fetch('/api/tournaments/me/active', { headers: { 'Accept': 'application/json' } });
                 if (!res.ok) return;
                 const data = await res.json();
-                if (data.tournaments && data.tournaments.length > 0 && createTournamentBtn) {
+                if (data.tournaments && data.tournaments.length > 0 && createTournamentBtn && {{ (not is_admin)|tojson }}) {
                     createTournamentBtn.style.display = 'none';
                 }
             } catch (err) { /* keep the CTA visible */ }

@@ -205,7 +205,8 @@ def _schedule_message(tournament):
     if schedule is None or schedule.start_option == 'seats_filled':
         return 'This tournament will start as soon as all seats are filled.'
     if schedule.scheduled_start_at:
-        start_local = schedule.scheduled_start_at.strftime('%H:%M')
+        start_time = schedule.scheduled_start_at + timedelta(hours=2) if tournament.is_promotional else schedule.scheduled_start_at
+        start_local = start_time.strftime('%H:%M') + (' SAST' if tournament.is_promotional else '')
         return (
             f'This tournament is scheduled to start at {start_local} '
             f'({schedule.start_option.replace("in_", "in ").replace("_", " ")}). '
@@ -222,6 +223,8 @@ def _serialize_tournament(tournament):
     promotional_entry = _is_promotional_tournament(tournament)
     return {
         'id': tournament.id,
+        'is_promotional': bool(tournament.is_promotional),
+        'wallet_payouts_enabled': not tournament.is_promotional or bool(tournament.promotional_wallet_payouts),
         'code': tournament.tournament_code,
         'name': tournament.tournament_name,
         'type': tournament.tournament_type,
@@ -344,6 +347,8 @@ def _is_promotional_tournament(tournament):
 
 def _cash_prizes_enabled(tournament):
     """Cup and promotional pilot tournaments never advertise cash prizes."""
+    if tournament.is_promotional and not tournament.promotional_wallet_payouts:
+        return False
     if tournament.tournament_type == 'cup':
         return bool(current_app.config.get('CUP_CASH_PAYOUTS_ENABLED', False))
     if _is_promotional_tournament(tournament):
@@ -1020,7 +1025,9 @@ def _finalize_tournament(tournament):
 
         # Pilot prizes mirror cash values as non-withdrawable credits.
         player = Player.query.filter_by(user_id=user_id).first()
-        if player is not None and amount > 0:
+        if player is not None and amount > 0 and (
+            not tournament.is_promotional or tournament.promotional_wallet_payouts
+        ):
             if _is_promotional_tournament(tournament):
                 award_tournament_prize(player, amount, tournament.id, placement)
             else:
@@ -1520,6 +1527,12 @@ def create_tournament():
         return jsonify({'error': 'Authentication required'}), 401
 
     data = request.get_json(silent=True) or {}
+    promotional = data.get('is_promotional', False)
+    if not isinstance(promotional, bool):
+        return jsonify({'error': 'is_promotional must be a boolean'}), 400
+    host = db.session.get(User, user_id)
+    if promotional and not (host and (host.is_admin or host.is_super_admin)):
+        return jsonify({'error': 'Only administrators can host promotional tournaments'}), 403
     tournament_type = data.get('tournament_type', 'standard')
     tournament_name = data.get('tournament_name') or f"{tournament_type.title()} Tournament"
 
@@ -1531,6 +1544,13 @@ def create_tournament():
         scheduled_start_at, normalized_option, normalized_custom_time = _resolve_schedule_time(
             data.get('start_option', 'seats_filled'), data.get('custom_time_str')
         )
+        if promotional and normalized_option == 'custom':
+            # Promotional host times are explicitly South African local time.
+            local_now = datetime.utcnow() + timedelta(hours=2)
+            local_start, normalized_custom_time = _parse_custom_time(
+                data.get('custom_time_str'), local_now
+            )
+            scheduled_start_at = local_start - timedelta(hours=2)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
 
@@ -1562,6 +1582,19 @@ def create_tournament():
         fallback_option='seats_filled',
     )
     db.session.add(schedule)
+    if promotional:
+        tournament.is_promotional = True
+        tournament.promotional_wallet_payouts = bool(current_app.config.get(
+            'PROMOTIONAL_TOURNAMENT_WALLET_PAYOUTS_ENABLED', False
+        ))
+        tournament.current_player_count = 0
+        tournament.prize_pool_amount = 0.0
+        _ensure_prize_pool(tournament)
+        queue_tournament_created(tournament, _get_username(user_id))
+        db.session.commit()
+        _emit_tournament_updated(tournament)
+        return jsonify({'tournament': _serialize_tournament(tournament),
+                        'message': 'Promotional tournament created; host is not a player'})
     participant = add_tournament_participant(
         tournament.id,
         user_id,
@@ -1626,6 +1659,9 @@ def join_tournament(tournament_id):
     tournament = Tournament.query.get_or_404(tournament_id)
     if tournament.status != 'open':
         return jsonify({'error': 'Tournament is not open'}), 400
+
+    if tournament.is_promotional and tournament.creator_id == user_id:
+        return jsonify({'error': 'The promotional tournament host cannot join as a player'}), 403
 
     already_registered = TournamentParticipant.query.filter_by(tournament_id=tournament.id, user_id=user_id).first()
     if already_registered:

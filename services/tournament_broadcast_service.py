@@ -57,6 +57,15 @@ def queue_tournament_created(tournament, creator_username):
         f'{tournament.max_players}-player bracket hosted by: {creator_username}.',
         f'Entry: {_amount(tournament.entry_fee, pilot)}',
     ]
+    if tournament.is_promotional:
+        lines[0] = f'{tournament.tournament_name} - PROMOTIONAL TOURNAMENT'
+        lines.extend(['No qualification required.', 'Host does not play.'])
+        if not tournament.promotional_wallet_payouts:
+            lines.append('Win E25 Data bonus.')
+        schedule = tournament.schedule
+        if schedule and schedule.scheduled_start_at:
+            start = schedule.scheduled_start_at + timedelta(hours=2)
+            lines.append(f'Start Time: {start:%d %B %Y at %H:%M} SAST.')
     public_url = str(current_app.config.get('PUBLIC_APP_URL') or '').strip()
     if public_url:
         lines.append(f'Play now: {public_url}/#tournaments')
@@ -79,7 +88,10 @@ def queue_tournament_results(tournament):
     ).first()
     placements = ((1, tournament.winner_id), (2, tournament.runner_up_id), (3, tournament.third_place_id))
     labels = {1: '1st', 2: '2nd', 3: '3rd'}
-    lines = [f'🏆 {tournament.tournament_name} Results', '']
+    label = 'PROMOTIONAL TOURNAMENT — ' if tournament.is_promotional else ''
+    lines = [f'🏆 {label}{tournament.tournament_name} Results', '']
+    if tournament.is_promotional and not tournament.promotional_wallet_payouts:
+        lines.append('Results only.')
     for placement, user_id in placements:
         if not user_id:
             continue
