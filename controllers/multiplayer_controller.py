@@ -14,6 +14,10 @@ import json
 from controllers.flask_controller import FlaskGameController
 import random
 import string
+from services.spectator_service import (
+    masked_player_state, public_action_result, player_action_result, action_result_data,
+    public_played_cards, publish_spectator_update,
+)
 
 
 # In-memory room cache for fast access
@@ -139,13 +143,14 @@ def handle_game_over(room, state, socketio):
     game_over_payload = {
         'winner_id': winner_id,
         'winner_index': winner_index,
-        'state': state,
+        'state': masked_player_state(state),
         'prize_pool': room.bet_amount * 2 if room.bet_session_id else 0
     }
     if tournament_info:
         game_over_payload['tournament_info'] = tournament_info
 
     socketio.emit('game_over', game_over_payload, room=room.room_code)
+    publish_spectator_update(socketio, room, state, action='completed')
 
     # Send personal balance updates to each user privately
     try:
@@ -227,7 +232,10 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             GameRoom.status.in_(['in_progress', 'paused'])
         ).all()
         
+        joined_rooms = set(rooms())
         for room in rooms_to_check:
+            if room.room_code not in joined_rooms:
+                continue  # A spectator tab must not change a player's presence.
             if room.player1_id == user_id:
                 room.player1_connected = False
                 room.player1_last_seen = datetime.utcnow()
@@ -555,6 +563,8 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 'turn_deadline': turn_deadline_iso
             }, room=f"user_{player2_id}")
             
+            publish_spectator_update(socketio, room, state, action='started')
+
             # Update lobby
             socketio.emit('lobby_updated', {}, to=None)
     
@@ -592,6 +602,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         game_id = room.game_id
         engine = game_manager.get_game(game_id)
         state = engine.get_state()
+        public_before_state = {key: state.get(key) for key in ('attack_card', 'attack_card_value', 'attacker', 'defender')}
         player_index = 0 if user_id == room.player1_id else 1
 
         # Idempotency: if client provided an idempotency_key, ensure we don't re-apply the same action
@@ -788,6 +799,14 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         room.turn_deadline = datetime.utcnow() + timedelta(seconds=room.turn_duration_seconds)
         db.session.commit()
         
+        result_data = action_result_data(result)
+        if isinstance(result_data, dict) and not result_data.get('error'):
+            publish_spectator_update(
+                socketio, room, state, action=action_type, actor_index=actor_index,
+                played_cards=public_played_cards(result, action_type),
+                before_state=public_before_state, trail_crashed=result_data.get('crashed'),
+            )
+
         # Check if game over
         if state.get('game_over'):
             handle_game_over(room, state, socketio)
@@ -815,7 +834,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 'actor_index': actor_index,
                 'is_my_turn': is_my_turn,
                 'action': action_type,
-                'result': result.get_json() if hasattr(result, 'get_json') else result,
+                'result': player_action_result(result, pid == user_id),
                 'turn_deadline': room.turn_deadline.isoformat(),
                 'bet_total': (room.bet_amount or 0) * 2
             }, room=f"user_{pid}")
@@ -880,6 +899,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         room.paused_at = datetime.utcnow()
         db.session.commit()
         
+        publish_spectator_update(socketio, room, action='paused')
         socketio.emit('game_paused', {
             'paused_at': room.paused_at.isoformat()
         }, room=room_code)
@@ -912,6 +932,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         room.turn_deadline = datetime.utcnow() + timedelta(seconds=room.turn_duration_seconds)
         db.session.commit()
         
+        publish_spectator_update(socketio, room, action='resumed')
         socketio.emit('game_resumed', {
             'turn_deadline': room.turn_deadline.isoformat()
         }, room=room_code)
@@ -1080,6 +1101,7 @@ def _auto_play_expired_room(socketio, game_manager, room, now):
 
     engine = game_manager.get_game(room.game_id)
     state = engine.get_state()
+    public_before_state = {key: state.get(key) for key in ('attack_card', 'attack_card_value', 'attacker', 'defender')}
     if not state or state.get('game_over'):
         return
 
@@ -1226,6 +1248,14 @@ def _auto_play_expired_room(socketio, game_manager, room, now):
     except Exception as exc:
         print(f"[MULTIPLAYER] Failed to emit turn_timeout: {exc}")
 
+    result_data = action_result_data(result)
+    if not result_data.get('error'):
+        publish_spectator_update(
+            socketio, room, state, action=action_type, actor_index=player_index,
+            played_cards=public_played_cards(result, action_type),
+            before_state=public_before_state, trail_crashed=result_data.get('crashed'),
+        )
+
     if state.get('game_over'):
         handle_game_over(room, state, socketio)
         return
@@ -1251,7 +1281,7 @@ def _auto_play_expired_room(socketio, game_manager, room, now):
             'actor_index': player_index,
             'is_my_turn': is_my_turn,
             'action': action_type,
-            'result': result.get_json() if hasattr(result, 'get_json') else result,
+            'result': public_action_result(result),
             'turn_deadline': room.turn_deadline.isoformat(),
             'bet_total': (room.bet_amount or 0) * 2
         }, room=f"user_{pid}")

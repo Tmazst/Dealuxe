@@ -927,6 +927,7 @@ def _serialize_match(match):
         'bracket_id': match.bracket_id,
         'game_room_id': match.game_room_id,
         'room_code': room_code,
+        'watch_url': f'/watch/{room_code}' if room_code and match.status in {'in_progress', 'completed'} else None,
         'player1_id': match.player1_id,
         'player2_id': match.player2_id,
         'player1_name': _get_username(match.player1_id),
@@ -2173,6 +2174,10 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
         tournament.status = 'in_progress'
 
     db.session.commit()
+
+    from services.spectator_service import publish_spectator_update
+    if _socketio:
+        publish_spectator_update(_socketio, room, action='started')
 
     # Emit socket events to notify players and update tournament UI
     if _socketio:

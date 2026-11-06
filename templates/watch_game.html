@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Watch a public uMshova Dealuxe tournament match. Both players’ hands stay hidden.">
+    <title>Watch game | uMshova Dealuxe</title>
+    {% include '_security_head.html' %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/watch-game.css') }}">
+</head>
+<body>
+<main id="spectator-game" data-room-code="{{ room_code }}" data-transports='{{ config.SOCKET_TRANSPORTS|tojson }}'>
+    <header class="watch-nav">
+        <a class="brand" href="/tournaments">uMshova <span>Dealuxe</span></a>
+        <span class="view-label">Spectator · View only</span>
+    </header>
+    <section class="match-heading" aria-labelledby="match-title">
+        <div><p class="eyebrow" id="tournament-name">Tournament match</p><h1 id="match-title">Loading live game…</h1><p class="muted" id="match-round"></p></div>
+        <span id="connection-status" class="connection" role="status">Connecting…</span>
+    </section>
+    <p id="watch-notice" class="notice" role="status" hidden></p>
+    <div class="watch-layout">
+        <section class="table-column" aria-label="Public game table">
+            <div class="game-table">
+                <div class="player" id="player-0"><span class="avatar" aria-hidden="true">1</span><strong class="player-name">Player 1</strong><span class="card-count muted">— cards</span></div>
+                <div class="hidden-hand" id="hand-0" aria-label="Player 1 hand hidden"></div>
+                <div class="public-pile">
+                    <p class="muted pile-label" id="pile-label">PUBLIC TABLE</p>
+                    <div id="public-cards" class="public-cards"><span class="empty-table">Waiting for a public move</span></div>
+                    <section id="exchange-defense" class="exchange-defense" aria-label="Defense cards" hidden>
+                        <p id="defense-label" class="pile-label muted">DEFENSE</p>
+                        <div id="defense-cards" class="public-cards"></div>
+                    </section>
+                    <p id="exchange-outcome" class="exchange-outcome" role="status" hidden></p>
+                    <p id="exchange-explanation" class="exchange-explanation" hidden></p>
+                    <h2 id="turn-status">Waiting for live updates</h2>
+                    <p id="turn-timer" class="turn-timer"></p>
+                </div>
+                <div class="hidden-hand" id="hand-1" aria-label="Player 2 hand hidden"></div>
+                <div class="player" id="player-1"><span class="avatar" aria-hidden="true">2</span><strong class="player-name">Player 2</strong><span class="card-count muted">— cards</span></div>
+                <p class="privacy"><span aria-hidden="true">&#128274;</span> Both players’ hands are hidden</p>
+            </div>
+            <div class="table-footer"><a class="watch-link" id="back-to-bracket" href="{{ bracket_url }}">← Back to bracket</a><span class="muted">{% if is_guest %}Watching as a guest{% else %}Watching only{% endif %}</span></div>
+        </section>
+        <aside class="activity" aria-labelledby="activity-title"><h2 id="activity-title">Recent public moves</h2><ol id="public-moves"><li class="muted">Public moves will appear here.</li></ol></aside>
+    </div>
+    <p class="watch-footnote">No account required to watch. Watching does not reserve a seat or change the match.</p>
+    <noscript><p class="notice">Please enable JavaScript to watch live games. <a href="{{ bracket_url }}">Return to bracket</a>.</p></noscript>
+</main>
+<script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/watch-game.js') }}" defer></script>
+</body>
+</html>

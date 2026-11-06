@@ -1,0 +1,63 @@
+:root { color-scheme: dark; --watch-bg:#101121; --watch-panel:#1b1c30; --watch-ink:#f7f4ff; --watch-muted:#b7afcc; --watch-line:#38334d; --watch-gold:#ffe46b; --watch-table:#142f2b; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--watch-bg); color:var(--watch-ink); font:16px/1.5 system-ui,sans-serif; }
+[hidden] { display:none !important; }
+a { color:var(--watch-gold); }
+a:focus-visible { outline:3px solid var(--watch-gold); outline-offset:4px; }
+#spectator-game { max-width:1280px; margin:auto; padding:0 28px 28px; }
+.watch-nav { min-height:80px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--watch-line); }
+.brand { font-weight:750; color:var(--watch-ink); text-decoration:none; letter-spacing:.025em; }
+.brand span { color:var(--watch-gold); }
+.view-label,.muted { color:var(--watch-muted); }
+.view-label { font-size:.85rem; }
+.match-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin:30px 0 24px; }
+.eyebrow { font-size:.8rem; letter-spacing:.06em; color:var(--watch-gold); margin:0; overflow-wrap:anywhere; }
+h1 { font-size:clamp(1.35rem,3vw,2rem); margin:5px 0; overflow-wrap:anywhere; }
+.match-heading .muted { margin:0; }
+.connection { flex-shrink:0; font-size:.8rem; padding:7px 10px; border-radius:7px; background:var(--watch-panel); color:var(--watch-gold); }
+.connection.live { color:#96f2c8; }
+.connection.live::before { content:'● '; }
+.watch-layout { display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:28px; align-items:start; }
+.table-column,.activity { min-width:0; }
+.game-table { border:1px solid var(--watch-line); background:radial-gradient(ellipse at center,#20493d,var(--watch-table)); border-radius:24px; padding:18px; display:flex; flex-direction:column; align-items:center; gap:9px; }
+.player { display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; text-align:center; }
+.player-name { overflow-wrap:anywhere; max-width:300px; }
+.avatar { width:38px; height:38px; display:grid; place-items:center; border-radius:50%; background:var(--watch-panel); }
+.card-count { font-size:.85rem; }
+.hidden-hand { display:flex; justify-content:center; flex-wrap:wrap; gap:5px; max-width:100%; min-height:44px; }
+.card-back { width:31px; height:43px; border-radius:5px; background:repeating-linear-gradient(45deg,#25263e,#25263e 4px,#32334c 4px,#32334c 6px); border:1px solid #706880; display:grid; place-items:center; color:#cfc6dc; }
+.extra-cards { align-self:center; padding-left:4px; color:var(--watch-muted); }
+.public-pile { text-align:center; padding:8px 0; width:100%; }
+.pile-label { font-size:.72rem; letter-spacing:.1em; margin:0 0 8px; }
+.public-cards { min-height:94px; display:flex; justify-content:center; align-items:center; gap:10px; flex-wrap:wrap; }
+.played-card { width:64px; height:92px; background:#fffdf6; color:#1c1927; border-radius:8px; display:flex; flex-direction:column; justify-content:space-between; padding:6px 9px; text-align:left; line-height:1; box-shadow:4px 4px 0 #091f1a; }
+.played-card.red { color:#ae1530; }
+.played-card b { align-self:center; font-size:1.9rem; }
+.played-card small { font-size:.75rem; }
+.empty-table { color:var(--watch-muted); }
+.exchange-defense { margin-top:10px; padding-top:10px; border-top:1px solid #547469; }
+.exchange-defense .public-cards { min-height:72px; }
+.exchange-defense .played-card { width:50px; height:72px; }
+.exchange-defense .played-card b { font-size:1.5rem; }
+.exchange-outcome { margin:12px 0 5px; color:var(--watch-gold); font-weight:650; }
+.exchange-outcome.success { color:#96f2c8; }
+.exchange-explanation { margin:0 auto; max-width:440px; font-size:.82rem; color:#d0d6d1; }
+.drawn-public-back { width:44px; height:64px; border:1px solid #706880; border-radius:6px; display:grid; place-items:center; color:#cfc6dc; background:repeating-linear-gradient(45deg,#25263e,#25263e 4px,#32334c 4px,#32334c 6px); }
+.card-enter-attack { animation:watch-attack-in 240ms cubic-bezier(.2,.7,.3,1) both; animation-delay:var(--card-delay,0ms); }
+.card-enter-defense { animation:watch-defense-in 240ms cubic-bezier(.2,.7,.3,1) both; animation-delay:var(--card-delay,0ms); }
+@keyframes watch-attack-in { from { opacity:0; transform:translateY(-16px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+@keyframes watch-defense-in { from { opacity:0; transform:translateY(16px) scale(.96); } to { opacity:1; transform:translateY(0) scale(1); } }
+@media(prefers-reduced-motion:reduce) { .card-enter-attack,.card-enter-defense { animation:none; } }
+#turn-status { font-size:1.1rem; margin:12px 0 4px; }
+.turn-timer { margin:0; color:var(--watch-gold); min-height:24px; font-variant-numeric:tabular-nums; }
+.privacy { font-size:.8rem; color:#d0d6d1; margin:2px 0 0; text-align:center; }
+.table-footer { margin-top:18px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; font-size:.85rem; }
+.watch-link { display:inline-flex; align-items:center; min-height:44px; padding:8px 12px; border:1px solid var(--watch-line); border-radius:8px; text-decoration:none; }
+.activity h2 { margin:0 0 16px; font-size:1rem; }
+.activity ol { list-style:none; padding:0; margin:0; }
+.activity li { border-bottom:1px solid var(--watch-line); padding:12px 0; overflow-wrap:anywhere; }
+.activity time { display:block; color:var(--watch-muted); font-size:.75rem; margin-top:3px; }
+.notice { padding:12px 16px; background:var(--watch-panel); border-left:3px solid var(--watch-gold); margin:0 0 20px; }
+.watch-footnote { margin:26px 0 0; font-size:.8rem; color:var(--watch-muted); }
+@media(max-width:980px) { .watch-layout { grid-template-columns:1fr; } .activity ol { display:grid; grid-template-columns:1fr 1fr; column-gap:24px; } }
+@media(max-width:540px) { #spectator-game { padding:0 14px 20px; } .watch-nav { min-height:72px; gap:4px; padding:12px 0; } .view-label { font-size:.75rem; } .match-heading { margin:22px 0 18px; gap:10px; flex-wrap:wrap; } .game-table { padding:18px 10px; border-radius:18px; gap:10px; } .card-back { width:25px; height:35px; } .hidden-hand { gap:4px; min-height:35px; } .activity ol { grid-template-columns:1fr; } .player-name { max-width:180px; } .public-pile { padding:6px 0; } .table-footer { align-items:center; } }

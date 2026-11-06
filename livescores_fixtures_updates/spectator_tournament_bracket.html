@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Spectator Bracket View</title>
     <style>
       body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #050815; color: #eef2ff; }
@@ -23,6 +24,8 @@
       .table { width: 100%; border-collapse: collapse; }
       .table th, .table td { padding: 0.8rem 0.7rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
       .table th { text-align: left; color: #9eb6e3; font-size: 0.95rem; }
+      .watch-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:12px; }
+      .watch-actions a { padding:10px; border:1px solid #ffe46b; border-radius:8px; color:#ffe46b; }
     </style>
   </head>
   <body>
@@ -47,7 +50,8 @@
       </div>
     </div>
     <script>
-      const tournamentId = Number(window.location.pathname.split('/').filter(Boolean).pop());
+      const tournamentId = Number(window.location.pathname.split('/').filter(Boolean)[2]);
+      const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
       async function loadBracket() {
         const res = await fetch(`/api/tournaments/${tournamentId}/overview`);
         const data = await res.json();
@@ -65,15 +69,22 @@
         rounds.forEach(round => {
           const roundEl = document.createElement('div');
           roundEl.className = 'round';
-          roundEl.innerHTML = `<h2>${round.round_name}</h2>`;
+          roundEl.innerHTML = `<h2>${escapeHtml(round.round_name)}</h2>`;
           round.matches.forEach(match => {
             const matchEl = document.createElement('div');
             matchEl.className = 'match';
             matchEl.innerHTML = `
-              <strong>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</strong>
+              <strong>${escapeHtml(match.player1_name || 'TBD')} vs ${escapeHtml(match.player2_name || 'TBD')}</strong>
               <span>Status: ${match.status}</span>
-              <span class="result">${match.winner_name ? `Winner: ${match.winner_name}` : 'Winner: pending'}</span>
+              <span class="result">${match.winner_name ? `Winner: ${escapeHtml(match.winner_name)}` : 'Winner: pending'}</span>
             `;
+            const liveMatch = data.matches.find(item => item.id === match.match_id);
+            if (liveMatch?.watch_url && liveMatch.status === 'in_progress') {
+              const actions = document.createElement('div'); actions.className = 'watch-actions';
+              const live = document.createElement('span'); live.textContent = '● Live game';
+              const link = document.createElement('a'); link.textContent = '◉ Watch game'; link.href = liveMatch.watch_url;
+              actions.append(live, link); matchEl.append(actions);
+            }
             roundEl.appendChild(matchEl);
           });
           bracketContainer.appendChild(roundEl);
@@ -90,11 +101,12 @@
         winnerTable.innerHTML = '';
         data.rounds.flatMap(r => r.matches).filter(m => m.winner_name).forEach(match => {
           const row = document.createElement('tr');
-          row.innerHTML = `<td>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</td><td>${match.winner_name}</td>`;
+          row.innerHTML = `<td>${escapeHtml(match.player1_name || 'TBD')} vs ${escapeHtml(match.player2_name || 'TBD')}</td><td>${escapeHtml(match.winner_name)}</td>`;
           winnerTable.appendChild(row);
         });
       }
       loadBracket();
+      setInterval(() => { if (!document.hidden) loadBracket().catch(() => {}); }, 15000);
     </script>
   </body>
 </html>

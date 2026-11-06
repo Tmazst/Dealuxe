@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Spectator Tournament Overview</title>
     <style>
       body { margin: 0; font-family: Inter, system-ui, sans-serif; background: #070b16; color: #edf2ff; }
@@ -36,6 +37,9 @@
       .table th { text-align: left; color: #a6b4d9; }
       .table td { font-size: 0.95rem; }
       a { color: #7ec8ff; }
+      .watch-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:12px; }
+      .watch-actions a { padding:10px; border:1px solid #ffe46b; border-radius:8px; color:#ffe46b; }
+      @media(max-width:700px) { .page { padding:1rem; } .hero { grid-template-columns:1fr; } }
     </style>
   </head>
   <body>
@@ -71,6 +75,8 @@
         </div>
       </div>
 
+      <div class="section"><h2>Live games</h2><div id="live-fixtures"></div></div>
+
       <div class="section">
         <h2>Next fixtures</h2>
         <div id="next-fixtures"></div>
@@ -97,16 +103,24 @@
       const bracketLink = document.getElementById('bracket-link');
       bracketLink.href = `/spectators/tournaments/${tournamentId}/bracket`;
 
+      const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
       function renderMatchCard(match) {
         const card = document.createElement('div');
         card.className = 'match-card';
         card.innerHTML = `
           <div class="players">
-            <div class="player-line"><span>${match.player1_name || 'TBD'}</span></div>
-            <div class="player-line"><span>${match.player2_name || 'TBD'}</span></div>
+            <div class="player-line"><span>${escapeHtml(match.player1_name || 'TBD')}</span></div>
+            <div class="player-line"><span>${escapeHtml(match.player2_name || 'TBD')}</span></div>
           </div>
-          <div class="match-status"><span>${match.status.toUpperCase()}</span> · ${match.win_type || 'No result yet'}</div>
+          <div class="match-status"><span>${escapeHtml(match.status.toUpperCase())}</span> · ${escapeHtml(match.win_type || 'No result yet')}</div>
         `;
+        if (match.watch_url && match.status === 'in_progress') {
+          const actions = document.createElement('div'); actions.className = 'watch-actions';
+          const live = document.createElement('span'); live.textContent = '● Live game';
+          const link = document.createElement('a'); link.href = match.watch_url; link.textContent = '◉ Watch game';
+          actions.append(live, link); card.append(actions);
+        }
         return card;
       }
 
@@ -127,6 +141,12 @@
         statusChip.textContent = tournament.status.replace('_', ' ');
         statusChip.className = `status-chip status-${tournament.status.replace(/\s+/g, '_')}`;
 
+        const liveContainer = document.getElementById('live-fixtures');
+        liveContainer.replaceChildren();
+        const liveGames = data.matches.filter(match => match.status === 'in_progress' && match.watch_url);
+        liveGames.forEach(match => liveContainer.append(renderMatchCard(match)));
+        if (!liveGames.length) liveContainer.textContent = 'No matches are live yet.';
+
         const nextContainer = document.getElementById('next-fixtures');
         nextContainer.innerHTML = '';
         if (data.next_matches.length === 0) {
@@ -135,7 +155,7 @@
           data.next_matches.forEach(match => {
             const card = document.createElement('div');
             card.className = 'list-card';
-            card.innerHTML = `<strong>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</strong><div class="meta">Status: ${match.status} · Scheduled: ${match.scheduled_for ? new Date(match.scheduled_for).toLocaleString() : 'TBD'}</div>`;
+            card.innerHTML = `<strong>${escapeHtml(match.player1_name || 'TBD')} vs ${escapeHtml(match.player2_name || 'TBD')}</strong><div class="meta">Status: ${escapeHtml(match.status)} · Scheduled: ${match.scheduled_for ? new Date(match.scheduled_for).toLocaleString() : 'TBD'}</div>`;
             nextContainer.appendChild(card);
           });
         }
@@ -148,7 +168,7 @@
           data.recent_results.forEach(match => {
             const card = document.createElement('div');
             card.className = 'list-card';
-            card.innerHTML = `<strong>${match.player1_name || 'TBD'} vs ${match.player2_name || 'TBD'}</strong><div class="meta">Winner: ${match.winner_name || 'TBD'} · Completed: ${match.completed_at ? new Date(match.completed_at).toLocaleString() : 'N/A'}</div>`;
+            card.innerHTML = `<strong>${escapeHtml(match.player1_name || 'TBD')} vs ${escapeHtml(match.player2_name || 'TBD')}</strong><div class="meta">Winner: ${escapeHtml(match.winner_name || 'TBD')} · Completed: ${match.completed_at ? new Date(match.completed_at).toLocaleString() : 'N/A'}</div>`;
             resultsContainer.appendChild(card);
           });
         }
@@ -161,7 +181,7 @@
           data.rounds.forEach(round => {
             const column = document.createElement('div');
             column.className = 'round-column';
-            column.innerHTML = `<h3>${round.round_name}</h3>`;
+            column.innerHTML = `<h3>${escapeHtml(round.round_name)}</h3>`;
             round.matches.forEach(match => column.appendChild(renderMatchCard(match)));
             bracketGrid.appendChild(column);
           });
@@ -169,11 +189,12 @@
 
         const participantList = document.getElementById('participant-list');
         participantList.innerHTML = data.participants.length ? data.participants.map(p => `
-          <div class="list-card"><strong>${p.username || 'Unknown'}</strong> · Status: ${p.status} · Paid: ${p.paid_amount || 0}</div>
+          <div class="list-card"><strong>${escapeHtml(p.username || 'Unknown')}</strong> · Status: ${escapeHtml(p.status)} · Paid: ${escapeHtml(p.paid_amount || 0)}</div>
         `).join('') : '<div class="list-card">No registered participants yet.</div>';
       }
 
       loadOverview();
+      setInterval(() => { if (!document.hidden) loadOverview().catch(() => {}); }, 15000);
     </script>
   </body>
 </html>

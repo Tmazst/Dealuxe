@@ -175,3 +175,4 @@ tests/test_cup_seat_management.py
 !test_promotional_tournaments.py
 test_promotional_tournaments.py
 .env.example
+!test_spectator_games.py

@@ -434,6 +434,10 @@
             white-space: nowrap;
         }
 
+        .match-live-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+        .match-live-actions .match-status { margin: 0; }
+        .match-live-actions .btn-bracket { width: auto; min-height: 44px; }
+        .btn-watch { border: 1px solid var(--gold); color: var(--gold); text-decoration: none; }
         .btn-bracket {
             padding: 12px 25px;
             border: none;
@@ -985,9 +989,10 @@
                             actionsHtml = `<div class="match-status status-rolling" data-roll-deadline="${escapeHtml(match.roll.deadline || '')}">🎲 Rolling... <span class="roll-countdown">10:00</span></div>`;
                         } else if (status === 'in_progress' && match.room_code) {
                             // Direct link into the multiplayer game UI
-                            actionsHtml = isParticipant
-                                ? `<a class="btn-bracket btn-share" href="/game/${escapeHtml(match.room_code)}">▶ Join game</a>`
-                                : `<div class="match-status status-live">🔴 LIVE NOW</div>`;
+                            actionsHtml = `<div class="match-live-actions">${isParticipant
+                                ? `<a class="btn-bracket btn-share" href="/game/${encodeURIComponent(match.room_code)}">▶ Join game</a>`
+                                : '<span class="match-status status-live">🔴 Live game</span>'}
+                                <a class="btn-bracket btn-watch" href="/watch/${encodeURIComponent(match.room_code)}">◉ Watch game</a></div>`;
                         } else if (canStart) {
                             actionsHtml = `<button class="btn-bracket btn-share" onclick="startMatch(${Number(match.id)})">Start match</button>`;
                         } else if (canRoll) {

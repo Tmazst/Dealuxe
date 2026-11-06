@@ -40,6 +40,8 @@ from controllers.flask_controller import FlaskGameController
 from controllers.session_controller import session_bp
 from controllers.auth_controller import auth_bp, admin_required
 from controllers.tournament_controller import tournament_bp, init_tournament_events
+from controllers.spectator_controller import spectator_bp, init_spectator_events
+from services.spectator_service import masked_player_state
 from admin.routes import admin_bp
 from user.routes import user_bp
 from hybrid.routes import hybrid_bp
@@ -174,6 +176,7 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(hybrid_bp)
 app.register_blueprint(pricing_bp)
+app.register_blueprint(spectator_bp)
 
 # Ensure the upload directory exists for user KYC / ID files
 try:
@@ -205,6 +208,7 @@ app.extensions['hybrid_chat_store'] = build_chat_store(manager)
 
 from controllers.multiplayer_controller import init_multiplayer_events
 init_multiplayer_events(socketio, manager, app)
+init_spectator_events(socketio, manager)
 init_tournament_events(socketio, app)
 init_hybrid_chat_events(socketio, app)
 
@@ -723,6 +727,23 @@ def create_game():
     })
 
 
+@app.before_request
+def protect_multiplayer_http_access():
+    """The REST fallback must not expose hands or bypass socket turn checks."""
+    game_id = (request.view_args or {}).get('game_id')
+    if not game_id or not request.path.startswith('/api/game/'):
+        return None
+    from database import GameRoom
+    room = GameRoom.query.filter_by(game_id=game_id).first()
+    if room is None:
+        return None  # Preserve the existing standalone local/AI game flow.
+    if not session.get('user_id') or not room.is_player_in_room(session['user_id']):
+        return jsonify({'error': 'This game is private; use Watch game for public tournament matches'}), 403
+    if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+        return jsonify({'error': 'Use the live game controls for multiplayer actions'}), 409
+    return None
+
+
 @app.route("/api/game/<game_id>/player_details")
 def player_details(game_id):
     engine = manager.get_game(game_id)
@@ -761,6 +782,11 @@ def player_details(game_id):
 @app.route("/api/game/<game_id>/state")
 def game_state(game_id):
     engine = manager.get_game(game_id)
+    from database import GameRoom
+    room = GameRoom.query.filter_by(game_id=game_id).first()
+    if room is not None:
+        index = 0 if room.player1_id == session.get('user_id') else 1
+        return jsonify(masked_player_state(engine.get_state(), index))
     return jsonify(engine.get_state())
 
 
@@ -889,6 +915,12 @@ def rule8_crash(game_id):
 @app.route("/api/game/<game_id>/leaderboard")
 def leaderboard(game_id):
     engine = manager.get_game(game_id)
+    from database import GameRoom
+    if GameRoom.query.filter_by(game_id=game_id).first() is not None:
+        return jsonify({'players': [
+            {'id': index, 'name': player.name, 'hand_count': len(player.hand)}
+            for index, player in enumerate(engine.players)
+        ]})
     controller = _make_game_controller(engine, game_id)
 
     return controller.leaderboard()

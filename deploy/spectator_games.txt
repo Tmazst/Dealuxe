@@ -1,0 +1,53 @@
+Public tournament spectators
+
+Deploy the changed application files and restart the web application workers.
+This feature adds no database columns and requires no new schema migration.
+Keep the existing Socket.IO origin allowlist and shared Redis configuration.
+
+Entry points:
+- Regular tournament bracket: Watch game beside Live game / Join game.
+- Spectator tournament overview: Live games section and match cards.
+- Spectator bracket: Watch game beside Live game.
+- Public viewing page: /watch/<room_code> (no login required).
+
+Only linked tournament game rooms can be watched. Private versus rooms and
+cancelled tournaments are excluded. Viewers never join player rooms, reserve
+seats, or receive either hand. The public snapshot includes player names,
+remaining card counts, current public card, last public play, turn status,
+countdown, recent public moves and final winner. No hand reveal on completion.
+
+Snapshots are shared through the existing Redis connection with a 24-hour TTL;
+local development uses a bounded in-memory cache. No new dependencies needed.
+Public updates are emitted for normal moves, timer-driven moves, pauses,
+resumes and game completion. HTTP refresh every 15 seconds recovers missed
+updates. The existing configurable socket-event request budget also applies.
+
+Multiplayer HTTP state/player details now require the actual player session.
+The leaderboard masks hands, move results no longer leak consume_ui_state()
+hands, and multiplayer HTTP mutations are rejected so socket turn validation
+cannot be bypassed. Local/AI gameplay keeps its existing routes.
+
+Validation:
+- 21 spectator privacy/transport/exchange tests pass.
+- 21 client checks cover card retention, equations, seat direction, duplicate updates,
+  reconnection, reduced motion and hidden tabs.
+- 7 existing no-AI and tournament match-flow tests pass.
+- Browser checked at 1280, 768, 390 and 320 pixels; no horizontal overflow.
+- Guest bracket includes a working /watch/ destination; both hands remain hidden.
+
+No production deployment was performed by this change.
+
+Explanatory exchanges and animation
+The attack stays above its defense cards, with a matching-value equation and
+a plain-language explanation. A draw keeps the original attack visible and
+shows only a card back. The completed exchange stays until the next attack;
+its explanation remains in public move history. Existing matches are supported
+by capturing the public attack before the engine clears it or swaps roles.
+
+Animations use short transform/opacity transitions only (240ms, with a small
+stagger for defending cards). Duplicate snapshots reuse the same card nodes.
+Initial snapshots, reconnections, background tabs and reduced-motion viewers
+do not replay card movement. Animations never block the game or its timer.
+
+The 8 versus 2 + 6 exchange was verified live in the browser, including phone
+layout and persisted display after reload. No additional database migration.
