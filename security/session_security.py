@@ -2,10 +2,46 @@
 
 import secrets
 import time
+import hashlib
+import hmac
 
 from flask import current_app, session
 
 from .observability import audit_security_event
+
+
+def _credential_tag(user):
+    """Bind persistent sign-in to current credentials without exposing a hash."""
+    password_hash = getattr(user, 'password_hash', None)
+    if not password_hash:
+        return None
+    key = current_app.secret_key
+    key = key.encode('utf-8') if isinstance(key, str) else key
+    message = f'auth-credentials:{user.id}:{password_hash}'.encode('utf-8')
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
+def authenticated_session_is_valid(user):
+    if not user or not user.is_active or user.id != session.get('user_id'):
+        return False
+    stored_tag = session.get('auth_credential_tag')
+    if stored_tag is None:
+        return True  # Existing signed sessions are upgraded on their next request.
+    expected = _credential_tag(user)
+    return bool(expected and isinstance(stored_tag, str) and hmac.compare_digest(stored_tag, expected))
+
+
+def refresh_authenticated_session(user):
+    if not authenticated_session_is_valid(user):
+        session.clear()
+        return False
+    if not session.permanent:
+        session.permanent = True
+    if 'auth_credential_tag' not in session:
+        tag = _credential_tag(user)
+        if tag:
+            session['auth_credential_tag'] = tag
+    return True
 
 
 def establish_authenticated_session(user):
@@ -24,6 +60,10 @@ def establish_authenticated_session(user):
 
     session['user_id'] = user.id
     session['username'] = user.username
+    session.permanent = True
+    tag = _credential_tag(user)
+    if tag:
+        session['auth_credential_tag'] = tag
     if audit_outcome:
         audit_security_event(
             'session_rotation',

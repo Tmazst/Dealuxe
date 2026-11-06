@@ -396,6 +396,12 @@ def build_runtime_security_config(environ=None):
     cookie_samesite = str(
         environ.get('SESSION_COOKIE_SAMESITE') or 'Lax'
     ).strip().title()
+    try:
+        session_lifetime_days = int(str(environ.get('AUTH_SESSION_LIFETIME_DAYS', '30')).strip())
+    except (TypeError, ValueError):
+        raise RuntimeError('AUTH_SESSION_LIFETIME_DAYS must be an integer between 1 and 365')
+    if not 1 <= session_lifetime_days <= 365:
+        raise RuntimeError('AUTH_SESSION_LIFETIME_DAYS must be between 1 and 365')
     if cookie_samesite not in {'Lax', 'Strict'}:
         raise RuntimeError('SESSION_COOKIE_SAMESITE must be Lax or Strict')
     if cookie_security_mode == 'off':
@@ -621,6 +627,9 @@ def build_runtime_security_config(environ=None):
         'SESSION_COOKIE_SECURE': cookie_secure,
         'SESSION_COOKIE_SAMESITE': effective_samesite,
         'SESSION_COOKIE_DOMAIN': None,
+        'AUTH_SESSION_LIFETIME_DAYS': session_lifetime_days,
+        'PERMANENT_SESSION_LIFETIME': timedelta(days=session_lifetime_days),
+        'SESSION_REFRESH_EACH_REQUEST': True,
         'CSRF_SECURITY_MODE': csrf_security_mode,
         'CSRF_TOKEN_TIME_LIMIT_SECONDS': csrf_time_limit_seconds,
         'CSRF_ADDITIONAL_EXEMPT_ENDPOINTS': csrf_exempt_endpoints,

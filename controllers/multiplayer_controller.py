@@ -4,6 +4,7 @@ Handles real-time 2-player games, room management, and turn-based gameplay
 """
 from flask import session, request
 from flask_socketio import emit, join_room, leave_room, rooms
+from security.session_security import authenticated_session_is_valid
 from datetime import datetime, timedelta
 from database import db, GameRoom, User, BetSession, Player, get_player_by_user_id, Move
 import json
@@ -202,6 +203,9 @@ def init_multiplayer_events(socketio, game_manager, app=None):
     def handle_connect():
         """Handle client connection - allow both authenticated and guest users"""
         user_id = session.get('user_id')
+        if user_id and not authenticated_session_is_valid(db.session.get(User, user_id)):
+            session.clear()
+            user_id = None
         if user_id:
             print(f"[MULTIPLAYER] User {user_id} connected - SID: {request.sid}")
             join_room(f"user_{user_id}")

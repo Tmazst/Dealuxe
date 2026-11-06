@@ -1,0 +1,32 @@
+Persistent sign-in rollout
+
+Deploy the updated app and static files, then restart the web application.
+No database migration or new dependency is required.
+
+Default: AUTH_SESSION_LIFETIME_DAYS=30
+Optional .env override: choose an integer from 1 through 365 days.
+Activity on authenticated HTTP requests renews the session window. Signed-in
+cookies now have an expiry, so regular browsers retain them after closing.
+Existing valid signed-in sessions are upgraded on the next application request.
+Anonymous visitor and verification-only sessions are not made permanent.
+
+Keep the existing FLASK_SECRET_KEY stable and identical across web workers
+and deployments. The existing production configuration already requires it.
+No secret key, cookie security mode, HttpOnly flag or SameSite setting is changed.
+
+All login entry points and successful verified registration use the shared
+session helper. Persistent sessions are checked against the current account
+and bound to its current credentials. Disabled/deleted accounts and sessions
+whose bound password has changed are cleared on the next application request;
+Socket.IO also validates credentials when connecting or reconnecting.
+Logout clears authentication on that browser as before.
+
+Returning tabs refresh their existing CSRF security tokens, including native
+form fields. The client retries a mutation at most once and only after the
+server explicitly returns a pre-action csrf_rejected response. Network errors,
+other application errors and request streams are never automatically replayed.
+CSRF enforcement and expiration settings remain unchanged.
+
+Validation includes persistent browser cookies, fresh browser/app instances,
+idle expiration and renewal, login APIs and forms, logout, account disabling,
+password changes, Socket.IO reconnection and unchanged admin access checks.

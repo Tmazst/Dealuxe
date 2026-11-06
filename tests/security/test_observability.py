@@ -363,11 +363,10 @@ class SecurityObservabilityTests(unittest.TestCase):
         db.init_app(app)
         app.register_blueprint(auth_bp)
         with patch(
-            'controllers.auth_controller.get_user_by_username', return_value=None
+            'controllers.auth_controller._registration_pending_data',
+            return_value=({'email': 'new@example.test'}, 'email'),
         ), patch(
-            'controllers.auth_controller.get_user_by_email', return_value=None
-        ), patch(
-            'controllers.auth_controller._complete_registration',
+            'controllers.auth_controller.create_challenge',
             side_effect=RuntimeError('database-password-private'),
         ):
             response = app.test_client().post('/api/auth/register', json={

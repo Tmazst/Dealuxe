@@ -10,6 +10,7 @@ from database import (
     get_player_by_user_id, log_transaction, TX_PROMOTIONAL_CREDIT
 )
 from config import GameConfig
+from security.session_security import refresh_authenticated_session
 from Forms import LoginForm, RegistrationForm
 from functools import wraps
 from werkzeug.security import generate_password_hash
@@ -35,6 +36,15 @@ from security import (
 )
 
 auth_bp = Blueprint('auth', __name__)
+
+
+@auth_bp.before_app_request
+def keep_authenticated_session():
+    """Refresh real sign-ins, including cookies issued before persistence."""
+    if not session.get('user_id') or request.endpoint == 'static':
+        return
+    user = db.session.get(User, session['user_id'])
+    refresh_authenticated_session(user)
 
 PASSWORD_REQUIREMENTS_MESSAGE = (
     'Password must be at least 8 characters and include a lowercase letter, '

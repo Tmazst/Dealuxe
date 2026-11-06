@@ -54,6 +54,7 @@ class TestTournamentAutoStart(unittest.TestCase):
 
     def _login(self, user):
         with self.client.session_transaction() as s:
+            s.clear()  # A different login must not retain the previous user's credential tag.
             s['user_id'] = user.id
             s['_fresh'] = True
 
