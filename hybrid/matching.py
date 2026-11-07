@@ -1,5 +1,7 @@
 """Pure, deterministic Hybrid Round 1 matcher with no Flask or database access."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from functools import lru_cache
 import hashlib
