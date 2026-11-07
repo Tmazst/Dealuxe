@@ -277,13 +277,38 @@ def lock_tournament(tournament_id, admin_user_id=None):
 
 
 def start_tournament(tournament_id, admin_user_id=None):
+    return _start_admin_tournament(tournament_id, admin_user_id, 'tournament.start')
+
+
+def force_start(tournament_id, admin_user_id=None):
+    """Force a locked/open tournament into in_progress and build its bracket if missing."""
+    return _start_admin_tournament(tournament_id, admin_user_id, 'tournament.force_start')
+
+
+def _start_admin_tournament(tournament_id, admin_user_id, action):
+    """Start through the ordinary bracket flow, including legacy empty-live recovery."""
     tournament = Tournament.query.get_or_404(tournament_id)
+    if tournament.status in ('completed', 'cancelled'):
+        raise ValueError('Tournament is already completed or cancelled')
+
+    brackets_exist = TournamentBracket.query.filter_by(tournament_id=tournament.id).first()
+    matches_exist = TournamentMatch.query.filter_by(tournament_id=tournament.id).first()
+    if not brackets_exist:
+        if matches_exist:
+            raise ValueError('Matches already exist without a bracket; inspect the tournament before starting')
+        from controllers.tournament_controller import _perform_tournament_lock
+        ok, error = _perform_tournament_lock(tournament)
+        if not ok:
+            raise ValueError(error)
+    elif not matches_exist:
+        raise ValueError('The existing bracket has no matches; inspect it before starting')
+
     tournament.status = 'in_progress'
     tournament.started_at = tournament.started_at or datetime.utcnow()
 
     if admin_user_id:
         log_admin_action(
-            admin_user_id, 'tournament.start',
+            admin_user_id, action,
             entity_type='tournament', entity_id=tournament.id,
             summary=f"Started tournament '{tournament.tournament_name}'",
         )
@@ -292,31 +317,45 @@ def start_tournament(tournament_id, admin_user_id=None):
     return {'tournament_id': tournament.id, 'status': tournament.status}
 
 
-def force_start(tournament_id, admin_user_id=None):
-    """Force a locked/open tournament into in_progress and build its bracket if missing."""
+def reopen_empty_tournament(tournament_id, admin_user_id):
+    """Reopen an unplayed tournament and wait for its configured capacity."""
+    from database import GameRoom, TournamentSchedule
     tournament = Tournament.query.get_or_404(tournament_id)
-    if tournament.status in ('completed', 'cancelled'):
-        raise ValueError('Tournament is already completed or cancelled')
-
-    if tournament.status != 'in_progress' and not TournamentBracket.query.filter_by(tournament_id=tournament.id).first():
-        from controllers.tournament_controller import _build_bracket
-        tournament.status = 'locked'
-        tournament.locked_at = tournament.locked_at or datetime.utcnow()
-        tournament.locked_player_count = tournament.locked_player_count or tournament.current_player_count
-        _build_bracket(tournament)
-
-    tournament.status = 'in_progress'
-    tournament.started_at = tournament.started_at or datetime.utcnow()
-
-    if admin_user_id:
-        log_admin_action(
-            admin_user_id, 'tournament.force_start',
-            entity_type='tournament', entity_id=tournament.id,
-            summary=f"Force-started tournament '{tournament.tournament_name}'",
-        )
-
+    if tournament.status not in ('locked', 'in_progress'):
+        raise ValueError('Only a locked or live tournament can be reopened')
+    if (TournamentBracket.query.filter_by(tournament_id=tournament.id).first()
+            or TournamentMatch.query.filter_by(tournament_id=tournament.id).first()
+            or GameRoom.query.filter_by(tournament_id=tournament.id).first()):
+        raise ValueError('Cannot reopen a tournament with existing bracket slots, matches or game rooms')
+    participants = TournamentParticipant.query.filter_by(
+        tournament_id=tournament.id, status='registered').all()
+    if len(participants) >= tournament.max_players:
+        raise ValueError('This tournament already has all its seats filled')
+    tournament.status = 'open'
+    tournament.current_player_count = len(participants)
+    tournament.locked_player_count = None
+    tournament.locked_at = None
+    tournament.started_at = None
+    for participant in participants:
+        participant.lock_voted = False
+    schedule = TournamentSchedule.query.filter_by(tournament_id=tournament.id).first()
+    if schedule is None:
+        schedule = TournamentSchedule(tournament_id=tournament.id)
+        db.session.add(schedule)
+    schedule.start_option = 'seats_filled'
+    schedule.fallback_option = 'seats_filled'
+    schedule.scheduled_start_at = None
+    schedule.custom_time_str = None
+    log_admin_action(
+        admin_user_id, 'tournament.reopen', entity_type='tournament',
+        entity_id=tournament.id,
+        summary=f'Reopened unplayed tournament #{tournament.id}; waiting for all seats',
+    )
     db.session.commit()
-    return {'tournament_id': tournament.id, 'status': tournament.status}
+    from controllers.tournament_controller import _emit_tournament_updated
+    _emit_tournament_updated(tournament)
+    return {'tournament_id': tournament.id, 'status': tournament.status,
+            'registered_players': len(participants), 'max_players': tournament.max_players}
 
 
 def complete_tournament(tournament_id, admin_user_id=None):

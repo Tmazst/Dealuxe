@@ -1,0 +1,39 @@
+Admin start / empty live tournament recovery
+
+CURRENT REQUEST: Reopen tournament 65 and wait for all 16 players.
+After deploying/restarting, use this command INSTEAD OF creating an eight-player bracket:
+  .venv/bin/python -B tools/recover_empty_tournament.py 65 --apply --reopen --admin-user-id 1
+This keeps the eight registered entries, excludes the withdrawn entry, clears the
+old start/lock timestamps and expired custom schedule, and selects seats-filled.
+It stays open until all 16 seats fill, then uses the ordinary automatic start flow.
+The explicit auto-lock checkbox value is retained; seats-filled is itself a start rule.
+No entry payments, wallet balances or promotional payout settings are changed.
+Reopening refuses any existing bracket, match or game room.
+
+Alternative recovery (only if an immediate eight-player start is wanted):
+
+Cause: the admin Start action previously changed status without building a bracket.
+Force start also skipped bracket creation if the status was already in_progress.
+Both actions now use the ordinary bracket lock/build flow when no bracket exists.
+No database migration or new dependency is needed.
+
+Deploy the changed code and restart the application before recovery.
+The production tournament has NOT been modified by this local fix.
+
+From the project directory on the Linux server, inspect tournament 65:
+  .venv/bin/python -B tools/recover_empty_tournament.py 65
+
+Create its missing bracket using the existing eight registered players:
+  .venv/bin/python -B tools/recover_empty_tournament.py 65 --apply --admin-user-id 1
+
+Administrator 1 must still be active. The tool validates this before recovery.
+Inspection is read-only. Apply refuses completed/cancelled tournaments or any
+tournament with existing bracket slots or matches, preventing a reshuffle.
+It retains the registered/withdrawn entries, existing entry-payment records,
+promotional payout setting and prize-pool policy; no new entry charge is made.
+The ordinary lock flow refreshes the locked player count and announces updates.
+The existing full-capacity-only WhatsApp start announcement rule is unchanged.
+
+After recovery, refresh /tournaments/65/bracket. Four quarter-finals should appear.
+Players press Start match for their pairing to enter their game.
+The repaired admin Start or Force start API can also repair this empty-live state.

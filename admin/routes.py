@@ -189,7 +189,10 @@ def lock_tournament_route(tournament_id):
 @admin_bp.route('/tournaments/<int:tournament_id>/start', methods=['POST'])
 @admin_required
 def start_tournament_route(tournament_id):
-    return jsonify(start_tournament(tournament_id, session['user_id']))
+    try:
+        return jsonify(start_tournament(tournament_id, session['user_id']))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
 
 
 @admin_bp.route('/tournaments/<int:tournament_id>/force-start', methods=['POST'])

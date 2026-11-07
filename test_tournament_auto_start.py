@@ -207,6 +207,165 @@ class TestTournamentAutoStart(unittest.TestCase):
             tc._socketio = old
         self.assertIn('participant_joined', mock.emits)
 
+    def test_promotional_manual_lock_after_due_time_and_removal(self):
+        self._check_eight_player_promotion_start('ordinary')
+
+    def test_admin_start_builds_promotion_after_manual_lock(self):
+        self._check_eight_player_promotion_start('start')
+
+    def test_admin_force_start_repairs_legacy_empty_live_promotion(self):
+        self._check_eight_player_promotion_start('force-start', legacy_live=True)
+
+    def test_recovery_tool_inspects_then_repairs_empty_live_promotion(self):
+        self._check_eight_player_promotion_start('recovery-tool', legacy_live=True)
+
+    def test_reopen_preserves_entries_and_waits_for_sixteen(self):
+        self._check_eight_player_promotion_start('reopen-tool', legacy_live=True)
+
+    def _check_eight_player_promotion_start(self, start_action, legacy_live=False):
+        from datetime import datetime, timedelta
+        from app import socketio
+        from controllers.tournament_controller import process_scheduled_events
+
+        host = self.users[0]
+        host.is_admin = True
+        t = create_tournament_record(
+            creator_id=host.id, tournament_type='deluxe',
+            tournament_name='Evening promotion', entry_fee=10,
+            max_players=16, is_auto_lock=False,
+        )
+        t.is_promotional = True
+        t.current_player_count = 9
+        t.prize_pool_amount = 90
+        for index in range(9):
+            user = User(username=f'promo{index}', email=f'promo{index}@test.com')
+            user.set_password('x')
+            db.session.add(user)
+            db.session.flush()
+            db.session.add(Player(user_id=user.id, real_balance=100))
+            participant = add_tournament_participant(
+                t.id, user.id, payment_status='completed', payment_method='wallet')
+            participant.status = 'registered'
+            participant.paid_amount = 10
+            removed_id = user.id
+        db.session.add(TournamentSchedule(
+            tournament_id=t.id, start_option='custom',
+            scheduled_start_at=datetime.utcnow() - timedelta(minutes=1),
+            fallback_option='seats_filled',
+        ))
+        db.session.commit()
+        process_scheduled_events()
+        self.assertEqual(t.status, 'open')
+        self._login(host)
+        socket = socketio.test_client(app, flask_test_client=self.client)
+        try:
+            result = socket.emit('remove_tournament_participant', {
+                'tournament_code': t.tournament_code, 'user_id': removed_id,
+            }, callback=True)
+            self.assertTrue(result['ok'], result)
+        finally:
+            socket.disconnect()
+        if start_action == 'ordinary':
+            start_url = f'/api/tournaments/{t.id}/lock'
+        else:
+            response = self.client.post(f'/api/admin/tournaments/{t.id}/lock')
+            self.assertEqual(response.status_code, 200, response.get_json())
+            if legacy_live:
+                t.status = 'in_progress'
+                t.started_at = datetime.utcnow()
+                db.session.commit()
+            start_url = f'/api/admin/tournaments/{t.id}/{start_action}'
+        if start_action in ('recovery-tool', 'reopen-tool'):
+            import contextlib
+            import io
+            from unittest.mock import patch
+            from tools.recover_empty_tournament import main
+            balances_before = {p.id: p.real_balance for p in Player.query.all()}
+            with contextlib.redirect_stdout(io.StringIO()):
+                with patch('sys.argv', ['recover', str(t.id)]):
+                    main()
+                self.assertEqual(TournamentBracket.query.filter_by(tournament_id=t.id).count(), 0)
+                command = ['recover', str(t.id), '--apply', '--admin-user-id', str(host.id)]
+                if start_action == 'reopen-tool':
+                    command.append('--reopen')
+                with patch('sys.argv', command):
+                    main()
+            db.session.refresh(t)  # The maintenance command uses its own app/session context.
+        else:
+            response = self.client.post(start_url)
+            self.assertEqual(response.status_code, 200, response.get_json())
+        if start_action == 'reopen-tool':
+            self.assertEqual({p.id: p.real_balance for p in Player.query.all()}, balances_before)
+            self.assertTrue(t.is_promotional)
+            self.assertFalse(t.promotional_wallet_payouts)
+            self.assertEqual(t.status, 'open')
+            self.assertEqual(t.current_player_count, 8)
+            self.assertIsNone(t.started_at)
+            self.assertIsNone(t.locked_at)
+            self.assertIsNone(t.locked_player_count)
+            self.assertFalse(t.is_auto_lock)
+            self.assertEqual(t.schedule.start_option, 'seats_filled')
+            self.assertIsNone(t.schedule.scheduled_start_at)
+            self.assertEqual(TournamentParticipant.query.filter_by(
+                tournament_id=t.id, status='registered', payment_status='completed').count(), 8)
+            self.assertEqual(TournamentParticipant.query.filter_by(
+                tournament_id=t.id, user_id=removed_id).first().status, 'withdrawn')
+            process_scheduled_events()
+            self.assertEqual(t.status, 'open')
+            self.assertEqual(TournamentBracket.query.filter_by(tournament_id=t.id).count(), 0)
+            for index in range(8):
+                user = User(username=f'newjoin{index}', email=f'newjoin{index}@test.com', password_hash='test')
+                db.session.add(user)
+                db.session.flush()
+                db.session.add(Player(user_id=user.id, real_balance=100))
+                db.session.commit()
+                self._login(user)
+                response = self.client.post(f'/api/tournaments/{t.id}/join')
+                self.assertEqual(response.status_code, 200, response.get_json())
+                db.session.refresh(t)
+                self.assertEqual(t.status, 'open' if index < 7 else 'in_progress')
+            self.assertEqual(t.locked_player_count, 16)
+            self.assertEqual(TournamentMatch.query.filter_by(tournament_id=t.id).count(), 8)
+            from admin.service import reopen_empty_tournament
+            with self.assertRaisesRegex(ValueError, 'existing bracket'):
+                reopen_empty_tournament(t.id, host.id)
+            self.assertEqual(TournamentMatch.query.filter_by(tournament_id=t.id).count(), 8)
+            return
+        overview = self.client.get(f'/api/tournaments/{t.id}/overview').get_json()
+        self.assertEqual(overview['tournament']['status'], 'in_progress')
+        matches = overview['matches']
+        self.assertEqual(len(matches), 4)
+        paired_ids = [m[key] for m in matches for key in ('player1_id', 'player2_id')]
+        self.assertEqual(len(set(paired_ids)), 8)
+        self.assertNotIn(host.id, paired_ids)
+        self.assertNotIn(removed_id, paired_ids)
+        self.assertTrue(all(m['status'] == 'scheduled' for m in matches))
+        self.assertEqual(t.locked_player_count, 8)
+        if start_action not in ('ordinary', 'recovery-tool'):
+            response = self.client.post(start_url)
+            self.assertEqual(response.status_code, 200, response.get_json())
+            self.assertEqual(TournamentMatch.query.filter_by(tournament_id=t.id).count(), 4)
+
+    def test_admin_start_rejects_insufficient_players_and_terminal_tournaments(self):
+        host = self.users[0]
+        host.is_admin = True
+        t = self._make_tournament(False)
+        db.session.commit()
+        self._login(host)
+        for action in ('start', 'force-start'):
+            response = self.client.post(f'/api/admin/tournaments/{t.id}/{action}')
+            self.assertEqual(response.status_code, 400, response.get_json())
+            db.session.refresh(t)
+            self.assertEqual(t.status, 'open')
+        for status in ('completed', 'cancelled'):
+            t.status = status
+            db.session.commit()
+            for action in ('start', 'force-start'):
+                response = self.client.post(f'/api/admin/tournaments/{t.id}/{action}')
+                self.assertEqual(response.status_code, 400)
+                db.session.refresh(t)
+                self.assertEqual(t.status, status)
+
 
 if __name__ == '__main__':
     unittest.main()
