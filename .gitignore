@@ -178,3 +178,4 @@ test_promotional_tournaments.py
 !test_spectator_games.py
 !test_tournament_start_broadcast.py
 !test_persistent_auth.py
+test_tournament_auto_start.py

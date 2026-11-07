@@ -222,6 +222,27 @@ class TestTournamentAutoStart(unittest.TestCase):
     def test_reopen_preserves_entries_and_waits_for_sixteen(self):
         self._check_eight_player_promotion_start('reopen-tool', legacy_live=True)
 
+    def test_recovery_lists_only_active_admins_without_changes(self):
+        import contextlib
+        import io
+        from unittest.mock import patch
+        from tools.recover_empty_tournament import main
+        active, inactive = self.users[:2]
+        active.is_admin = True
+        inactive.is_admin = True
+        inactive.is_active = False
+        t = self._make_tournament(False)
+        db.session.commit()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            with patch('sys.argv', ['recover', str(t.id), '--list-admins']):
+                main()
+        self.assertIn(f'Administrator ID: {active.id};', output.getvalue())
+        self.assertNotIn(f'Administrator ID: {inactive.id};', output.getvalue())
+        db.session.refresh(t)
+        self.assertEqual(t.status, 'open')
+        self.assertEqual(TournamentBracket.query.filter_by(tournament_id=t.id).count(), 0)
+
     def _check_eight_player_promotion_start(self, start_action, legacy_live=False):
         from datetime import datetime, timedelta
         from app import socketio
