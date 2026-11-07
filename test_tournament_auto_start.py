@@ -228,7 +228,8 @@ class TestTournamentAutoStart(unittest.TestCase):
         from unittest.mock import patch
         from tools.recover_empty_tournament import main
         active, inactive = self.users[:2]
-        active.is_admin = True
+        active.is_admin = False
+        active.is_super_admin = True
         inactive.is_admin = True
         inactive.is_active = False
         t = self._make_tournament(False)
@@ -249,7 +250,8 @@ class TestTournamentAutoStart(unittest.TestCase):
         from controllers.tournament_controller import process_scheduled_events
 
         host = self.users[0]
-        host.is_admin = True
+        host.is_admin = not (start_action == 'reopen-tool')
+        host.is_super_admin = start_action == 'reopen-tool'
         t = create_tournament_record(
             creator_id=host.id, tournament_type='deluxe',
             tournament_name='Evening promotion', entry_fee=10,

@@ -25,7 +25,10 @@ def main():
 
     with app.app_context():
         if args.list_admins:
-            admins = User.query.filter_by(is_admin=True, is_active=True).order_by(User.id).all()
+            admins = User.query.filter(
+                User.is_active.is_(True),
+                db.or_(User.is_admin.is_(True), User.is_super_admin.is_(True)),
+            ).order_by(User.id).all()
             if not admins:
                 print('No active administrator accounts found. Restore administrator access before recovery.')
             for admin in admins:
@@ -46,7 +49,7 @@ def main():
         if tournament.status != 'in_progress' or brackets or matches:
             parser.error('Recovery requires a live tournament with no bracket slots and no matches')
         admin = db.session.get(User, args.admin_user_id) if args.admin_user_id else None
-        if not admin or not admin.is_admin or not admin.is_active:
+        if not admin or not (admin.is_admin or admin.is_super_admin) or not admin.is_active:
             parser.error(f'Supply an active administrator ID with --admin-user-id. List valid IDs with: python3 tools/recover_empty_tournament.py {args.tournament_id} --list-admins')
         if args.reopen:
             try:
