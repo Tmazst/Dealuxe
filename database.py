@@ -318,6 +318,8 @@ def ensure_cup_event_details_schema():
     if not inspect(db.engine).has_table('tournaments'):
         return
     columns = [
+        ('card_count', 'INTEGER NOT NULL DEFAULT 6'),
+        ('turn_duration_seconds', 'INTEGER NOT NULL DEFAULT 300'),
         ('is_promotional', 'BOOLEAN NOT NULL DEFAULT 0'),
         ('promotional_wallet_payouts', 'BOOLEAN NOT NULL DEFAULT 0'),
         ('event_start_at', 'DATETIME'),
@@ -1057,6 +1059,8 @@ class Tournament(db.Model):
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     is_promotional = db.Column(db.Boolean, nullable=False, default=False, server_default='0')
     promotional_wallet_payouts = db.Column(db.Boolean, nullable=False, default=False, server_default='0')
+    card_count = db.Column(db.Integer, nullable=False, default=6, server_default='6')
+    turn_duration_seconds = db.Column(db.Integer, nullable=False, default=300, server_default='300')
     entry_fee = db.Column(db.Float, nullable=False, default=10.0)
     prize_pool_amount = db.Column(db.Float, nullable=False, default=0.0)
     max_players = db.Column(db.Integer, nullable=False)

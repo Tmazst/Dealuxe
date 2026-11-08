@@ -229,6 +229,8 @@ def _serialize_tournament(tournament):
         'name': tournament.tournament_name,
         'type': tournament.tournament_type,
         'max_players': tournament.max_players,
+        'card_count': tournament.card_count,
+        'turn_duration_seconds': tournament.turn_duration_seconds,
         'current_players': current_players,
         'entry_fee': tournament.entry_fee,
         'prize_pool': tournament.prize_pool_amount,
@@ -530,7 +532,7 @@ def _ensure_prize_pool(tournament):
     return rows
 
 
-def _create_match_for_bracket(bracket, tournament, card_count=6):
+def _create_match_for_bracket(bracket, tournament, card_count=None):
     """Create a playable match row for a bracket whose two seats are filled."""
     if bracket.player1_id is not None and bracket.player2_id is not None:
         match = TournamentMatch(
@@ -539,7 +541,7 @@ def _create_match_for_bracket(bracket, tournament, card_count=6):
             player1_id=bracket.player1_id,
             player2_id=bracket.player2_id,
             status='scheduled',
-            card_count=card_count,
+            card_count=tournament.card_count if card_count is None else card_count,
             bet_amount=tournament.entry_fee,
         )
         db.session.add(match)
@@ -1529,6 +1531,12 @@ def create_tournament():
         return jsonify({'error': 'Authentication required'}), 401
 
     data = request.get_json(silent=True) or {}
+    card_count = data.get('card_count', 6)
+    turn_duration_seconds = data.get('turn_duration_seconds', 300)
+    if type(card_count) is not int or card_count not in (6, 7, 8):
+        return jsonify({'error': 'Starting cards must be 6, 7, or 8'}), 400
+    if type(turn_duration_seconds) is not int or turn_duration_seconds not in (120, 180, 240, 300):
+        return jsonify({'error': 'Turn timeout must be 2, 3, 4, or 5 minutes'}), 400
     promotional = data.get('is_promotional', False)
     if not isinstance(promotional, bool):
         return jsonify({'error': 'is_promotional must be a boolean'}), 400
@@ -1574,6 +1582,8 @@ def create_tournament():
         is_auto_lock=data.get('is_auto_lock', False),
         locked_player_count=data.get('locked_player_count'),
     )
+    tournament.card_count = card_count
+    tournament.turn_duration_seconds = turn_duration_seconds
     if _is_pilot_economy_enabled():
         tournament.prize_pool_amount = 0.0
     schedule = TournamentSchedule(
@@ -2151,6 +2161,7 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
         player2_id=match.player2_id,
         game_id=game_id,
         card_count=match.card_count,
+        turn_duration_seconds=tournament.turn_duration_seconds,
         bet_amount=match.bet_amount,
         bet_type='tournament',
         tournament_id=tournament.id,
@@ -2168,7 +2179,7 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
     if not match.started_at:
         match.started_at = datetime.utcnow()
 
-    deadline = datetime.utcnow() + timedelta(seconds=60)
+    deadline = datetime.utcnow() + timedelta(seconds=room.turn_duration_seconds)
     room.turn_deadline = deadline
 
     if tournament.status != 'in_progress':

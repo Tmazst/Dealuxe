@@ -12,6 +12,12 @@ def safe_print(msg):
         print(safe_msg)
 
 '''
+**Disclaimer**
+Making update in the engine is a very sensitive task, please be careful when making changes to the engine.
+If a crucial change is made to the engine, it may break the game and make it unplayable. Please test the changes thoroughly(Conduct a game play test to confirm if your changes are been implemented correclty) before deploying to production.
+'''
+
+'''
 [**UPDATE 27 December 2025**]
 [**THE 4 CONDITIONS OF WINNING THE DEALUXE GAME**]
 Note: The DEALUXE WIN, ECSAPE WIN, TRAIL WIN conditions are are under the normal and main; HAND <= 3 rule
@@ -119,6 +125,35 @@ class CardGameEngine:
             self._log("[ENGINE] Rule 8 trail begins")
             return True
         return False
+
+    def expire_turn(self):
+        """Resolve a missed human turn without choosing or moving any cards."""
+        if self.state.game_over:
+            return {"error": "Game is already over"}
+        phase = self.state.phase
+        if phase not in ('ATTACK', 'DEFENSE', 'RULE_8'):
+            return {"error": "No active turn"}
+        # An unanswered attack/trail is a failed response. Its played cards
+        # stay out of the hand; no penalty card is drawn on anyone's behalf.
+        response = phase == 'DEFENSE' or (
+            phase == 'RULE_8' and self.state.trail_value is not None
+        )
+        candidate = self.state.attacker
+        if is_winner(self.players[candidate]):
+            self.state.game_over = True
+            self.state.winner = candidate
+            self.state.phase = 'GAME_OVER'
+        else:
+            if not response:
+                self.state.attacker, self.state.defender = self.state.defender, self.state.attacker
+            self.state.attack_card = None
+            self.state.trail_value = None
+            self.state.defence_cards = None
+            self.state.defender_drawn_card = None
+            self.state.phase = 'ATTACK'
+            self.reconcile_rule_8()
+        self._log('[ENGINE] Turn expired; no cards played or drawn')
+        return {"timeout": True, "game_over": self.state.game_over, "winner": self.state.winner}
 
     def start_turn(self):
         self._log(f"[ENGINE] Player {self.state.attacker}'s turn begins")

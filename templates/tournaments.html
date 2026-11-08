@@ -44,7 +44,8 @@
         .next-match-info .countdown { color: var(--gold); font-variant-numeric: tabular-nums; }
         .modal-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(5,8,16,.72); backdrop-filter: blur(6px); opacity: 0; pointer-events: none; transition: opacity .2s; }
         .modal-backdrop.visible { opacity: 1; pointer-events: auto; }
-        .modal { width: min(560px, 100%); background: linear-gradient(160deg, rgba(25,14,54,.98), var(--panel)); border: 1px solid rgba(255,228,107,.3); border-radius: 18px; padding: 26px; box-shadow: 0 30px 70px rgba(0,0,0,.4); }
+        #createModal select { width: 100%; padding: 12px; border-radius: 10px; background: #190e36; color: var(--text); border: 1px solid rgba(255,228,107,.3); }
+        .modal { max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: min(560px, 100%); background: linear-gradient(160deg, rgba(25,14,54,.98), var(--panel)); border: 1px solid rgba(255,228,107,.3); border-radius: 18px; padding: 26px; box-shadow: 0 30px 70px rgba(0,0,0,.4); }
         .modal-head { display: flex; justify-content: space-between; align-items: start; gap: 12px; margin-bottom: 18px; }
         .modal-head h3 { margin: 0; color: var(--ink); font-size: 1.35rem; letter-spacing: -.03em; }
         .modal-head p { margin: 6px 0 0; color: var(--muted); font-size: .82rem; }
@@ -288,6 +289,18 @@
                 <div class="form-field">
                     <label for="tournamentName">Tournament name <span style="text-transform:none; font-weight:400;">(optional)</span></label>
                     <input type="text" id="tournamentName" placeholder="e.g. Friday Night Showdown" maxlength="80">
+                </div>
+                <div class="form-field">
+                    <label for="startingCardCount">Starting cards per player</label>
+                    <select id="startingCardCount"><option value="6">6 cards</option><option value="7">7 cards</option><option value="8">8 cards</option></select>
+                </div>
+                <div class="form-field">
+                    <label for="turnDuration">Time per turn</label>
+                    <select id="turnDuration">
+                        <option value="120">2 minutes</option><option value="180">3 minutes</option><option value="240">4 minutes</option>
+                        <option value="300" selected>5 minutes</option>
+                    </select>
+                    <small>Applies to every match. When time runs out, the turn passes without playing or drawing cards.</small>
                 </div>
                 {% if is_admin %}
                 <label class="checkbox-field" for="promotionalTournament">
@@ -696,6 +709,8 @@
                     body: JSON.stringify({
                         is_promotional: document.getElementById('promotionalTournament')?.checked || false,
                         tournament_type: selectedType,
+                        card_count: Number(document.getElementById('startingCardCount').value),
+                        turn_duration_seconds: Number(document.getElementById('turnDuration').value),
                         tournament_name: name || undefined,
                         is_auto_lock: autoLock,
                         start_option: startOption,

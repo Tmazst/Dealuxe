@@ -74,6 +74,47 @@ class TestTournamentSchedulingAndRoll(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.get_json())
         return r.get_json()['tournament']['id']
 
+    def test_game_preferences_saved_and_inherited_by_matches(self):
+        self._login(self.users[0])
+        response = self.client.post('/api/tournaments/create', json={
+            'tournament_type': 'standard', 'card_count': 8,
+            'turn_duration_seconds': 120,
+        })
+        self.assertEqual(response.status_code, 200, response.get_json())
+        data = response.get_json()['tournament']
+        self.assertEqual(data['card_count'], 8)
+        self.assertEqual(data['turn_duration_seconds'], 120)
+        tournament = db.session.get(Tournament, data['id'])
+        from controllers.tournament_controller import _create_match_for_bracket
+        bracket = TournamentBracket(tournament_id=tournament.id, round_number=1, round_name="Semi-Final",
+                                    match_number=1, player1_id=self.users[0].id,
+                                    player2_id=self.users[1].id)
+        db.session.add(bracket)
+        db.session.flush()
+        match = _create_match_for_bracket(bracket, tournament)
+        self.assertEqual(match.card_count, 8)
+        from controllers.tournament_controller import start_tournament_match_helper
+        from database import GameRoom
+        _, payload, code = start_tournament_match_helper(tournament.id, match.id, user_id=self.users[0].id)
+        self.assertEqual(code, 200, payload)
+        room = db.session.get(GameRoom, match.game_room_id)
+        self.assertEqual(room.card_count, 8)
+        self.assertEqual(room.turn_duration_seconds, 120)
+        self.assertAlmostEqual((room.turn_deadline - datetime.utcnow()).total_seconds(), 120, delta=5)
+        engine = app.extensions['game_manager'].get_game(room.game_id)
+        self.assertEqual([len(player.hand) for player in engine.players], [8, 8])
+
+
+    def test_invalid_game_preferences_rejected_before_creation(self):
+        self._login(self.users[0])
+        for settings in ({'card_count': 5}, {'card_count': 9},
+                         {'card_count': True}, {'turn_duration_seconds': 0},
+                         {'turn_duration_seconds': '300'},
+                         {'turn_duration_seconds': 60}, {'turn_duration_seconds': 600}):
+            response = self.client.post('/api/tournaments/create', json=settings)
+            self.assertEqual(response.status_code, 400)
+        self.assertEqual(Tournament.query.count(), 0)
+
     def test_schedule_seats_filled(self):
         tid = self._create('seats_filled')
         schedule = TournamentSchedule.query.filter_by(tournament_id=tid).first()
@@ -241,3 +282,4 @@ class TestTournamentSchedulingAndRoll(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
