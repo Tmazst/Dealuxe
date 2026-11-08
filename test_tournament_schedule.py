@@ -105,6 +105,32 @@ class TestTournamentSchedulingAndRoll(unittest.TestCase):
         self.assertEqual([len(player.hand) for player in engine.players], [8, 8])
 
 
+    def test_offline_match_alert_presence_and_deduplication(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from services.wallet_notification_service import queue_offline_match_start
+        from database import WalletNotification
+        tournament = create_tournament_record(self.users[0].id, 'standard')
+        self.users[1].phone = '+27821234567'
+        self.users[1].country = 'ZA'
+        db.session.commit()
+        room = SimpleNamespace(player1_id=self.users[0].id, player2_id=self.users[1].id,
+                               match_id=123, turn_duration_seconds=240, room_code='ABC123')
+        socket = Mock()
+        with patch.dict(app.config, OPENWA_WALLET_NOTIFICATIONS_ENABLED=True, PUBLIC_APP_URL='https://umshova.games'):
+            socket.server.manager.get_participants.return_value = iter([('sid', 'engine_sid')])
+            self.assertIsNone(queue_offline_match_start(tournament, room, self.users[0].id, socket))
+            socket.server.manager.get_participants.side_effect = lambda *args: iter([])
+            row = queue_offline_match_start(tournament, room, self.users[0].id, socket)
+            self.assertIsNotNone(row)
+            self.assertIn('4 minutes', row.message_body)
+            self.assertIn('player1', row.message_body)
+            self.assertIn('/game/ABC123', row.message_body)
+            db.session.flush()
+            again = queue_offline_match_start(tournament, room, self.users[0].id, socket)
+            self.assertEqual(row.id, again.id)
+            self.assertEqual(WalletNotification.query.count(), 1)
+
     def test_invalid_game_preferences_rejected_before_creation(self):
         self._login(self.users[0])
         for settings in ({'card_count': 5}, {'card_count': 9},

@@ -2185,6 +2185,9 @@ def start_tournament_match_helper(tournament_id, match_id, user_id=None):
     if tournament.status != 'in_progress':
         tournament.status = 'in_progress'
 
+    from services.wallet_notification_service import queue_offline_match_start
+    queue_offline_match_start(tournament, room, user_id, _socketio)
+
     db.session.commit()
 
     from services.spectator_service import publish_spectator_update

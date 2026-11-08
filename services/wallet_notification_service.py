@@ -136,6 +136,44 @@ def queue_registration_credit(user_id, transaction_id, amount):
     )
 
 
+def queue_offline_match_start(tournament, room, starter_id, socketio):
+    """Queue one direct alert per match, using authenticated socket presence."""
+    if not _enabled() or starter_id not in (room.player1_id, room.player2_id) or socketio is None:
+        return None
+    opponent_id = room.player2_id if starter_id == room.player1_id else room.player1_id
+    # A user can have several tabs/devices. Any authenticated socket counts.
+    if any(socketio.server.manager.get_participants('/', f'user_{opponent_id}')):
+        return None
+    user = db.session.get(User, opponent_id)
+    starter = db.session.get(User, starter_id)
+    if user is None or starter is None or not user.phone:
+        return None
+    try:
+        chat_id = ContactValidator.to_openwa_chat_id(user.phone, user.country)
+    except ContactValidationError:
+        current_app.logger.warning('Match alert skipped: invalid phone for user_id=%s', opponent_id)
+        return None
+    key = f'match-start:{room.match_id}:user:{opponent_id}'
+    existing = WalletNotification.query.filter_by(event_key=key).first()
+    if existing is not None:
+        return existing
+    minutes = room.turn_duration_seconds // 60
+    base = str(current_app.config.get('PUBLIC_APP_URL') or '').strip().rstrip('/')
+    message = (
+        f'Your opponent {starter.username} has started your match in {tournament.tournament_name}.\n\n'
+        f'Time per turn: {minutes} minutes. If you miss your turn, the opportunity passes '
+        'without cards being played. If you do not defend, your opponent '
+        'can attack again and may win when their hand meets the winning conditions.\n\n'
+        f'Join your match: {base}/game/{room.room_code}'
+    )
+    row = WalletNotification(user_id=opponent_id, event_type='offline_match_start',
+                             event_key=key, recipient_chat_id=chat_id,
+                             message_body=message, status='pending',
+                             next_attempt_at=datetime.utcnow())
+    db.session.add(row)
+    return row
+
+
 def _deliver(row):
     base = str(current_app.config.get('OPENWA_API_URL') or '').strip()
     base = base.replace('\\:', ':').replace('\\/', '/').rstrip('/\\')
