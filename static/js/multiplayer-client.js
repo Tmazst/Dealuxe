@@ -64,7 +64,10 @@ function updateTurnIndicator(state, player_index) {
         var name = isMyTurn ? myName : oppName;
         var icon = isMyTurn ? '🟦' : '🟫';
         // Show concise text
-        el.textContent = icon + ' Turn: ' + name.trim();
+        if (typeof setTurnIndicatorLabel === 'function') setTurnIndicatorLabel(icon + ' Turn: ' + name.trim());
+        else el.textContent = icon + ' Turn: ' + name.trim();
+        el.classList.toggle('your-turn', isMyTurn);
+        el.classList.toggle('opponent-turn', !isMyTurn);
         el.classList.add('visible');
     } catch (e) {}
 }
@@ -501,6 +504,7 @@ if (socket) {
 
     // Show game-over modal on both clients simultaneously (multiplayer)
     socket.on('game_over', function(data) {
+        if (typeof stopTurnCountdown === 'function') stopTurnCountdown();
         console.debug('[multiplayer-client] game_over', data);
         if (!isGamePage()) return;
         try {
@@ -533,6 +537,7 @@ if (socket) {
 
     // Receive personal balance after game over and update modal
     socket.on('game_over_personal', function(payload){
+        if (typeof stopTurnCountdown === 'function') stopTurnCountdown();
         try {
             if (!isGamePage()) return;
             var nb = payload && payload.your_new_balance;

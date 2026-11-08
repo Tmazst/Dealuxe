@@ -2521,3 +2521,7 @@ pre{
 
 
 
+
+#turn-indicator { max-width: calc(100vw - 24px); flex-wrap: wrap; justify-content: center; }
+#turn-indicator .turn-countdown { font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 8px; border-left: 1px solid currentColor; }
+#turn-indicator.urgent { border-color: #ff9a9a; color: #ffe0e0; }

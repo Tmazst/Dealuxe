@@ -302,7 +302,7 @@ async function updateAgent(state) {
         }
         if (turnIndicator) {
             const myTurn = (phase === 'ATTACK' && attacker === localPlayerIndex) || (phase === 'DEFENSE' && defender === localPlayerIndex) || (phase === 'RULE_8' && attacker === localPlayerIndex);
-            turnIndicator.textContent = myTurn ? 'Your Turn' : 'Opponent Turn';
+            setTurnIndicatorLabel(myTurn ? 'Your Turn' : 'Opponent Turn');
             turnIndicator.classList.toggle('your-turn', myTurn);
             turnIndicator.classList.toggle('opponent-turn', !myTurn);
         }
@@ -317,56 +317,57 @@ async function updateAgent(state) {
 
 let turnCountdownTimer = null;
 
+function setTurnIndicatorLabel(text) {
+    const indicator = document.getElementById('turn-indicator');
+    if (!indicator) return;
+    let label = indicator.querySelector('.turn-label');
+    if (!label) {
+        indicator.textContent = '';
+        label = document.createElement('span');
+        label.className = 'turn-label';
+        indicator.appendChild(label);
+    }
+    label.textContent = text;
+}
+
 function startTurnCountdown(deadlineIso, isMyTurn) {
     stopTurnCountdown(true);
-    const el = document.getElementById('turn-timer');
-    if (!el) return;
-    if (!isMyTurn || !deadlineIso) {
-        el.style.display = 'none';
-        return;
-    }
-    const deadline = new Date(deadlineIso).getTime();
-    if (isNaN(deadline)) { el.style.display = 'none'; return; }
-    el.style.display = 'inline-flex';
+    const indicator = document.getElementById('turn-indicator');
+    if (!indicator || !deadlineIso) return;
+    // Legacy server timestamps without an offset are UTC, not browser local time.
+    const source = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(deadlineIso) ? deadlineIso : deadlineIso + 'Z';
+    const deadline = Date.parse(source);
+    if (!Number.isFinite(deadline)) return;
+    if (!indicator.querySelector('.turn-label')) setTurnIndicatorLabel(isMyTurn ? 'Your Turn' : 'Opponent Turn');
+    const timer = document.createElement('span');
+    timer.className = 'turn-countdown';
+    timer.setAttribute('aria-hidden', 'true');
+    indicator.appendChild(timer);
+    indicator.classList.add('visible');
     const tick = () => {
-        const msLeft = deadline - Date.now();
-        if (msLeft <= 0) {
-            el.textContent = '⏰ Time expired';
-            el.classList.add('urgent');
-            if (turnCountdownTimer) {
-                clearInterval(turnCountdownTimer);
-                turnCountdownTimer = null;
-            }
-            window.setTimeout(function () {
-                el.style.display = 'none';
-                el.classList.remove('urgent');
-                el.textContent = '';
-            }, 2000);
-            return;
+        const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        const value = Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0');
+        timer.textContent = remaining ? '⏱ ' + value : '0:00 · Updating turn…';
+        indicator.classList.toggle('urgent', remaining <= 10);
+        if (!remaining && turnCountdownTimer) {
+            clearInterval(turnCountdownTimer);
+            turnCountdownTimer = null;
         }
-        const totalSec = Math.ceil(msLeft / 1000);
-        const m = Math.floor(totalSec / 60);
-        const s = totalSec % 60;
-        el.textContent = '⏱ ' + m + ':' + (s < 10 ? '0' : '') + s;
-        el.classList.toggle('urgent', totalSec <= 10);
     };
-    tick();
     turnCountdownTimer = setInterval(tick, 1000);
+    tick();
 }
 
 function stopTurnCountdown(hideTimer) {
-    if (turnCountdownTimer) {
-        clearInterval(turnCountdownTimer);
-        turnCountdownTimer = null;
+    if (turnCountdownTimer) clearInterval(turnCountdownTimer);
+    turnCountdownTimer = null;
+    const indicator = document.getElementById('turn-indicator');
+    if (indicator) {
+        indicator.classList.remove('urgent');
+        indicator.querySelectorAll('.turn-countdown').forEach(el => el.remove());
     }
-    if (hideTimer !== false) {
-        const el = document.getElementById('turn-timer');
-        if (el) {
-            el.style.display = 'none';
-            el.classList.remove('urgent');
-            el.textContent = '';
-        }
-    }
+    const oldTimer = document.getElementById('turn-timer');
+    if (oldTimer) oldTimer.style.display = 'none';
 }
 
 function showTurnTimeoutBanner(message) {
