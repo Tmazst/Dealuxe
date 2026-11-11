@@ -262,7 +262,7 @@
             renderChatMessage(payload);
             const fromOpponent = payload.sender === 'opponent';
             setChatEnabled(true, fromOpponent ? 'New message from your opponent.' : 'Delivered');
-            if (fromOpponent && alert) alert.hidden = false;
+            if (alert) alert.hidden = !fromOpponent;
         });
         window.socket.on('hybrid_chat_error', function (payload) {
             setChatEnabled(payload && payload.code !== 'rate_limited', (payload && payload.message) || 'Message could not be sent');
