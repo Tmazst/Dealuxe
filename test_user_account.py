@@ -52,6 +52,29 @@ class TestUserAccount(unittest.TestCase):
         self.client.post('/api/auth/logout')
         return self.client.post('/api/auth/login', json={'username': user.username, 'password': 'pw'})
 
+    def test_admin_real_wallet_deposit_queues_private_whatsapp(self):
+        from unittest.mock import patch
+        from database import WalletAdjustment, WalletNotification
+
+        self.user.is_admin = True
+        self.other.country = 'Eswatini'
+        db.session.commit()
+        self._login(self.user)
+        with patch.dict(app.config, OPENWA_WALLET_NOTIFICATIONS_ENABLED=True):
+            response = self.client.post(f'/api/admin/wallets/{self.other.id}/adjust', json={
+                'balance_type': 'real', 'delta': 25.50,
+                'reason': 'Promotional challenge prize', 'notify_real_deposit': True,
+            })
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertTrue(response.get_json()['wallet']['wallet_notification_queued'])
+        self.assertEqual(get_player_by_user_id(self.other.id).real_balance, 25.50)
+        notification = WalletNotification.query.one()
+        self.assertEqual(notification.wallet_adjustment_id, WalletAdjustment.query.one().id)
+        self.assertEqual(notification.recipient_chat_id, '26877000000@c.us')
+        self.assertIn('E25.50', notification.message_body)
+        self.assertIn('real wallet', notification.message_body)
+        self.assertEqual(notification.status, 'pending')
+
     @staticmethod
     def _png_file(name='id.png'):
         return (io.BytesIO(

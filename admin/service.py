@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+import math
 import os
 
 from flask import current_app
@@ -579,7 +580,7 @@ def clear_backend_logs():
 
 def adjust_wallet(
     admin_user_id, user_id, balance_type, delta, reason,
-    *, notify_credit_award=False,
+    *, notify_credit_award=False, notify_real_deposit=False,
 ):
     """Adjust real money or promotional credits with an audit reason."""
     if balance_type == 'fake':
@@ -587,6 +588,10 @@ def adjust_wallet(
     if balance_type not in ('real', 'promotional'):
         raise ValueError('balance_type must be "real" or "promotional"')
     delta = float(delta)
+    if not math.isfinite(delta):
+        raise ValueError('Enter a valid amount')
+    if notify_real_deposit and (balance_type != 'real' or round(delta, 2) <= 0):
+        raise ValueError('A real wallet deposit must be at least E0.01')
     if delta == 0:
         raise ValueError('delta must be non-zero')
     reason = (reason or '').strip()
@@ -626,6 +631,9 @@ def adjust_wallet(
     db.session.add(adjustment)
     db.session.flush()
     notification = None
+    if notify_real_deposit:
+        from services.wallet_notification_service import queue_admin_real_wallet_deposit
+        notification = queue_admin_real_wallet_deposit(user_id, adjustment.id, adjustment.delta)
     if notify_credit_award and balance_type == 'promotional' and delta > 0:
         # The outbox row is part of this same transaction. The dedicated worker
         # sends later, so OpenWA latency cannot freeze the admin dashboard.

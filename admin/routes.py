@@ -162,6 +162,7 @@ def adjust_wallet_route(user_id):
             data.get('balance_type', 'real'),
             data.get('delta', 0),
             data.get('reason'),
+            notify_real_deposit=data.get('notify_real_deposit') is True,
         )
     except (ValueError, TypeError) as exc:
         return jsonify({'error': str(exc)}), 400

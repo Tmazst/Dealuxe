@@ -70,7 +70,7 @@ def _build_credit_message(amount, welcome=False):
 
 def _queue_credit_notification(
     user_id, event_type, event_key, amount, *, wallet_adjustment_id=None,
-    transaction_id=None, welcome=False,
+    transaction_id=None, welcome=False, message=None,
 ):
     """Add one notification to the current transaction, if delivery is enabled.
 
@@ -97,7 +97,8 @@ def _queue_credit_notification(
     existing = WalletNotification.query.filter_by(event_key=event_key).first()
     if existing is not None:
         return existing
-    message = _build_credit_message(amount, welcome=welcome)
+    if message is None:
+        message = _build_credit_message(amount, welcome=welcome)
     row = WalletNotification(
         user_id=user.id,
         wallet_adjustment_id=wallet_adjustment_id,
@@ -121,6 +122,24 @@ def queue_admin_credit_award(user_id, wallet_adjustment_id, amount):
         f'wallet-credit-award:{int(wallet_adjustment_id)}',
         amount,
         wallet_adjustment_id=int(wallet_adjustment_id),
+    )
+
+
+def queue_admin_real_wallet_deposit(user_id, wallet_adjustment_id, amount):
+    """Queue a private notice for a real wallet deposit."""
+    return _queue_credit_notification(
+        user_id,
+        'admin_real_wallet_deposit',
+        f'wallet-real-deposit:{wallet_adjustment_id}',
+        amount,
+        wallet_adjustment_id=wallet_adjustment_id,
+        message=(
+            f'E{amount:.2f} has been deposited into your uMshova real wallet.\n\n'
+            'uMshova currently supports withdrawals through MTN Mobile Money only.\n\n'
+            'To withdraw, sign in to the uMshova app and open your Account page. '
+            'Save your MTN Mobile Money phone number in the Mobile Money Number field, '
+            'then submit a withdrawal request from the same Account page.'
+        ),
     )
 
 

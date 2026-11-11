@@ -723,6 +723,7 @@
                         <button data-action="toggleActive" data-id="${user.id}">${user.is_active ? 'Disable' : 'Enable'}</button>
                         <button data-action="saveBalances" data-id="${user.id}">Save</button>
                         <button data-action="awardCredits" data-id="${user.id}">Award Credits</button>
+                        <button data-action="depositRealWallet" data-id="${user.id}">Deposit Real Balance + WhatsApp</button>
                         <button data-action="renewCredits" data-id="${user.id}">Renew Credits</button>
                     </td>
                 `;
@@ -1631,6 +1632,28 @@
                     await sendJson(`/api/admin/cup-tournaments/${userId}/revoke`);
                     await fetchTournaments();
                     await fetchCupRoster();
+                }
+                if (action === 'depositRealWallet') {
+                    const amount = prompt('Real wallet deposit amount (E):');
+                    if (amount === null) return;
+                    const value = Number(amount);
+                    if (!/^\d+(\.\d{1,2})?$/.test(amount.trim()) || !Number.isFinite(value) || value <= 0) {
+                        throw new Error('Enter a positive amount with up to two decimal places.');
+                    }
+                    const reason = prompt('Reason:', 'Promotional challenge prize');
+                    if (reason === null || !reason.trim()) return;
+                    if (!confirm(`Deposit E${value.toFixed(2)} into this player’s real wallet and notify them on WhatsApp?`)) return;
+                    button.disabled = true;
+                    try {
+                        const result = await sendJson(`/api/admin/wallets/${userId}/adjust`, {
+                            body: { balance_type: 'real', delta: value, reason: reason.trim(), notify_real_deposit: true },
+                        });
+                        alert(result.wallet.wallet_notification_queued
+                            ? 'Deposit saved. WhatsApp notification queued.'
+                            : 'Deposit saved. WhatsApp notification could not be queued. Check the registered phone number and notification settings.');
+                    } finally {
+                        button.disabled = false;
+                    }
                 }
                 if (action === 'awardCredits') {
                     const amount = prompt('Amount to award (E):', '10');
