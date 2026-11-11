@@ -53,17 +53,41 @@
             const element = document.getElementById(id);
             if (element) element.textContent = '';
         });
+        showProfileImage();
+    }
+
+    function showProfileImage(opponentUrl) {
         const image = document.getElementById('hybrid-profile-image');
         const placeholder = document.getElementById('hybrid-profile-placeholder');
-        const icon = image && image.parentElement;
-        if (image) {
-            image.onload = null;
-            image.onerror = null;
-            image.removeAttribute('src');
-            image.hidden = true;
+        if (!image || !placeholder) return;
+        const ownAvatar = document.querySelector('[data-player-avatar="me"][src]');
+        const ownUrl = ownAvatar && ownAvatar.getAttribute('src');
+        const url = opponentUrl || ownUrl;
+        const icon = image.parentElement;
+
+        function setVisible(visible) {
+            image.hidden = !visible;
+            placeholder.hidden = visible;
+            if (icon) icon.classList.toggle('has-profile', visible);
         }
-        if (placeholder) placeholder.hidden = false;
-        if (icon) icon.classList.remove('has-profile');
+
+        image.onload = null;
+        image.onerror = null;
+        if (!url) {
+            image.removeAttribute('src');
+            setVisible(false);
+            return;
+        }
+        image.onload = function () { setVisible(true); };
+        image.onerror = function () {
+            if (opponentUrl && ownUrl && opponentUrl !== ownUrl) {
+                showProfileImage();
+            } else {
+                setVisible(false);
+            }
+        };
+        if (image.getAttribute('src') !== url) image.src = url;
+        setVisible(image.complete && image.naturalWidth > 0);
     }
 
     function showContext(context) {
@@ -90,31 +114,7 @@
         document.getElementById('hybrid-profile-caption').textContent = opponent.caption || '';
         document.getElementById('hybrid-profile-email').textContent = opponent.email || 'Email not provided';
         document.getElementById('hybrid-profile-phone').textContent = opponent.phone || 'Contact not provided';
-        const image = document.getElementById('hybrid-profile-image');
-        const placeholder = document.getElementById('hybrid-profile-placeholder');
-        const icon = image && image.parentElement;
-        if (image && placeholder && opponent.profile_image_url) {
-            function showPlaceholder() {
-                image.hidden = true;
-                placeholder.hidden = false;
-                if (icon) icon.classList.remove('has-profile');
-            }
-            function showImage() {
-                image.hidden = false;
-                placeholder.hidden = true;
-                if (icon) icon.classList.add('has-profile');
-            }
-            image.onload = showImage;
-            image.onerror = showPlaceholder;
-            showPlaceholder();
-            image.src = opponent.profile_image_url;
-            if (image.complete && image.naturalWidth > 0) showImage();
-        } else if (image && placeholder) {
-            image.removeAttribute('src');
-            image.hidden = true;
-            placeholder.hidden = false;
-            if (icon) icon.classList.remove('has-profile');
-        }
+        showProfileImage(opponent.profile_image_url);
         container.hidden = false;
     }
 
@@ -296,6 +296,7 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         setMessage('commentary', "Welcome! I'll guide you through the game.");
+        showProfileImage();
         bindProfileToggle();
         bindSharingToggle();
         bindChat();
