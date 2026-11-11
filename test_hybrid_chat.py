@@ -153,15 +153,14 @@ class TestHybridChatEvents(unittest.TestCase):
 
     def test_block_or_disabled_preference_stops_chat(self):
         first = self._socket(self.first)
-        profile = DiscoveryProfile.query.filter_by(user_id=self.second.id).one()
-        profile.chat_preference_enabled = False
+        self.second.match_chat_enabled = False
         db.session.commit()
         first.emit('hybrid_chat_context', {'room_code': 'CHATROOM'})
         context = self._event(first, 'hybrid_chat_context')[0]['args'][0]
         self.assertFalse(context['available'])
         self.assertEqual(context['reason'], 'chat_preference_required')
 
-        profile.chat_preference_enabled = True
+        self.second.match_chat_enabled = True
         db.session.add(UserBlock(
             blocker_id=self.second.id, blocked_id=self.first.id, is_active=True
         ))
@@ -173,41 +172,19 @@ class TestHybridChatEvents(unittest.TestCase):
         error = self._event(first, 'hybrid_chat_error')[0]['args'][0]
         self.assertEqual(error['code'], 'blocked')
 
-    def test_either_players_per_game_hide_choice_disables_chat_for_both(self):
-        first = self._socket(self.first)
-        second = self._socket(self.second)
-
+    def test_chat_defaults_on_without_discovery_profiles(self):
+        DiscoveryProfile.query.delete()
         self.room.player1_profile_visible = False
-        db.session.commit()
-        for client in (first, second):
-            client.emit('hybrid_chat_context', {'room_code': 'CHATROOM'})
-            context = self._event(client, 'hybrid_chat_context')[0]['args'][0]
-            self.assertFalse(context['available'])
-            self.assertEqual(context['reason'], 'hidden_for_game')
-
-        self.room.player1_profile_visible = True
         self.room.player2_profile_visible = False
         db.session.commit()
-        for client in (first, second):
+        for user in (self.first, self.second):
+            client = self._socket(user)
             client.emit('hybrid_chat_context', {'room_code': 'CHATROOM'})
             context = self._event(client, 'hybrid_chat_context')[0]['args'][0]
-            self.assertFalse(context['available'])
-            self.assertEqual(context['reason'], 'hidden_for_game')
+            self.assertTrue(context['available'])
 
-    def test_unapproved_caption_and_inactive_opponent_fail_closed(self):
+    def test_inactive_opponent_fails_closed(self):
         first = self._socket(self.first)
-        profile = DiscoveryProfile.query.filter_by(user_id=self.second.id).one()
-        profile.custom_caption = 'Unreviewed caption'
-        profile.moderation_status = 'pending_review'
-        db.session.commit()
-
-        first.emit('hybrid_chat_context', {'room_code': 'CHATROOM'})
-        pending = self._event(first, 'hybrid_chat_context')[0]['args'][0]
-        self.assertFalse(pending['available'])
-        self.assertEqual(pending['reason'], 'caption_review_required')
-
-        profile.custom_caption = None
-        profile.moderation_status = 'not_required'
         self.second.is_active = False
         db.session.commit()
         first.emit('hybrid_chat_context', {'room_code': 'CHATROOM'})

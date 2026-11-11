@@ -233,20 +233,36 @@
         const status = document.getElementById('hybrid-chat-status');
         const roomCode = chatRoomCode();
         if (!form || !input || !roomCode || !window.socket) return;
+        const alert = document.getElementById('hybrid-chat-alert');
+        const latest = document.getElementById('hybrid-chat-latest');
+        let latestMessageId;
+
+        if (alert && latest) {
+            alert.addEventListener('click', function () {
+                latest.focus();
+                alert.hidden = true;
+            });
+        }
 
         window.socket.on('connect', requestChatContext);
         window.socket.on('hybrid_chat_context', function (payload) {
             if (!payload || payload.room_code !== roomCode) return;
             if (!payload.available) {
-                setChatEnabled(false, 'Chat is off unless both players allow it.');
+                if (alert) alert.hidden = true;
+                setChatEnabled(false, 'Chat is unavailable for this match. Manage match chat in your Account settings.');
                 return;
             }
             setChatEnabled(true, 'Messages expire after 24 hours.');
             renderChatMessage(payload.latest);
+            if (payload.latest) latestMessageId = payload.latest.id;
         });
         window.socket.on('hybrid_chat_message', function (payload) {
+            if (!payload || payload.room_code !== roomCode || payload.id === latestMessageId) return;
+            latestMessageId = payload.id;
             renderChatMessage(payload);
-            setChatEnabled(true, 'Delivered');
+            const fromOpponent = payload.sender === 'opponent';
+            setChatEnabled(true, fromOpponent ? 'New message from your opponent.' : 'Delivered');
+            if (fromOpponent && alert) alert.hidden = false;
         });
         window.socket.on('hybrid_chat_error', function (payload) {
             setChatEnabled(payload && payload.code !== 'rate_limited', (payload && payload.message) || 'Message could not be sent');

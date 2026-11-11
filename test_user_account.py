@@ -139,6 +139,7 @@ class TestUserAccount(unittest.TestCase):
             'full_name': 'Alice Mamba',
             'phone': '+26876123456',
             'mobile_money_number': '+268 78-123-456',
+            'match_chat': 'off',
             'country': 'Eswatini',
             'address': 'Mbabane, Eswatini',
             'date_of_birth': '1990-01-01',
@@ -149,6 +150,7 @@ class TestUserAccount(unittest.TestCase):
         self.assertEqual(self.user.full_name, 'Alice Mamba')
         self.assertEqual(self.user.phone, '+26876123456')
         self.assertEqual(self.user.mobile_money_number, '+26878123456')
+        self.assertFalse(self.user.match_chat_enabled)
         self.assertEqual(self.user.country, 'Eswatini')
         self.assertEqual(self.user.address, 'Mbabane, Eswatini')
         self.assertEqual(self.user.id_number, 'ESW123456')

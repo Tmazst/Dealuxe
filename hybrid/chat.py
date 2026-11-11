@@ -10,7 +10,7 @@ from abc import ABCMeta, abstractmethod
 from flask import session
 from flask_socketio import emit
 
-from database import DiscoveryProfile, GameRoom, User, db
+from database import GameRoom, User, db
 from hybrid.service import users_are_blocked
 from hybrid.metrics import increment_pilot_counter
 
@@ -197,41 +197,8 @@ def _authorized_chat_context(app, user_id, room_code):
     if users_are_blocked(user_id, opponent_id):
         raise PermissionError('blocked')
 
-    profiles = {
-        profile.user_id: profile
-        for profile in DiscoveryProfile.query.filter(
-            DiscoveryProfile.user_id.in_((user_id, opponent_id))
-        ).all()
-    }
-    own_profile = profiles.get(user_id)
-    opponent_profile = profiles.get(opponent_id)
-    if not own_profile or not opponent_profile:
+    if not user.match_chat_enabled or not opponent.match_chat_enabled:
         raise PermissionError('chat_preference_required')
-    if not (
-        own_profile.is_enabled and own_profile.is_visible
-        and opponent_profile.is_enabled and opponent_profile.is_visible
-        and own_profile.chat_preference_enabled
-        and opponent_profile.chat_preference_enabled
-    ):
-        raise PermissionError('chat_preference_required')
-    if (
-        own_profile.custom_caption
-        and own_profile.moderation_status != 'approved'
-    ) or (
-        opponent_profile.custom_caption
-        and opponent_profile.moderation_status != 'approved'
-    ):
-        raise PermissionError('caption_review_required')
-    own_room_visible = (
-        room.player1_profile_visible if user_id == room.player1_id
-        else room.player2_profile_visible
-    )
-    opponent_room_visible = (
-        room.player1_profile_visible if opponent_id == room.player1_id
-        else room.player2_profile_visible
-    )
-    if not own_room_visible or not opponent_room_visible:
-        raise PermissionError('hidden_for_game')
     return room, opponent_id
 
 

@@ -172,6 +172,27 @@
     display: none;
 }
 
+.hybrid-chat-alert {
+    position: fixed;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    z-index: 50;
+    padding: .75rem 1rem;
+    border: 1px solid #ffdf75;
+    border-radius: .75rem;
+    background: #ffdf75;
+    color: #1c1425;
+    box-shadow: 0 4px 18px #0008;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.hybrid-chat-alert:focus-visible {
+    outline: 2px solid white;
+    outline-offset: 3px;
+}
+
 .hybrid-chat-latest {
     min-height: 18px;
     color: #fff;

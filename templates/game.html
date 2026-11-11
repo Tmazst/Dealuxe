@@ -155,13 +155,17 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                 </label>
                 {% if config.HYBRID_CHAT_ENABLED %}
                 <div id="hybrid-chat" class="hybrid-chat" hidden>
-                    <div id="hybrid-chat-latest" class="hybrid-chat-latest" role="log" aria-live="polite" aria-relevant="additions text"></div>
+                    <div id="hybrid-chat-latest" class="hybrid-chat-latest" role="log" tabindex="-1" aria-live="polite" aria-relevant="additions text"></div>
                     <form id="hybrid-chat-form" class="hybrid-chat-form" autocomplete="off">
                         <label class="sr-only" for="hybrid-chat-input">Message your opponent</label>
                         <input id="hybrid-chat-input" type="text" maxlength="280" placeholder="Message your opponent…" aria-describedby="hybrid-chat-status">
                         <button id="hybrid-chat-send" type="submit" aria-label="Send message"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
                     </form>
                     <div id="hybrid-chat-status" class="hybrid-chat-status" role="status" aria-live="polite"></div>
+                    <button id="hybrid-chat-alert" class="hybrid-chat-alert" type="button" hidden>
+                        <i class="fa-solid fa-comment" aria-hidden="true"></i>
+                        New chat message
+                    </button>
                 </div>
                 {% endif %}
                 <div id="agent-text" class="agent-text" role="status" aria-live="polite">Welcome! I'll guide you through the game.</div>

@@ -184,6 +184,7 @@ def ensure_user_account_schema():
         return
 
     user_columns = [
+        ('match_chat_enabled', 'BOOLEAN NOT NULL DEFAULT 1'),
         ('mobile_money_number', 'VARCHAR(20)'),
         ('country', 'VARCHAR(50)'),
         ('address', 'VARCHAR(200)'),
@@ -437,6 +438,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     phone = db.Column(db.String(20), unique=True, nullable=True)
     mobile_money_number = db.Column(db.String(20), nullable=True)
+    match_chat_enabled = db.Column(db.Boolean, nullable=False, default=True, server_default=db.true())
     password_hash = db.Column(db.String(255), nullable=False)
     
     # Profile

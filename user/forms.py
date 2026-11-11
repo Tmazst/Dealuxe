@@ -32,6 +32,9 @@ class ProfileForm(FlaskForm):
     mobile_money_number = NormalizedPhoneField('Mobile Money Number', validators=[
         Optional(), Regexp(r'\A\+?[0-9]{7,15}\Z', message='Enter a valid mobile money number.'),
     ])
+    match_chat = SelectField('Match chat', choices=[
+        ('on', 'On'), ('off', 'Off'),
+    ], validators=[Optional()])
     country = SelectField('Country', choices=COUNTRY_CHOICES, validators=[Optional()])
     address = StringField('Address', validators=[Optional(), Length(max=200)])
     date_of_birth = DateField('Date of Birth', validators=[Optional()])

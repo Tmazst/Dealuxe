@@ -74,6 +74,7 @@ def account_page():
         full_name=user.full_name,
         phone=user.phone,
         mobile_money_number=user.mobile_money_number,
+        match_chat='on' if user.match_chat_enabled else 'off',
         country=user.country,
         address=user.address,
         date_of_birth=user.date_of_birth,

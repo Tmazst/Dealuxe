@@ -91,6 +91,8 @@ def update_profile_fields(user, form):
         user.phone = form.phone.data
     if form.mobile_money_number.raw_data:
         user.mobile_money_number = form.mobile_money_number.data.strip() or None
+    if form.match_chat.data in ('on', 'off'):
+        user.match_chat_enabled = form.match_chat.data == 'on'
     user.country = form.country.data
     user.address = form.address.data
     user.date_of_birth = form.date_of_birth.data
