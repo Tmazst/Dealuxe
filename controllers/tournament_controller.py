@@ -504,8 +504,8 @@ def _charge_tournament_entry(user_id, amount, tournament_id, tournament_code=Non
 def _get_user_phone(user_id):
     """Return a user's phone/mobile-money number if set, else an empty string."""
     user = User.query.get(user_id)
-    if user and user.phone:
-        return user.phone
+    if user and (user.mobile_money_number or user.phone):
+        return user.mobile_money_number or user.phone
     player = Player.query.filter_by(user_id=user_id).first()
     return getattr(player, 'phone', '') or ''
 

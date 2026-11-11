@@ -4,7 +4,7 @@ User account forms: profile editing and KYC / ID photo uploads.
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed
 from wtforms import StringField, SelectField, DateField, SubmitField
-from wtforms.validators import Optional, Length
+from wtforms.validators import Optional, Length, Regexp
 
 from Forms import NormalizedPhoneField
 
@@ -29,6 +29,9 @@ class ProfileForm(FlaskForm):
     """Editable profile fields (username + email stay read-only)."""
     full_name = StringField('Full Name', validators=[Optional(), Length(max=100)])
     phone = NormalizedPhoneField('Phone Number', validators=[Optional(), Length(max=20)])
+    mobile_money_number = NormalizedPhoneField('Mobile Money Number', validators=[
+        Optional(), Regexp(r'\A\+?[0-9]{7,15}\Z', message='Enter a valid mobile money number.'),
+    ])
     country = SelectField('Country', choices=COUNTRY_CHOICES, validators=[Optional()])
     address = StringField('Address', validators=[Optional(), Length(max=200)])
     date_of_birth = DateField('Date of Birth', validators=[Optional()])

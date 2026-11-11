@@ -184,6 +184,7 @@ def ensure_user_account_schema():
         return
 
     user_columns = [
+        ('mobile_money_number', 'VARCHAR(20)'),
         ('country', 'VARCHAR(50)'),
         ('address', 'VARCHAR(200)'),
         ('date_of_birth', 'DATE'),
@@ -435,6 +436,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     phone = db.Column(db.String(20), unique=True, nullable=True)
+    mobile_money_number = db.Column(db.String(20), nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)
     
     # Profile

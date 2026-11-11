@@ -59,6 +59,7 @@ def get_account_json(user):
         'username': user.username,
         'email': user.email,
         'phone': user.phone,
+        'mobile_money_number': user.mobile_money_number,
         'full_name': user.full_name,
         'country': user.country,
         'address': user.address,
@@ -88,6 +89,8 @@ def update_profile_fields(user, form):
     user.full_name = form.full_name.data
     if form.phone.data:
         user.phone = form.phone.data
+    if form.mobile_money_number.raw_data:
+        user.mobile_money_number = form.mobile_money_number.data.strip() or None
     user.country = form.country.data
     user.address = form.address.data
     user.date_of_birth = form.date_of_birth.data
@@ -199,7 +202,7 @@ def initiate_topup(user, amount):
         external_ref_id=external_ref_id,
         user_id=user.id,
         amount=amount,
-        phone_number=user.phone or '',
+        phone_number=user.mobile_money_number or user.phone or '',
         txn=pending,
     )
     if not result.get('success'):

@@ -115,6 +115,7 @@ class TestUserAccount(unittest.TestCase):
         r = self.client.post('/account/profile', data={
             'full_name': 'Alice Mamba',
             'phone': '+26876123456',
+            'mobile_money_number': '+268 78-123-456',
             'country': 'Eswatini',
             'address': 'Mbabane, Eswatini',
             'date_of_birth': '1990-01-01',
@@ -124,10 +125,25 @@ class TestUserAccount(unittest.TestCase):
         db.session.refresh(self.user)
         self.assertEqual(self.user.full_name, 'Alice Mamba')
         self.assertEqual(self.user.phone, '+26876123456')
+        self.assertEqual(self.user.mobile_money_number, '+26878123456')
         self.assertEqual(self.user.country, 'Eswatini')
         self.assertEqual(self.user.address, 'Mbabane, Eswatini')
         self.assertEqual(self.user.id_number, 'ESW123456')
         self.assertIsNotNone(self.user.date_of_birth)
+
+    def test_mobile_money_number_can_be_cleared_and_rejects_invalid_input(self):
+        from controllers.tournament_controller import _get_user_phone
+        self.user.mobile_money_number = '+26878123456'
+        db.session.commit()
+        self._login(self.user)
+        self.assertEqual(_get_user_phone(self.user.id), '+26878123456')
+        self.client.post('/account/profile', data={'mobile_money_number': 'invalid'})
+        db.session.refresh(self.user)
+        self.assertEqual(self.user.mobile_money_number, '+26878123456')
+        self.client.post('/account/profile', data={'mobile_money_number': ''})
+        db.session.refresh(self.user)
+        self.assertIsNone(self.user.mobile_money_number)
+        self.assertEqual(_get_user_phone(self.user.id), self.user.phone or '')
 
     def test_profile_update_rejects_phone_already_in_use(self):
         self._login(self.user)

@@ -181,3 +181,4 @@ test_promotional_tournaments.py
 test_tournament_auto_start.py
 test_tournament_auto_start.py
 test_tournament_schedule.py
+test_user_account.py

@@ -73,6 +73,7 @@ def account_page():
     profile_form = ProfileForm(
         full_name=user.full_name,
         phone=user.phone,
+        mobile_money_number=user.mobile_money_number,
         country=user.country,
         address=user.address,
         date_of_birth=user.date_of_birth,
