@@ -187,3 +187,5 @@ test_user_account.py
 test_hybrid_chat.py
 test_user_account.py
 tests/test_pwa.py
+test_hybrid_chat.py
+.env.example

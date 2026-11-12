@@ -244,6 +244,15 @@
             });
         }
 
+        function acknowledgeVisibleMessage(payload) {
+            if (payload && payload.sender === 'opponent' && document.visibilityState === 'visible') {
+                window.socket.emit('hybrid_chat_seen', {room_code: roomCode, id: payload.id});
+            }
+        }
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible' && window.socket.connected) requestChatContext();
+        });
         window.socket.on('connect', requestChatContext);
         window.socket.on('hybrid_chat_context', function (payload) {
             if (!payload || payload.room_code !== roomCode) return;
@@ -254,12 +263,14 @@
             }
             setChatEnabled(true, 'Messages expire after 24 hours.');
             renderChatMessage(payload.latest);
+            acknowledgeVisibleMessage(payload.latest);
             if (payload.latest) latestMessageId = payload.latest.id;
         });
         window.socket.on('hybrid_chat_message', function (payload) {
             if (!payload || payload.room_code !== roomCode || payload.id === latestMessageId) return;
             latestMessageId = payload.id;
             renderChatMessage(payload);
+            acknowledgeVisibleMessage(payload);
             const fromOpponent = payload.sender === 'opponent';
             setChatEnabled(true, fromOpponent ? 'New message from your opponent.' : 'Delivered');
             if (alert) alert.hidden = !fromOpponent;

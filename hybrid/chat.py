@@ -7,12 +7,13 @@ import time
 import uuid
 from abc import ABCMeta, abstractmethod
 
-from flask import session
+from flask import session, url_for
 from flask_socketio import emit
 
 from database import GameRoom, User, db
 from hybrid.service import users_are_blocked
 from hybrid.metrics import increment_pilot_counter
+from hybrid.match_chat_push import push_enabled, send_match_chat_push
 
 
 CHAT_TTL_SECONDS = 24 * 60 * 60
@@ -237,6 +238,40 @@ def _present_message(message, requester_id):
 def init_hybrid_chat_events(socketio, app):
     """Register private Socket.IO events without coupling chat to gameplay."""
 
+    def notify_if_unread(opponent_id, message, game_url):
+        socketio.sleep(2)
+        with app.app_context():
+            try:
+                store = app.extensions['hybrid_chat_store']
+                if not store.claim_message(message['room_code'], opponent_id, 'push_' + message['id']):
+                    return
+                _, recipient = _authorized_chat_context(app, message['sender_id'], message['room_code'])
+                if recipient == opponent_id:
+                    send_match_chat_push(opponent_id, message, game_url)
+            except (LookupError, PermissionError):
+                return
+            except Exception:
+                app.logger.warning('Match chat push could not be delivered')
+
+    @socketio.on('hybrid_chat_seen')
+    def handle_chat_seen(data):
+        user_id = session.get('user_id')
+        if not user_id or not push_enabled(app.config) or not isinstance(data, dict):
+            return
+        room_code, message_id = data.get('room_code'), data.get('id')
+        if not isinstance(room_code, str) or not isinstance(message_id, str):
+            return
+        try:
+            _, opponent_id = _authorized_chat_context(app, user_id, room_code)
+            store = app.extensions['hybrid_chat_store']
+            latest = store.latest(room_code)
+            if latest and latest['id'] == message_id and latest['sender_id'] == opponent_id:
+                store.claim_message(room_code, user_id, 'push_' + message_id)
+        except (LookupError, PermissionError):
+            return
+        except Exception:
+            app.logger.warning('Match chat receipt could not be recorded')
+
     @socketio.on('hybrid_chat_context')
     def handle_chat_context(data):
         user_id = session.get('user_id')
@@ -336,5 +371,10 @@ def init_hybrid_chat_events(socketio, app):
             'hybrid_chat_message', _present_message(message, opponent_id),
             room='user_{0}'.format(opponent_id),
         )
+        if push_enabled(app.config):
+            socketio.start_background_task(
+                notify_if_unread, opponent_id, message,
+                url_for('multiplayer_game', room_code=room_code),
+            )
 
     return socketio

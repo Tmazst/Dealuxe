@@ -5,7 +5,7 @@ from unittest.mock import patch
 os.environ['ENV'] = 'development'
 
 from app import app, socketio
-from database import DiscoveryProfile, GameRoom, HybridPilotMetric, User, UserBlock, db
+from database import DiscoveryProfile, GameRoom, HybridPilotMetric, MatchChatPushSubscription, User, UserBlock, db
 from hybrid.chat import MemoryChatStore
 
 
@@ -150,6 +150,64 @@ class TestHybridChatEvents(unittest.TestCase):
         error = self._event(outsider, 'hybrid_chat_error')[0]['args'][0]
         self.assertEqual(error['code'], 'not_room_member')
         self.assertIsNone(app.extensions['hybrid_chat_store'].latest('CHATROOM'))
+
+    def test_push_only_for_messages_unseen_in_the_game(self):
+        first = self._socket(self.first)
+        second = self._socket(self.second)
+        settings = {
+            'MATCH_CHAT_PUSH_PUBLIC_KEY': 'public',
+            'MATCH_CHAT_PUSH_PRIVATE_KEY': 'private',
+            'MATCH_CHAT_PUSH_SUBJECT': 'mailto:ops@example.com',
+        }
+        with patch.dict(app.config, settings), patch.object(socketio, 'sleep'), \
+                patch.object(socketio, 'start_background_task') as schedule, \
+                patch('hybrid.chat.send_match_chat_push') as push:
+            for number, seen in enumerate((True, False)):
+                first.emit('hybrid_chat_send', {
+                    'room_code': 'CHATROOM',
+                    'message': 'Hello',
+                    'client_message_id': 'push_test_' + str(number),
+                })
+                message = self._event(second, 'hybrid_chat_message')[0]['args'][0]
+                if seen:
+                    second.emit('hybrid_chat_seen', {'room_code': 'CHATROOM', 'id': message['id']})
+                task, *arguments = schedule.call_args.args
+                task(*arguments)
+                if seen:
+                    push.assert_not_called()
+            push.assert_called_once()
+            recipient, payload, url = push.call_args.args
+            self.assertEqual(recipient, self.second.id)
+            self.assertEqual(payload['message'], 'Hello')
+            self.assertEqual(url, '/game/CHATROOM')
+
+    def test_push_subscription_is_private_and_removed_on_logout(self):
+        path = '/api/match-chat/push'
+        client = app.test_client()
+        self.assertEqual(client.get(path).status_code, 401)
+        self.assertEqual(client.post('/api/auth/login', json={
+            'username': self.first.username, 'password': 'pw',
+        }).status_code, 200)
+        token = client.get('/api/security/csrf-token').get_json()['csrf_token']
+        headers = {'X-CSRF-Token': token}
+        subscription = {
+            'endpoint': 'https://fcm.googleapis.com/fcm/send/example',
+            'keys': {'auth': 'A' * 22, 'p256dh': 'B' * 87},
+        }
+        with patch.dict(app.config, {
+            'MATCH_CHAT_PUSH_PUBLIC_KEY': 'public',
+            'MATCH_CHAT_PUSH_PRIVATE_KEY': 'private',
+            'MATCH_CHAT_PUSH_SUBJECT': 'mailto:ops@example.com',
+        }):
+            self.assertEqual(client.post(path, headers=headers, json={
+                **subscription, 'endpoint': 'https://fcm.googleapis.com.example.org/push',
+            }).status_code, 400)
+            self.assertEqual(client.post(path, headers=headers, json=subscription).status_code, 204)
+            settings = client.get(path).get_json()
+            self.assertEqual(settings, {'public_key': 'public', 'subscribed': True})
+            self.assertEqual(MatchChatPushSubscription.query.one().user_id, self.first.id)
+            self.assertEqual(client.post('/logout', headers=headers, json={}).status_code, 200)
+            self.assertEqual(MatchChatPushSubscription.query.count(), 0)
 
     def test_block_or_disabled_preference_stops_chat(self):
         first = self._socket(self.first)

@@ -429,6 +429,15 @@ def init_db(app):
 # USER MODEL
 # ========================================
 
+class MatchChatPushSubscription(db.Model):
+    __tablename__ = 'match_chat_push_subscriptions'
+
+    browser_id = db.Column(db.String(32), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    endpoint_hash = db.Column(db.String(64), nullable=False, unique=True)
+    subscription = db.Column(db.JSON, nullable=False)
+
+
 class User(db.Model):
     """User authentication and profile"""
     __tablename__ = 'users'

@@ -647,6 +647,8 @@ def login_api_internal():
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
     """Logout user (handles both form and API requests)"""
+    from hybrid.match_chat_push import revoke_browser_push
+    revoke_browser_push()
     session.clear()
     
     # If JSON request, return JSON response
@@ -877,6 +879,8 @@ def login_api():
 @machine_client_endpoint
 def logout_api():
     """API endpoint for logout (JSON)"""
+    from hybrid.match_chat_push import revoke_browser_push
+    revoke_browser_push()
     session.clear()
     return jsonify({'message': 'Logged out successfully'})
 

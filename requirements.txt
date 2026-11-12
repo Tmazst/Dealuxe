@@ -42,3 +42,4 @@ python-socketio
 gevent
 gevent-websocket
 python-dotenv
+pywebpush==2.5.0

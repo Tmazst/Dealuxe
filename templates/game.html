@@ -162,6 +162,9 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                         <input id="hybrid-chat-input" type="text" maxlength="280" placeholder="Message your opponent…" aria-describedby="hybrid-chat-status">
                         <button id="hybrid-chat-send" type="submit" aria-label="Send message"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
                     </form>
+                    <button id="match-chat-push-toggle" type="button" class="hybrid-chat-alert"
+                            data-endpoint="{{ url_for('match_chat_push.browser_push') }}" hidden>Enable chat notifications</button>
+                    <p id="match-chat-push-status" role="status"></p>
                     <div id="hybrid-chat-status" class="hybrid-chat-status" role="status" aria-live="polite"></div>
                     <button id="hybrid-chat-alert" class="hybrid-chat-alert" type="button" hidden>
                         <i class="fa-solid fa-comment" aria-hidden="true"></i>
@@ -474,6 +477,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
 {% endif %}
 
 <script src="/static/js/hybrid-panel.js"></script>
+<script defer src="{{ url_for('static', filename='pwa/chat-push.js') }}"></script>
 <script src="/static/js/game.js"></script>
 <script src="/static/js/game-start.js"></script>
 <!-- Multiplayer scripts: lobby + in-page client -->

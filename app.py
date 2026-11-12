@@ -47,6 +47,7 @@ from services.spectator_service import masked_player_state
 from admin.routes import admin_bp
 from user.routes import user_bp
 from hybrid.routes import hybrid_bp
+from hybrid.match_chat_push import configure_match_chat_push
 from pricing.routes import pricing_bp
 from Forms import  *
 from database import db, init_db, Tournament, User
@@ -177,6 +178,7 @@ app.register_blueprint(tournament_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(hybrid_bp)
+configure_match_chat_push(app)
 app.register_blueprint(pricing_bp)
 app.register_blueprint(spectator_bp)
 
