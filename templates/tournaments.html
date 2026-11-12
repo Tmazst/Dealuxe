@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    {% include '_pwa_head.html' %}
     {% include '_security_head.html' %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="{% if config.PILOT_MODE %}Practice, learn and qualify through uMshova Deluxe pilot tournaments.{% else %}Join uMshova Deluxe tournaments, compete in live matches, and claim the prize pool.{% endif %}">
     <title>uMshova Deluxe | Tournament Arena</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ stylesheet_url('css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root { --ink: #f8f7ff; --line: rgba(255,255,255,.12); --panel: rgba(15,23,36,.82); --gold: #ffe46b; }
@@ -24,6 +25,9 @@
         .nav-links a { color: var(--muted); text-decoration: none; font-size: .9rem; font-weight: 700; transition: color .2s; display: inline-flex; align-items: center; gap: 6px; }
         .nav-links a:hover { color: white; }
         .nav-play { color: #100d24 !important; background: var(--gold); padding: 10px 15px; border-radius: 9px; }
+        .pwa-dialog { position: fixed; inset: 0; margin: auto; width: min(420px, calc(100% - 32px)); max-height: calc(100% - 32px); padding: 24px; border: 1px solid var(--line); border-radius: 16px; color: var(--ink); background: #1a0836; }
+        .pwa-dialog::backdrop { background: rgba(0, 0, 0, .65); }
+        .pwa-dialog-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
         .hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(330px, .85fr); gap: 42px; align-items: center; padding: clamp(46px, 8vw, 96px) 0 62px; }
         .eyebrow { color: var(--success); letter-spacing: .13em; text-transform: uppercase; font-weight: 800; font-size: .73rem; display: inline-flex; align-items: center; gap: 8px; }
         .eyebrow i { font-size: .55rem; }
@@ -153,10 +157,19 @@
                 <!-- <a href="#how-to-play"><i class="fa-solid fa-book-open"></i><span class="nav-label">How to play</span></a> -->
                 <!-- <a href="/lobby"><i class="fa-solid fa-gamepad"></i><span class="nav-label">Versus lobby</span></a>  -->
                 {% if is_admin %}<a href="/admin/test-tournament"><i class="fa-solid fa-flask"></i><span class="nav-label">Test arena</span></a>{% endif %}
+                <button type="button" class="nav-play" id="pwa-install" hidden>Install uMshova</button>
                 {% include '_account_widget.html' %}
                 <!-- <a class="nav-play" href="#tournaments"><i class="fa-solid fa-play"></i><span class="nav-label">Play now</span></a> -->
             </div>
         </nav>
+        <dialog id="pwa-install-dialog" class="pwa-dialog" aria-labelledby="pwa-install-title">
+            <h2 id="pwa-install-title">Install uMshova</h2>
+            <p id="pwa-install-help">Open uMshova directly from your home screen.</p>
+            <form method="dialog" class="pwa-dialog-actions">
+                <button type="button" class="nav-play" id="pwa-install-confirm">Install</button>
+                <button type="submit" autofocus>Close</button>
+            </form>
+        </dialog>
         <section class="three_cards" >
             <img src="{{ url_for('static', filename='images/3_cards.png') }}" alt="uMshova Deluxe tournament arena" style="width: 100%; max-width: 150px; height:auto; ">
         </section><br>

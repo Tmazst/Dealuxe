@@ -1,12 +1,13 @@
 <!doctype html>
 <html lang="en">
 <head>
+    {% include '_pwa_head.html' %}
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Watch a public uMshova Dealuxe tournament match. Both players’ hands stay hidden.">
     <title>Watch game | uMshova Dealuxe</title>
     {% include '_security_head.html' %}
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/watch-game.css') }}">
+    <link rel="stylesheet" href="{{ stylesheet_url('css/watch-game.css') }}">
 </head>
 <body>
 <main id="spectator-game" data-room-code="{{ room_code }}" data-transports='{{ config.SOCKET_TRANSPORTS|tojson }}'>

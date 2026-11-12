@@ -1,4 +1,6 @@
 import os
+from hashlib import sha256
+from pathlib import Path
 
 
 # Only the non-local gevent deployment needs cooperative monkey-patching.
@@ -33,7 +35,7 @@ try:
 except Exception:
     pass
 
-from flask import Flask, abort, render_template, request, jsonify, session, redirect, url_for
+from flask import Flask, abort, render_template, request, jsonify, session, redirect, send_from_directory, url_for
 from flask_socketio import SocketIO
 from game.manager_redis import GameManager
 from controllers.flask_controller import FlaskGameController
@@ -311,6 +313,18 @@ def get_player_fake_balance():
 # -----------------------------
 # ROUTES
 # -----------------------------
+
+@app.template_global()
+def stylesheet_url(filename):
+    """Give changed CSS a new browser and CDN cache key."""
+    content = (Path(app.static_folder) / filename).read_bytes()
+    return url_for('static', filename=filename, v=sha256(content).hexdigest()[:16])
+
+
+@app.get('/service-worker.js')
+def pwa_service_worker():
+    return send_from_directory(app.static_folder, 'pwa/service-worker.js', max_age=0)
+
 
 @app.route("/")
 def index():

@@ -8,6 +8,7 @@ instance/*.sqlite3
 .venv
 tests/__pycache__/*
 test_*
+!tests/test_pwa.py
 *.zip
 *.pyc
 controllers/__pycache__/*cpython-311.cyc
@@ -185,3 +186,4 @@ test_user_account.py
 test_user_account.py
 test_hybrid_chat.py
 test_user_account.py
+tests/test_pwa.py
