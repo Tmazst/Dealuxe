@@ -6,11 +6,20 @@
     const status = document.getElementById('match-chat-push-status');
     const endpoint = toggle.dataset.endpoint;
     let publicKey;
-    let enabled;
+    let enabled = false;
+    const promptKey = 'match-chat-push-prompt-used';
+    const label = toggle.querySelector('span');
+    const icon = toggle.querySelector('i');
 
-    function updateButton() {
-        toggle.textContent = enabled ? 'Turn off chat notifications' : 'Enable chat notifications';
-        toggle.hidden = false;
+    function showBell() {
+        toggle.classList.remove('hybrid-chat-alert');
+        label.hidden = true;
+        icon.hidden = false;
+        icon.classList.toggle('fa-bell', enabled);
+        icon.classList.toggle('fa-bell-slash', !enabled);
+        const action = enabled ? 'Turn off chat notifications' : 'Enable chat notifications';
+        toggle.setAttribute('aria-label', action);
+        toggle.title = action;
     }
 
     function applicationServerKey(value) {
@@ -26,11 +35,19 @@
         if (!config) return;
         publicKey = applicationServerKey(config.public_key);
         enabled = config.subscribed && Notification.permission === 'granted';
-        status.textContent = 'Opponent messages can appear in device notifications.';
-        updateButton();
+        let promptUsed = false;
+        try {
+            promptUsed = localStorage.getItem(promptKey) === '1';
+        } catch {}
+        if (enabled || promptUsed) showBell();
+        toggle.hidden = false;
     }).catch(() => {});
 
     toggle.addEventListener('click', async () => {
+        showBell();
+        try {
+            localStorage.setItem(promptKey, '1');
+        } catch {}
         toggle.disabled = true;
         status.textContent = '';
         try {
@@ -38,8 +55,6 @@
                 const response = await fetch(endpoint, {method: 'DELETE'});
                 if (!response.ok) throw new Error('Could not turn off notifications.');
                 enabled = false;
-                status.textContent = 'Chat notifications are off on this device.';
-                updateButton();
                 return;
             }
 
@@ -61,12 +76,11 @@
             });
             if (!response.ok) throw new Error('Could not enable notifications.');
             enabled = true;
-            status.textContent = 'Opponent messages can appear in device notifications.';
-            updateButton();
         } catch (error) {
             status.textContent = 'Could not change chat notifications. Please try again.';
         } finally {
             toggle.disabled = false;
+            showBell();
         }
     });
 }());

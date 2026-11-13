@@ -193,6 +193,17 @@
     outline-offset: 3px;
 }
 
+#match-chat-push-toggle[hidden],
+#match-chat-push-toggle i[hidden],
+#match-chat-push-status:empty {
+    display: none;
+}
+
+#match-chat-push-toggle:not(.hybrid-chat-alert) {
+    flex: 0 0 2rem;
+    padding: .25rem;
+}
+
 .hybrid-chat-latest {
     min-height: 18px;
     color: #fff;
@@ -221,7 +232,7 @@
     padding: 8px 10px;
 }
 
-.hybrid-chat-form button {
+.hybrid-chat-form button:not(.hybrid-chat-alert) {
     width: 44px;
     min-height: 44px;
     border: 1px solid #fff;
