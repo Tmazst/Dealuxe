@@ -1533,8 +1533,8 @@ def create_tournament():
     data = request.get_json(silent=True) or {}
     card_count = data.get('card_count', 6)
     turn_duration_seconds = data.get('turn_duration_seconds', 300)
-    if type(card_count) is not int or card_count not in (6, 7, 8):
-        return jsonify({'error': 'Starting cards must be 6, 7, or 8'}), 400
+    if type(card_count) is not int or card_count not in (6, 8, 10):
+        return jsonify({'error': 'Starting cards must be 6, 8, or 10'}), 400
     if type(turn_duration_seconds) is not int or turn_duration_seconds not in (120, 180, 240, 300):
         return jsonify({'error': 'Turn timeout must be 2, 3, 4, or 5 minutes'}), 400
     promotional = data.get('is_promotional', False)
