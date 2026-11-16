@@ -1000,7 +1000,7 @@
                     <td>${escapeHtml(d.status)}</td>
                     <td>${escapeHtml(d.resolution || '')}</td>
                     <td>
-                        <button data-action="resolveDispute" data-id="${d.id}" data-status="resolved">Resolve</button>
+                        <button data-action="resolveDispute" data-id="${d.id}" data-status="resolved">${d.category === 'tournament_refund' ? 'Approve wallet refund' : 'Resolve'}</button>
                         <button data-action="resolveDispute" data-id="${d.id}" data-status="rejected">Reject</button>
                         <button data-action="resolveDispute" data-id="${d.id}" data-status="in_review">In Review</button>
                     </td>

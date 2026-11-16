@@ -6,9 +6,11 @@ from unittest.mock import patch
 os.environ['ENV'] = 'development'
 
 from app import app
+from admin.service import resolve_dispute
 from controllers.tournament_controller import _finalize_tournament, _withdraw_participant
 from database import (
     Player,
+    Dispute,
     CupQualification,
     Tournament,
     TournamentParticipant,
@@ -289,21 +291,33 @@ class TestPilotTournamentEconomy(unittest.TestCase):
             tournament_id=tournament_id, user_id=self.users[1].id
         ).first())
 
-    def test_withdrawal_reverses_promotional_entry_once(self):
+    def test_withdrawal_excludes_entry_from_prizes_and_refunds_once_after_approval(self):
         tournament_id = self._create().get_json()['tournament']['id']
         tournament = Tournament.query.get(tournament_id)
         participant = TournamentParticipant.query.one()
         player = Player.query.filter_by(user_id=self.users[0].id).one()
 
+        tournament.prize_pool_amount = 50.0
+        db.session.commit()
         ok, error = _withdraw_participant(tournament, participant)
         db.session.commit()
 
         self.assertTrue(ok, error)
+        self.assertEqual(player.promotional_credit_balance, 0.0)
+        self.assertEqual(participant.payment_status, 'refund_pending')
+        self.assertEqual(tournament.prize_pool_amount, 40.0)
+        self.assertEqual(TournamentPrizePool.query.filter_by(
+            tournament_id=tournament_id, placement=1
+        ).one().prize_amount, 20.0)
+        dispute = Dispute.query.filter_by(category='tournament_refund').one()
+        resolve_dispute(dispute.id, self.users[1].id, 'resolved', 'Approved withdrawal refund')
+        with self.assertRaises(ValueError):
+            resolve_dispute(dispute.id, self.users[1].id, 'resolved', 'Duplicate approval')
         self.assertEqual(player.promotional_credit_balance, 10.0)
         self.assertEqual(Transaction.query.filter_by(
             transaction_type=TX_PROMOTIONAL_ENTRY_REVERSAL
         ).count(), 1)
-        self.assertEqual(tournament.prize_pool_amount, 0.0)
+        self.assertEqual(tournament.prize_pool_amount, 40.0)
 
     def test_promotional_tournament_never_awards_real_cash(self):
         tournament_id = self._create().get_json()['tournament']['id']

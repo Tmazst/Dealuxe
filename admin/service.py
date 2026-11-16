@@ -2159,7 +2159,21 @@ def resolve_dispute(dispute_id, admin_user_id, status='resolved', resolution=Non
     if status != 'in_review' and not resolution:
         raise ValueError('A resolution note is required')
 
-    dispute = Dispute.query.get_or_404(dispute_id)
+    dispute = Dispute.query.filter_by(id=dispute_id).populate_existing().with_for_update().first_or_404()
+    if dispute.category == 'tournament_refund':
+        if dispute.status in ('resolved', 'rejected'):
+            raise ValueError('This refund request already has a final decision')
+        participant = TournamentParticipant.query.filter_by(
+            tournament_id=dispute.tournament_id, user_id=dispute.user_id,
+            status='withdrawn', payment_status='refund_pending',
+        ).with_for_update().first()
+        if participant is None:
+            raise ValueError('No pending withdrawal refund was found')
+        if status == 'resolved':
+            from controllers.tournament_controller import approve_withdrawal_refund
+            approve_withdrawal_refund(participant)
+        elif status == 'rejected':
+            participant.payment_status = 'refund_rejected'
     dispute.status = status
     if status == 'in_review':
         dispute.resolution = dispute.resolution or resolution or None

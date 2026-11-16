@@ -18,6 +18,7 @@ from database import (
     MatchRoll,
     Transaction,
     AdminAuditLog,
+    Dispute,
     User,
     Player,
     DiscoveryProfile,
@@ -114,6 +115,9 @@ def _perform_tournament_lock(tournament):
     Mirrors the existing lock behaviour (status -> locked, then the bracket
     builder transitions the tournament into 'in_progress' with scheduled matches).
     """
+    tournament = Tournament.query.filter_by(id=tournament.id).populate_existing().with_for_update().one()
+    if tournament.status != 'open':
+        return False, 'Tournament already locked or completed'
     participant_count = TournamentParticipant.query.filter_by(
         tournament_id=tournament.id, status='registered'
     ).count()
@@ -821,7 +825,9 @@ def _serialize_participant(participant):
 
 
 def _withdraw_participant(tournament, participant):
-    """Withdraw a registered player before lock and refund a mock-wallet entry."""
+    """Release the seat and reserve the paid entry for admin review."""
+    tournament = Tournament.query.filter_by(id=tournament.id).populate_existing().with_for_update().one()
+    db.session.refresh(participant)
     if tournament.status != 'open':
         return False, 'Tournament has already been locked'
     if participant.status != 'registered':
@@ -830,19 +836,47 @@ def _withdraw_participant(tournament, participant):
         participant.status = 'withdrawn'
         participant.withdrew_at = datetime.utcnow()
         return True, None
-    is_promotional_entry = participant.payment_method == 'promotional_credit'
-    if not is_promotional_entry and not _is_payment_mock_mode():
-        return False, 'Completed mobile-money payments cannot be refunded from the waiting room'
+    amount = participant.paid_amount if participant.paid_amount is not None else tournament.entry_fee
+    participant.status = 'withdrawn'
+    participant.withdrew_at = datetime.utcnow()
+    tournament.current_player_count = max(0, tournament.current_player_count - 1)
+    if amount > 0:
+        participant.paid_amount = amount
+        participant.payment_status = 'refund_pending'
+        tournament.prize_pool_amount = max(0.0, round(tournament.prize_pool_amount - amount, 2))
+        method = participant.payment_method or 'wallet'
+        reference = participant.transaction_id or participant.external_payment_id
+        description = f'Automatic withdrawal refund for tournament #{tournament.id}: {amount:.2f} ({method}).'
+        if reference:
+            description += f' Payment reference: {reference}.'
+        db.session.add(Dispute(
+            user_id=participant.user_id,
+            tournament_id=tournament.id,
+            category='tournament_refund',
+            description=description,
+        ))
+    _ensure_prize_pool(tournament)
+    return True, None
 
-    player = Player.query.filter_by(user_id=participant.user_id).first()
-    amount = participant.paid_amount or tournament.entry_fee
-    if player is not None and amount > 0 and is_promotional_entry:
-        reverse_tournament_entry(player, amount, tournament.id)
-    elif player is not None and amount > 0:
+
+def approve_withdrawal_refund(participant):
+    """Return the approved entry fee to the player's Dealuxe wallet."""
+    amount = participant.paid_amount
+    if amount is None or amount <= 0:
+        raise ValueError('The original paid amount is missing')
+    player = Player.query.filter_by(user_id=participant.user_id).populate_existing().with_for_update().first()
+    if player is None:
+        raise ValueError('Player wallet not found')
+    tournament_id = participant.tournament_id
+    if participant.payment_method == 'promotional_credit':
+        if not reverse_tournament_entry(player, amount, tournament_id):
+            raise ValueError('The original promotional debit could not be reversed')
+    else:
         balance_before = player.real_balance
         player.real_balance += amount
-        player.total_wagered = max(0.0, player.total_wagered - amount)
-        player.daily_spending_amount = max(0.0, player.daily_spending_amount - amount)
+        if participant.payment_method != 'mojapos':
+            player.total_wagered = max(0.0, player.total_wagered - amount)
+            player.daily_spending_amount = max(0.0, player.daily_spending_amount - amount)
         log_transaction(
             player_id=player.id,
             transaction_type=TX_REFUND,
@@ -850,18 +884,12 @@ def _withdraw_participant(tournament, participant):
             balance_type='real',
             balance_before=balance_before,
             balance_after=player.real_balance,
-            description=f'Tournament entry refund #{tournament.id}',
-            tournament_id=tournament.id,
+            description=f'Tournament entry refund #{tournament_id}',
+            tournament_id=tournament_id,
+            commit=False,
         )
 
-    participant.status = 'withdrawn'
     participant.payment_status = 'refunded'
-    participant.withdrew_at = datetime.utcnow()
-    tournament.current_player_count = max(0, tournament.current_player_count - 1)
-    if not is_promotional_entry:
-        tournament.prize_pool_amount = max(0.0, tournament.prize_pool_amount - amount)
-    _ensure_prize_pool(tournament)
-    return True, None
 
 
 def _serialize_bracket(bracket):
@@ -1668,7 +1696,7 @@ def join_tournament(tournament_id):
     if not user_id:
         return jsonify({'error': 'Authentication required'}), 401
 
-    tournament = Tournament.query.get_or_404(tournament_id)
+    tournament = Tournament.query.filter_by(id=tournament_id).with_for_update().first_or_404()
     if tournament.status != 'open':
         return jsonify({'error': 'Tournament is not open'}), 400
 
