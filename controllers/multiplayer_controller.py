@@ -585,7 +585,7 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         action_type = data.get('action')
         action_data = data.get('data', {})
         
-        room = GameRoom.query.filter_by(room_code=room_code).first()
+        room = GameRoom.query.filter_by(room_code=room_code).populate_existing().with_for_update().first()
         if not room:
             emit('error', {'message': 'Room not found'})
             return
@@ -679,10 +679,9 @@ def init_multiplayer_events(socketio, game_manager, app=None):
             emit('error', {'message': 'Not your turn'})
             return
         
-        # Expiration passes the turn; never substitute a card for a late move.
+        # The background checker resolves expired turns.
         if room.turn_deadline and datetime.utcnow() >= room.turn_deadline:
-            _auto_play_expired_room(socketio, game_manager, room, datetime.utcnow())
-            emit('error', {'message': 'Your turn expired. Review the updated game before moving.'})
+            emit('error', {'message': 'Time is up. Waiting for the next turn.'})
             return
 
         # Get game engine
@@ -777,11 +776,10 @@ def init_multiplayer_events(socketio, game_manager, app=None):
                 result_snapshot=json.dumps(state),
                 idempotency_key=idempotency_key
             )
-            db.session.add(move)
-            db.session.commit()
+            with db.session.begin_nested():
+                db.session.add(move)
         except Exception as e:
             print(f"[MULTIPLAYER] Failed to persist move: {e}")
-            db.session.rollback()
 
         # Update turn
         next_actor = (state['defender'] if state.get('phase') == 'DEFENSE' or (state.get('phase') == 'RULE_8' and engine.state.trail_value is not None) else state['attacker'])
@@ -1082,7 +1080,8 @@ def init_multiplayer_events(socketio, game_manager, app=None):
 
 def _auto_play_expired_room(socketio, game_manager, room, now):
     """Resolve one expired turn without playing cards for either player."""
-    if not room.game_id:
+    if (room.status != 'in_progress' or not room.game_id or
+            room.turn_deadline is None or room.turn_deadline > now):
         return
 
     engine = game_manager.get_game(room.game_id)
@@ -1138,11 +1137,10 @@ def _auto_play_expired_room(socketio, game_manager, room, now):
             result_snapshot=json.dumps(state),
             idempotency_key=None
         )
-        db.session.add(move)
-        db.session.commit()
+        with db.session.begin_nested():
+            db.session.add(move)
     except Exception as exc:
         print(f"[MULTIPLAYER] Failed to persist auto-play move: {exc}")
-        db.session.rollback()
 
     # Advance the turn + refresh the deadline
     next_actor = (state['defender'] if state.get('phase') == 'DEFENSE' or (state.get('phase') == 'RULE_8' and engine.state.trail_value is not None) else state['attacker'])
@@ -1207,20 +1205,18 @@ def process_expired_room_turns(socketio, game_manager, grace_seconds=0):
         return
     now = datetime.utcnow()
     cutoff = now - timedelta(seconds=grace_seconds)
-    rooms = GameRoom.query.filter(
+    room_ids = db.session.query(GameRoom.id).filter(
         GameRoom.status == 'in_progress',
         GameRoom.turn_deadline.isnot(None),
         GameRoom.turn_deadline <= cutoff,
     ).all()
 
-    for room in rooms:
+    for (room_id,) in room_ids:
         try:
-            _auto_play_expired_room(socketio, game_manager, room, now)
+            room = GameRoom.query.filter_by(id=room_id).populate_existing().with_for_update().first()
+            if room is not None:
+                _auto_play_expired_room(socketio, game_manager, room, cutoff)
         except Exception as exc:
-            print(f"[MULTIPLAYER] Auto-play sweep error for room {room.room_code}: {exc}")
-            # Push the deadline out so we don't hot-loop a broken room.
-            try:
-                room.turn_deadline = now + timedelta(seconds=room.turn_duration_seconds or 300)
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
+            print(f"[MULTIPLAYER] Auto-play sweep error for room id {room_id}: {exc}")
+        finally:
+            db.session.rollback()

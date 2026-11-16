@@ -177,12 +177,24 @@ class SpectatorGamesTest(unittest.TestCase):
         wrapped = {'results':{'ok':True}, 'ui_state':{'hands':{0:['K♥'],1:['J♠']}}}
         self.assertEqual(player_action_result(wrapped, True), {'ok':True})
 
-    def test_automatic_moves_reach_spectators(self):
+    def test_expired_turn_reaches_spectators_without_playing_a_card(self):
         viewer = self.socket(); viewer.emit('watch_game', {'room_code':'WATCH1'}); viewer.get_received()
         self.room.turn_deadline = datetime.utcnow()-timedelta(seconds=120); db.session.commit()
         _auto_play_expired_room(socketio, manager, self.room, datetime.utcnow())
         payload = self.public_packet(viewer); self.assert_private(payload)
-        self.assertEqual(payload['attack_card'], '7♥')
+        self.assertIsNone(payload['attack_card'])
+        self.assertEqual(self.room.current_turn_player, self.users[1].id)
+
+    def test_timeout_ignores_turn_with_a_refreshed_deadline(self):
+        cutoff = datetime.utcnow()
+        self.room.turn_deadline = cutoff + timedelta(seconds=120)
+        db.session.commit()
+        before = manager.get_game(self.game_id).get_state()
+
+        _auto_play_expired_room(socketio, manager, self.room, cutoff)
+
+        self.assertEqual(manager.get_game(self.game_id).get_state(), before)
+        self.assertEqual(self.room.turn_deadline, cutoff + timedelta(seconds=120))
 
     def test_live_match_metadata_has_watch_links(self):
         payload = self.guest.get(f'/api/tournaments/{self.tournament.id}/overview').get_json()

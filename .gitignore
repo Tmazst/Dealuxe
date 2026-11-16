@@ -189,3 +189,4 @@ test_user_account.py
 tests/test_pwa.py
 test_hybrid_chat.py
 .env.example
+test_spectator_games.py
