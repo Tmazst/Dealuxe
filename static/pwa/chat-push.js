@@ -1,86 +1,111 @@
 (function () {
     const toggle = document.getElementById('match-chat-push-toggle');
-    if (!toggle || !window.isSecureContext || !('serviceWorker' in navigator) ||
-        !('PushManager' in window) || !('Notification' in window)) return;
-
     const status = document.getElementById('match-chat-push-status');
+    if (!toggle) return;
+
+    const prompt = document.getElementById('game-push-prompt');
     const endpoint = toggle.dataset.endpoint;
+    const supported = window.isSecureContext && 'serviceWorker' in navigator &&
+        'PushManager' in window && 'Notification' in window && window.crypto && window.crypto.subtle;
+    let registration;
     let publicKey;
-    let enabled = false;
-    const promptKey = 'match-chat-push-prompt-used';
-    const label = toggle.querySelector('span');
-    const icon = toggle.querySelector('i');
+    let registered = false;
+    let active = false;
 
-    function showBell() {
-        toggle.classList.remove('hybrid-chat-alert');
-        label.hidden = true;
-        icon.hidden = false;
-        icon.classList.toggle('fa-bell', enabled);
-        icon.classList.toggle('fa-bell-slash', !enabled);
-        const action = enabled ? 'Turn off chat notifications' : 'Enable chat notifications';
-        toggle.setAttribute('aria-label', action);
-        toggle.title = action;
+    function render(message) {
+        if (prompt) {
+            if (active) {
+                prompt.close();
+            } else {
+                status.textContent = message || 'Get alerts for unread match chats and uMshova announcements.';
+                toggle.disabled = Notification.permission === 'denied';
+            }
+            return;
+        }
+        toggle.textContent = registered ? 'Turn off notifications' : 'Enable notifications';
+        toggle.hidden = !registered && (!supported || !publicKey);
+        status.textContent = message || (active ? 'Notifications are on for this device.' :
+            (registered ? 'Turn notifications off and back on to reconnect this device.' :
+                'Notifications are off for this device.'));
     }
 
-    function applicationServerKey(value) {
+    function decodeKey(value) {
         const encoded = value.replace(/-/g, '+').replace(/_/g, '/');
-        const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=');
-        return Uint8Array.from(atob(padded), char => char.charCodeAt(0));
+        return Uint8Array.from(atob(encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=')),
+            char => char.charCodeAt(0));
     }
 
-    fetch(endpoint, {cache: 'no-store'}).then(response => {
-        if (!response.ok) return null;
-        return response.json();
-    }).then(config => {
-        if (!config) return;
-        publicKey = applicationServerKey(config.public_key);
-        enabled = config.subscribed && Notification.permission === 'granted';
-        let promptUsed = false;
-        try {
-            promptUsed = localStorage.getItem(promptKey) === '1';
-        } catch {}
-        if (enabled || promptUsed) showBell();
-        toggle.hidden = false;
-    }).catch(() => {});
+    async function endpointHash(subscription) {
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(subscription.endpoint));
+        return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+
+    function matchesKey(subscription) {
+        const key = new Uint8Array(subscription.options.applicationServerKey);
+        return key.length === publicKey.length && key.every((byte, index) => byte === publicKey[index]);
+    }
+
+    async function initialise() {
+        const response = await fetch(endpoint, {cache: 'no-store'});
+        if (!response.ok) throw new Error();
+        const config = await response.json();
+        registered = config.subscribed;
+
+        if (prompt && (!supported || !config.public_key || typeof prompt.show !== 'function')) return;
+        if (!supported) return render('Push is unavailable in this browser. On iPhone or iPad, open uMshova from the Home Screen.');
+        if (!config.public_key) return render('Push notifications are currently unavailable.');
+        registration = await navigator.serviceWorker.register(toggle.dataset.worker);
+        publicKey = decodeKey(config.public_key);
+        const subscription = await registration.pushManager.getSubscription();
+        active = registered && Notification.permission === 'granted' && subscription &&
+            matchesKey(subscription) && config.endpoint_hash === await endpointHash(subscription);
+        if (prompt && !active) prompt.show();
+        render(Notification.permission === 'denied' ? 'Notifications are blocked in your browser settings.' : '');
+    }
+
+    initialise().catch(() => render('Could not check notifications. Reload this page to try again.'));
 
     toggle.addEventListener('click', async () => {
-        showBell();
-        try {
-            localStorage.setItem(promptKey, '1');
-        } catch {}
         toggle.disabled = true;
-        status.textContent = '';
         try {
-            if (enabled) {
+            if (registered && !prompt) {
                 const response = await fetch(endpoint, {method: 'DELETE'});
-                if (!response.ok) throw new Error('Could not turn off notifications.');
-                enabled = false;
+                if (!response.ok) throw new Error();
+                registered = false;
+                active = false;
+                render();
                 return;
             }
 
             if (await Notification.requestPermission() !== 'granted') {
-                status.textContent = 'Allow notifications in your browser settings to receive match chat alerts.';
+                render('Allow notifications in your browser settings to finish enabling them.');
                 return;
             }
-            const registration = await navigator.serviceWorker.ready;
-            const existing = await registration.pushManager.getSubscription();
-            if (existing) await existing.unsubscribe();
-            const subscription = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: publicKey
-            });
+            registration = await navigator.serviceWorker.ready;
+            let subscription = await registration.pushManager.getSubscription();
+            if (subscription && !matchesKey(subscription)) {
+                await subscription.unsubscribe();
+                subscription = null;
+            }
+            if (!subscription) {
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: publicKey
+                });
+            }
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(subscription)
             });
-            if (!response.ok) throw new Error('Could not enable notifications.');
-            enabled = true;
+            if (!response.ok) throw new Error();
+            registered = true;
+            active = true;
+            render();
         } catch (error) {
-            status.textContent = 'Could not change chat notifications. Please try again.';
+            render('Could not change notifications. Please try again.');
         } finally {
-            toggle.disabled = false;
-            showBell();
+            toggle.disabled = Boolean(prompt && Notification.permission === 'denied');
         }
     });
 }());

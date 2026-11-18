@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     {% include '_security_head.html' %}
+    <script defer src="{{ url_for('static', filename='pwa/chat-push.js', v=3) }}"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Account · Dealuxe</title>
@@ -331,6 +332,14 @@
         {% endwith %}
 
         <div class="grid">
+            <section class="card" aria-labelledby="notifications-title">
+                <h2 id="notifications-title">Push notifications</h2>
+                <p>Get new match chat messages and uMshova announcements on this device.</p>
+                <button class="btn" id="match-chat-push-toggle" type="button"
+                        data-endpoint="{{ url_for('match_chat_push.browser_push') }}"
+                        data-worker="{{ url_for('pwa_service_worker') }}" hidden></button>
+                <p id="match-chat-push-status" role="status">Checking notifications…</p>
+            </section>
 
             <!-- Profile -->
             <section class="card">

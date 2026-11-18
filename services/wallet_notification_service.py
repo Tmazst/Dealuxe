@@ -143,6 +143,24 @@ def queue_admin_real_wallet_deposit(user_id, wallet_adjustment_id, amount):
     )
 
 
+def queue_tournament_withdrawal(user_id, dispute_id, tournament_name, amount, payment_method):
+    """Queue the private withdrawal notice with the refund request."""
+    paid = f'{_format_credits(amount)} credits' if payment_method == 'promotional_credit' else f'E{amount:.2f}'
+    return _queue_credit_notification(
+        user_id,
+        'tournament_withdrawal',
+        f'tournament-withdrawal:{dispute_id}',
+        amount,
+        message=(
+            f'You withdrew your seat in {tournament_name}.\n\n'
+            f'Your entry payment of {paid} is pending review. '
+            'Once approved, it will be returned to your uMshova wallet.\n\n'
+            'Want an alert when your reversal is complete? '
+            'Turn on uMshova notifications: https://umshova.games/account'
+        ),
+    )
+
+
 def queue_registration_credit(user_id, transaction_id, amount):
     """Queue the one-time welcome credit message after verified registration."""
     return _queue_credit_notification(

@@ -190,3 +190,6 @@ tests/test_pwa.py
 test_hybrid_chat.py
 .env.example
 test_spectator_games.py
+test_admin_expansion.py
+test_admin_expansion.py
+test_admin_expansion.py

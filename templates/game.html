@@ -42,6 +42,20 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
     </div>
 </header>
 
+{% if session.get('user_id') %}
+<dialog id="game-push-prompt" aria-labelledby="game-push-title" aria-describedby="match-chat-push-status">
+    <h2 id="game-push-title">Enable push notifications?</h2>
+    <p id="match-chat-push-status" role="status"></p>
+    <form method="dialog">
+        <button type="submit">Not now</button>
+        <button id="match-chat-push-toggle" type="button"
+                data-endpoint="{{ url_for('match_chat_push.browser_push') }}"
+                data-worker="{{ url_for('pwa_service_worker') }}">Enable notifications</button>
+    </form>
+</dialog>
+<script defer src="{{ url_for('static', filename='pwa/chat-push.js', v=3) }}"></script>
+{% endif %}
+
 <div class="app-grid gen-flex">
 
     <main class="panel" id="game-main" tabindex="-1">
@@ -161,13 +175,7 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
                         <label class="sr-only" for="hybrid-chat-input">Message your opponent</label>
                         <input id="hybrid-chat-input" type="text" maxlength="280" placeholder="Message your opponent…" aria-describedby="hybrid-chat-status">
                         <button id="hybrid-chat-send" type="submit" aria-label="Send message"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i></button>
-                        <button id="match-chat-push-toggle" type="button" class="hybrid-chat-alert"
-                                data-endpoint="{{ url_for('match_chat_push.browser_push') }}" hidden>
-                            <span>Enable chat notifications</span>
-                            <i class="fa-solid fa-bell-slash" aria-hidden="true" hidden></i>
-                        </button>
                     </form>
-                    <p id="match-chat-push-status" role="status"></p>
                     <div id="hybrid-chat-status" class="hybrid-chat-status" role="status" aria-live="polite"></div>
                     <button id="hybrid-chat-alert" class="hybrid-chat-alert" type="button" hidden>
                         <i class="fa-solid fa-comment" aria-hidden="true"></i>
@@ -480,7 +488,6 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
 {% endif %}
 
 <script src="/static/js/hybrid-panel.js"></script>
-<script defer src="{{ url_for('static', filename='pwa/chat-push.js') }}"></script>
 <script src="/static/js/game.js"></script>
 <script src="/static/js/game-start.js"></script>
 <!-- Multiplayer scripts: lobby + in-page client -->

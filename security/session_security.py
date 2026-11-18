@@ -46,11 +46,11 @@ def refresh_authenticated_session(user):
 
 def establish_authenticated_session(user):
     """Create the authenticated session according to the configured mode."""
-    push_browser = session.get('match_chat_push_browser')
-    if push_browser and session.get('user_id') != user.id:
-        from hybrid.match_chat_push import revoke_browser_push
-        revoke_browser_push()
-        push_browser = None
+    from hybrid.match_chat_push import detach_push_on_account_switch
+
+    detach_push_on_account_switch(user.id)
+    push_browser = session.get('match_chat_push_browser') if session.get('user_id') == user.id else None
+    session.pop('match_chat_push_browser', None)
     mode = str(current_app.config.get('SESSION_ROTATION_MODE') or 'monitor').lower()
     audit_outcome = None
     if mode == 'enforce':

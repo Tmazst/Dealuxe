@@ -15,12 +15,15 @@
         button { margin-right: 8px; margin-top: 4px; }
         .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
         .status { font-size: 0.95em; color: #555; }
+        #pendingReversalNotice { padding: 10px 12px; border-radius: 7px; background: #fff3d4; }
+        #pendingReversalNotice a { color: #664300; }
         .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
         .summary-card { background: #f3f6fb; border-radius: 10px; padding: 14px; }
         .summary-card strong { display: block; font-size: 1.2rem; margin-top: 6px; }
         .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #e3eeff; color: #2953bb; font-size: 0.82rem; }
         .form-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; }
         .form-grid label { display: grid; gap: 6px; color: #445; font-weight: 700; }
+        #pushRecipient[hidden] { display: none; }
         .form-grid input, .form-grid textarea { width: 100%; padding: 8px 10px; border: 1px solid #cfd6e3; border-radius: 7px; }
         .form-grid .full-width { grid-column: 1 / -1; }
         *, *::before, *::after { box-sizing: border-box; }
@@ -52,6 +55,7 @@
     <main id="admin-main" tabindex="-1">
     <div class="panel">
         <h1>Admin Dashboard</h1>
+        <p id="pendingReversalNotice" hidden><strong><a href="#disputesTable" id="pendingReversalLink"></a></strong></p>
         <p class="status" id="status" role="status" aria-live="polite">Loading...</p>
         <div class="summary-grid" id="summaryGrid"></div>
     </div>
@@ -84,6 +88,27 @@
             </thead>
             <tbody></tbody>
         </table>
+    </div>
+
+    <div class="panel">
+        <h2>Send a push notification</h2>
+        <form id="pushNotificationForm" class="form-grid" method="post"
+              data-endpoint="{{ url_for('admin.send_notification') }}">
+            <label>Audience
+                <select name="audience">
+                    <option value="user">One user</option>
+                    <option value="everyone">Everyone with push notifications enabled</option>
+                </select>
+            </label>
+            <label id="pushRecipient">Recipient username
+                <input name="username" required maxlength="80">
+            </label>
+            <label class="full-width">Message
+                <textarea name="message" required rows="3" maxlength="280"></textarea>
+            </label>
+            <div><button type="submit">Send notification</button></div>
+        </form>
+        <p id="pushNotificationStatus" role="status"></p>
     </div>
 
     <div class="panel">
@@ -906,6 +931,44 @@
             return response.json();
         }
 
+        const notificationForm = document.getElementById('pushNotificationForm');
+        const notificationStatus = document.getElementById('pushNotificationStatus');
+        const audience = notificationForm.elements.audience;
+        const recipient = notificationForm.elements.username;
+        audience.addEventListener('change', () => {
+            const everyone = audience.value === 'everyone';
+            document.getElementById('pushRecipient').hidden = everyone;
+            recipient.disabled = everyone;
+            recipient.required = !everyone;
+        });
+        notificationForm.addEventListener('submit', async event => {
+            event.preventDefault();
+            const fields = new FormData(notificationForm);
+            if (fields.get('audience') === 'everyone' &&
+                !window.confirm('Send this notification to everyone with push notifications enabled?')) return;
+            const button = notificationForm.querySelector('button');
+            button.disabled = true;
+            notificationStatus.textContent = 'Sending…';
+            try {
+                const result = await sendJson(notificationForm.dataset.endpoint, {
+                    body: {audience: fields.get('audience'), username: fields.get('username'), message: fields.get('message')},
+                });
+                if (result.queued) {
+                    notificationStatus.textContent = 'Broadcast queued for everyone with push notifications enabled.';
+                    notificationForm.elements.message.value = '';
+                    return;
+                }
+                notificationStatus.textContent = result.accepted || result.expired || result.failed
+                    ? `Accepted by push providers for ${result.accepted} device(s). Expired: ${result.expired}. Failed: ${result.failed}.`
+                    : 'This user has no devices registered for push notifications.';
+                if (result.accepted) notificationForm.elements.message.value = '';
+            } catch (error) {
+                notificationStatus.textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        });
+
         function placementOptions(players, selectedId) {
             const options = ['<option value="">Select player</option>'];
             (players || []).forEach(player => {
@@ -985,6 +1048,11 @@
             if (!response.ok) return;
             const data = await response.json();
             renderDisputes(data.disputes || []);
+            const count = data.pending_reversals;
+            document.getElementById('pendingReversalNotice').hidden = !count;
+            document.getElementById('pendingReversalLink').textContent = count === 1
+                ? '1 tournament reversal needs review in Disputes'
+                : `${count} tournament reversals need review in Disputes`;
         }
 
         function renderDisputes(disputes) {

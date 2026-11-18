@@ -1,7 +1,8 @@
+from uuid import uuid4
 from functools import wraps
 
 from flask import Blueprint, current_app, jsonify, request, session, render_template
-from security.observability import read_security_audit
+from security.observability import audit_security_event, read_security_audit
 
 from admin.service import (
     adjust_wallet,
@@ -16,6 +17,7 @@ from admin.service import (
     get_tournament_detail,
     list_audit_logs,
     list_disputes,
+    pending_reversal_count,
     list_tournaments,
     list_users,
     lock_tournament,
@@ -48,6 +50,7 @@ from admin.service import (
     update_cup_allocations,
 )
 from database import User, db
+from hybrid.match_chat_push import push_enabled, send_broadcast_push, send_user_push
 
 admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin', template_folder='templates')
 
@@ -88,6 +91,59 @@ def admin_dashboard():
 @admin_required
 def admin():
     return render_template("admin.html")
+
+
+@admin_bp.post('/notifications')
+@admin_required
+def send_notification():
+    admin_user = db.session.get(User, session['user_id'])
+    if not admin_user.is_active:
+        return jsonify({'error': 'An active admin account is required.'}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Enter a username and a message.'}), 400
+    audience = data.get('audience', 'user')
+    if audience not in ('user', 'everyone'):
+        return jsonify({'error': 'Choose a valid audience.'}), 400
+    message = data.get('message')
+    if not isinstance(message, str) or not 1 <= len(message.strip()) <= 280:
+        return jsonify({'error': 'Enter a message between 1 and 280 characters.'}), 400
+    if not push_enabled(current_app.config):
+        return jsonify({'error': 'Push notifications are currently unavailable.'}), 503
+    payload = {'type': 'announcement', 'body': message.strip(), 'url': '/', 'id': uuid4().hex}
+    if audience == 'everyone':
+        app = current_app._get_current_object()
+        app.extensions['socketio'].start_background_task(
+            _deliver_broadcast, app, admin_user.id, payload,
+        )
+        return jsonify({'queued': True, 'notification_id': payload['id']}), 202
+
+    username = data.get('username')
+    if not isinstance(username, str) or not 1 <= len(username.strip()) <= 80:
+        return jsonify({'error': 'Enter a recipient username.'}), 400
+    recipient = User.query.filter_by(username=username.strip(), is_active=True).first()
+    if recipient is None:
+        return jsonify({'error': 'No active user found with that username.'}), 404
+    results = send_user_push(recipient.id, payload)
+    audit_security_event(
+        'admin_push_notification', category='admin',
+        details={'admin_user_id': admin_user.id, 'recipient_user_id': recipient.id, **results},
+    )
+    return jsonify(results)
+
+
+def _deliver_broadcast(app, admin_user_id, payload):
+    with app.app_context():
+        try:
+            results = send_broadcast_push(payload)
+        except Exception:
+            app.logger.error('Push broadcast %s failed', payload['id'])
+            return
+        audit_security_event(
+            'admin_push_broadcast', category='admin',
+            details={'admin_user_id': admin_user_id, 'notification_id': payload['id'], **results},
+        )
+        app.logger.info('Push broadcast %s finished: %s', payload['id'], results)
 
 
 @admin_bp.route('/users', methods=['GET'])
@@ -577,7 +633,7 @@ def cup_qualification_replace(qualification_id):
 @admin_required
 def get_disputes():
     status = request.args.get('status', '').strip()
-    return jsonify({'disputes': list_disputes(status)})
+    return jsonify({'disputes': list_disputes(status), 'pending_reversals': pending_reversal_count()})
 
 
 @admin_bp.route('/disputes', methods=['POST'])

@@ -18,6 +18,7 @@ from database import (
     AdminAuditLog,
     Dispute,
     WalletAdjustment,
+    WalletNotification,
     CupQualification,
     TournamentBracket,
     TournamentMatch,
@@ -883,6 +884,50 @@ class TestAdminExpansion(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         player = get_player_by_user_id(self.regular.id)
         self.assertEqual(player.fake_balance, 510.0)
+
+    def test_paid_withdrawal_queues_whatsapp_and_approved_reversal_sends_push(self):
+        from controllers.tournament_controller import _withdraw_participant
+
+        self.regular.phone = '+26876123456'
+        self.regular.country = 'Eswatini'
+        db.session.commit()
+        tournament = create_tournament_record(
+            creator_id=self.admin.id, tournament_type='standard',
+            tournament_name='Friday Bracket', entry_fee=10.0, max_players=4,
+        )
+        participant = add_tournament_participant(
+            tournament.id, self.regular.id, payment_status='completed',
+            paid_amount=10.0, payment_method='wallet',
+        )
+        with patch.dict(app.config, {'OPENWA_WALLET_NOTIFICATIONS_ENABLED': True}):
+            self.assertEqual(_withdraw_participant(tournament, participant, notify_player=True), (True, None))
+            db.session.commit()
+        dispute = Dispute.query.filter_by(category='tournament_refund').one()
+        notice = WalletNotification.query.filter_by(event_type='tournament_withdrawal').one()
+        self.assertEqual(notice.user_id, self.regular.id)
+        self.assertIn('Friday Bracket', notice.message_body)
+        self.assertIn('E10.00 is pending review', notice.message_body)
+        self.assertIn('https://umshova.games/account', notice.message_body)
+
+        self._login(self.admin)
+        filtered = self.client.get('/api/admin/disputes?status=resolved').get_json()
+        self.assertEqual(filtered['disputes'], [])
+        self.assertEqual(filtered['pending_reversals'], 1)
+        resolve_url = f'/api/admin/disputes/{dispute.id}/resolve'
+        with patch('hybrid.match_chat_push.schedule_refund_push') as push:
+            self.assertEqual(self.client.post(resolve_url, json={'status': 'in_review'}).status_code, 200)
+            push.assert_not_called()
+            response = self.client.post(resolve_url, json={'status': 'resolved', 'resolution': 'Verified'})
+            self.assertEqual(response.status_code, 200, response.get_json())
+            push.assert_called_once_with(self.regular.id, dispute.id, 'Friday Bracket', 'E10.00')
+            self.assertEqual(self.client.post(
+                resolve_url, json={'status': 'resolved', 'resolution': 'Verified'},
+            ).status_code, 400)
+            self.assertEqual(push.call_count, 1)
+
+        self.assertEqual(get_player_by_user_id(self.regular.id).real_balance, 60.0)
+        self.assertEqual(self.client.get('/api/admin/disputes').get_json()['pending_reversals'], 0)
+        self.assertEqual(WalletNotification.query.count(), 1)
 
     def test_dispute_workflow(self):
         # Player files a dispute (login required, not admin-only)

@@ -824,7 +824,7 @@ def _serialize_participant(participant):
     }
 
 
-def _withdraw_participant(tournament, participant):
+def _withdraw_participant(tournament, participant, *, notify_player=False):
     """Release the seat and reserve the paid entry for admin review."""
     tournament = Tournament.query.filter_by(id=tournament.id).populate_existing().with_for_update().one()
     db.session.refresh(participant)
@@ -849,12 +849,20 @@ def _withdraw_participant(tournament, participant):
         description = f'Automatic withdrawal refund for tournament #{tournament.id}: {amount:.2f} ({method}).'
         if reference:
             description += f' Payment reference: {reference}.'
-        db.session.add(Dispute(
+        dispute = Dispute(
             user_id=participant.user_id,
             tournament_id=tournament.id,
             category='tournament_refund',
             description=description,
-        ))
+        )
+        db.session.add(dispute)
+        if notify_player:
+            from services.wallet_notification_service import queue_tournament_withdrawal
+
+            db.session.flush()
+            queue_tournament_withdrawal(
+                participant.user_id, dispute.id, tournament.tournament_name, amount, method,
+            )
     _ensure_prize_pool(tournament)
     return True, None
 
@@ -1307,7 +1315,7 @@ def init_tournament_events(socketio, app=None):
             emit('tournament_error', {'message': error})
             return {'ok': False, 'error': error}
 
-        ok, error = _withdraw_participant(tournament, participant)
+        ok, error = _withdraw_participant(tournament, participant, notify_player=True)
         if not ok:
             emit('tournament_error', {'message': error})
             return {'ok': False, 'error': error}

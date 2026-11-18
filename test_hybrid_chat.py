@@ -181,7 +181,7 @@ class TestHybridChatEvents(unittest.TestCase):
             self.assertEqual(payload['message'], 'Hello')
             self.assertEqual(url, '/game/CHATROOM')
 
-    def test_push_subscription_is_private_and_removed_on_logout(self):
+    def test_push_subscription_survives_logout_and_is_removed_on_account_switch(self):
         path = '/api/match-chat/push'
         client = app.test_client()
         self.assertEqual(client.get(path).status_code, 401)
@@ -204,10 +204,91 @@ class TestHybridChatEvents(unittest.TestCase):
             }).status_code, 400)
             self.assertEqual(client.post(path, headers=headers, json=subscription).status_code, 204)
             settings = client.get(path).get_json()
-            self.assertEqual(settings, {'public_key': 'public', 'subscribed': True})
+            self.assertEqual(settings['public_key'], 'public')
+            self.assertTrue(settings['subscribed'])
+            self.assertEqual(len(settings['endpoint_hash']), 64)
             self.assertEqual(MatchChatPushSubscription.query.one().user_id, self.first.id)
             self.assertEqual(client.post('/logout', headers=headers, json={}).status_code, 200)
+            self.assertEqual(MatchChatPushSubscription.query.count(), 1)
+            self.assertEqual(client.get(path).status_code, 401)
+            self.assertEqual(client.post('/api/auth/login', json={
+                'username': self.first.username, 'password': 'pw',
+            }).status_code, 200)
+            self.assertTrue(client.get(path).get_json()['subscribed'])
+
+            token = client.get('/api/security/csrf-token').get_json()['csrf_token']
+            headers = {'X-CSRF-Token': token}
+            self.assertEqual(client.delete(path, headers=headers).status_code, 204)
+            self.assertFalse(client.get(path).get_json()['subscribed'])
             self.assertEqual(MatchChatPushSubscription.query.count(), 0)
+            self.assertEqual(client.post(path, headers=headers, json=subscription).status_code, 204)
+
+            self.assertEqual(client.post('/logout', headers=headers, json={}).status_code, 200)
+            self.assertEqual(client.post('/api/auth/login', json={
+                'username': self.second.username, 'password': 'pw',
+            }).status_code, 200)
+            self.assertFalse(client.get(path).get_json()['subscribed'])
+            self.assertEqual(MatchChatPushSubscription.query.count(), 0)
+
+    def test_only_admin_can_send_an_announcement_to_the_selected_player(self):
+        self.first.is_admin = True
+        db.session.commit()
+        client = app.test_client()
+        path = '/api/admin/notifications'
+        data = {'username': self.second.username, 'message': ' Tournament starts at noon. '}
+        with patch.dict(app.config, {
+            'MATCH_CHAT_PUSH_PUBLIC_KEY': 'public',
+            'MATCH_CHAT_PUSH_PRIVATE_KEY': 'private',
+            'MATCH_CHAT_PUSH_SUBJECT': 'mailto:ops@example.com',
+        }), patch('admin.routes.send_user_push', return_value={
+            'accepted': 1, 'expired': 0, 'failed': 0,
+        }) as send:
+            for user, status in ((self.outsider, 403), (self.first, 200)):
+                self.assertEqual(client.post('/api/auth/login', json={
+                    'username': user.username, 'password': 'pw',
+                }).status_code, 200)
+                token = client.get('/api/security/csrf-token').get_json()['csrf_token']
+                response = client.post(path, json=data, headers={'X-CSRF-Token': token})
+                self.assertEqual(response.status_code, status)
+            send.assert_called_once()
+            user_id, message = send.call_args.args
+            self.assertEqual(user_id, self.second.id)
+            self.assertEqual(message['body'], 'Tournament starts at noon.')
+            self.assertEqual(message['type'], 'announcement')
+            self.assertEqual(response.get_json()['accepted'], 1)
+
+    def test_broadcast_queues_and_sends_only_to_active_subscribed_users(self):
+        self.first.is_admin = True
+        self.outsider.is_active = False
+        for index, user in enumerate((self.second, self.outsider), 1):
+            db.session.add(MatchChatPushSubscription(
+                browser_id=f'{index:032x}', endpoint_hash=f'{index:064x}', user_id=user.id,
+                subscription={
+                    'endpoint': f'https://fcm.googleapis.com/fcm/send/device{index}',
+                    'keys': {'auth': 'A' * 22, 'p256dh': 'B' * 87},
+                },
+            ))
+        db.session.commit()
+        client = app.test_client()
+        client.post('/api/auth/login', json={'username': self.first.username, 'password': 'pw'})
+        token = client.get('/api/security/csrf-token').get_json()['csrf_token']
+        with patch.dict(app.config, {
+            'MATCH_CHAT_PUSH_PUBLIC_KEY': 'public',
+            'MATCH_CHAT_PUSH_PRIVATE_KEY': 'private',
+            'MATCH_CHAT_PUSH_SUBJECT': 'mailto:ops@example.com',
+        }), patch.object(socketio, 'start_background_task') as schedule, patch('hybrid.match_chat_push._send_push', return_value={'accepted': 1}) as send:
+            response = client.post('/api/admin/notifications', headers={'X-CSRF-Token': token}, json={
+                'audience': 'everyone', 'message': 'Tournament announcement',
+            })
+            self.assertEqual(response.status_code, 202)
+            self.assertTrue(response.get_json()['queued'])
+            send.assert_not_called()
+            task, *arguments = schedule.call_args.args
+            task(*arguments)
+            send.assert_called_once()
+            subscriptions, payload = send.call_args.args
+            self.assertEqual([row.subscription['endpoint'].rsplit('/', 1)[-1] for row in subscriptions], ['device1'])
+            self.assertEqual(payload['body'], 'Tournament announcement')
 
     def test_block_or_disabled_preference_stops_chat(self):
         first = self._socket(self.first)
