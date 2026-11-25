@@ -42,20 +42,6 @@ window.socketTransports = {{ config.SOCKET_TRANSPORTS|tojson }};</script>
     </div>
 </header>
 
-{% if session.get('user_id') %}
-<dialog id="game-push-prompt" aria-labelledby="game-push-title" aria-describedby="match-chat-push-status">
-    <h2 id="game-push-title">Enable push notifications?</h2>
-    <p id="match-chat-push-status" role="status"></p>
-    <form method="dialog">
-        <button type="submit">Not now</button>
-        <button id="match-chat-push-toggle" type="button"
-                data-endpoint="{{ url_for('match_chat_push.browser_push') }}"
-                data-worker="{{ url_for('pwa_service_worker') }}">Enable notifications</button>
-    </form>
-</dialog>
-<script defer src="{{ url_for('static', filename='pwa/chat-push.js', v=3) }}"></script>
-{% endif %}
-
 <div class="app-grid gen-flex">
 
     <main class="panel" id="game-main" tabindex="-1">

@@ -2525,31 +2525,3 @@ pre{
 #turn-indicator { max-width: calc(100vw - 24px); flex-wrap: wrap; justify-content: center; }
 #turn-indicator .turn-countdown { font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 8px; border-left: 1px solid currentColor; }
 #turn-indicator.urgent { border-color: #ff9a9a; color: #ffe0e0; }
-
-#game-push-prompt {
-    position: fixed;
-    inset: auto 1rem 1rem auto;
-    z-index: 1100;
-    width: min(23rem, calc(100% - 2rem));
-    margin: 0;
-    padding: 1.1rem;
-    border: 1px solid #776995;
-    border-radius: 0.85rem;
-    background: #201438;
-    color: #fff;
-    box-shadow: 0 8px 28px #0008;
-}
-
-#game-push-prompt h2 { margin: 0; font-size: 1.1rem; }
-#game-push-prompt p { margin: 0.6rem 0 0.9rem; }
-#game-push-prompt form { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 0.5rem; }
-#game-push-prompt button {
-    padding: 0.55rem 0.8rem;
-    border: 1px solid #aa9cce;
-    border-radius: 0.45rem;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-}
-#game-push-prompt #match-chat-push-toggle { background: #6035ad; }
-#game-push-prompt button:disabled { opacity: 0.6; cursor: default; }

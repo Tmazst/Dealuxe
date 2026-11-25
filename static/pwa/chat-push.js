@@ -3,7 +3,6 @@
     const status = document.getElementById('match-chat-push-status');
     if (!toggle) return;
 
-    const prompt = document.getElementById('game-push-prompt');
     const endpoint = toggle.dataset.endpoint;
     const supported = window.isSecureContext && 'serviceWorker' in navigator &&
         'PushManager' in window && 'Notification' in window && window.crypto && window.crypto.subtle;
@@ -13,15 +12,6 @@
     let active = false;
 
     function render(message) {
-        if (prompt) {
-            if (active) {
-                prompt.close();
-            } else {
-                status.textContent = message || 'Get alerts for unread match chats and uMshova announcements.';
-                toggle.disabled = Notification.permission === 'denied';
-            }
-            return;
-        }
         toggle.textContent = registered ? 'Turn off notifications' : 'Enable notifications';
         toggle.hidden = !registered && (!supported || !publicKey);
         status.textContent = message || (active ? 'Notifications are on for this device.' :
@@ -51,7 +41,6 @@
         const config = await response.json();
         registered = config.subscribed;
 
-        if (prompt && (!supported || !config.public_key || typeof prompt.show !== 'function')) return;
         if (!supported) return render('Push is unavailable in this browser. On iPhone or iPad, open uMshova from the Home Screen.');
         if (!config.public_key) return render('Push notifications are currently unavailable.');
         registration = await navigator.serviceWorker.register(toggle.dataset.worker);
@@ -59,7 +48,6 @@
         const subscription = await registration.pushManager.getSubscription();
         active = registered && Notification.permission === 'granted' && subscription &&
             matchesKey(subscription) && config.endpoint_hash === await endpointHash(subscription);
-        if (prompt && !active) prompt.show();
         render(Notification.permission === 'denied' ? 'Notifications are blocked in your browser settings.' : '');
     }
 
@@ -68,7 +56,7 @@
     toggle.addEventListener('click', async () => {
         toggle.disabled = true;
         try {
-            if (registered && !prompt) {
+            if (registered) {
                 const response = await fetch(endpoint, {method: 'DELETE'});
                 if (!response.ok) throw new Error();
                 registered = false;
@@ -105,7 +93,7 @@
         } catch (error) {
             render('Could not change notifications. Please try again.');
         } finally {
-            toggle.disabled = Boolean(prompt && Notification.permission === 'denied');
+            toggle.disabled = false;
         }
     });
 }());
