@@ -781,13 +781,14 @@ def init_multiplayer_events(socketio, game_manager, app=None):
         except Exception as e:
             print(f"[MULTIPLAYER] Failed to persist move: {e}")
 
-        # Update turn
+        result_data = action_result_data(result)
+        # Rejected moves keep the current turn's original deadline.
         next_actor = (state['defender'] if state.get('phase') == 'DEFENSE' or (state.get('phase') == 'RULE_8' and engine.state.trail_value is not None) else state['attacker'])
         room.current_turn_player = room.player1_id if next_actor == 0 else room.player2_id
-        room.turn_deadline = datetime.utcnow() + timedelta(seconds=room.turn_duration_seconds)
+        if not result_data.get('error'):
+            room.turn_deadline = datetime.utcnow() + timedelta(seconds=room.turn_duration_seconds)
         db.session.commit()
         
-        result_data = action_result_data(result)
         if isinstance(result_data, dict) and not result_data.get('error'):
             publish_spectator_update(
                 socketio, room, state, action=action_type, actor_index=actor_index,

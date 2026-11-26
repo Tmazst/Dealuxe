@@ -224,7 +224,15 @@ class SpectatorGamesTest(unittest.TestCase):
         attacker.emit('game_action', {'room_code':'WATCH1','action':'attack','data':{'index':0}})
         viewer.get_received(); attacker.get_received()
         defender = self.socket(self.users[1])
+        deadline = datetime.utcnow() + timedelta(seconds=20)
+        self.room.turn_deadline = deadline
+        db.session.commit()
         defender.emit('game_action', {'room_code':'WATCH1','action':'defend','data':{'card_indices':[0,1]}})
+        db.session.refresh(self.room)
+        self.assertEqual(self.room.turn_deadline, deadline)
+        updates = [packet['args'][0] for packet in defender.get_received() if packet['name'] == 'game_update']
+        self.assertTrue(updates)
+        self.assertEqual(updates[-1]['turn_deadline'], deadline.isoformat())
         self.assertFalse(any(p['name']=='spectator_update' for p in viewer.get_received()))
         text = json.dumps(attacker.get_received(), ensure_ascii=False)
         self.assertNotIn('2♣', text); self.assertNotIn('3♣', text)
@@ -249,9 +257,16 @@ class SpectatorGamesTest(unittest.TestCase):
 
     def test_eight_attack_and_two_six_defense_stay_together_until_next_attack(self):
         viewer, attacker, defender, attack = self.prepare_eight_exchange()
+        self.room.turn_deadline = datetime.utcnow() + timedelta(seconds=20)
+        db.session.commit()
         self.assertEqual(attack['exchange']['attack_card'], '8♥')
         self.assertEqual(attack['exchange']['outcome'], 'pending')
         defender.emit('game_action', {'room_code':'WATCH1','action':'defend','data':{'card_indices':[0,1]}})
+        db.session.refresh(self.room)
+        self.assertAlmostEqual(
+            (self.room.turn_deadline - datetime.utcnow()).total_seconds(),
+            self.room.turn_duration_seconds, delta=5,
+        )
         defended = self.public_packet(viewer)
         exchange = defended['exchange']
         self.assertEqual(exchange['attack_card'], '8♥')
